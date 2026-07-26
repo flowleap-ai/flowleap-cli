@@ -424,11 +424,7 @@ async fn subscription_status(ctx: &Context, reachable: bool, authenticated: bool
     };
 
     let action = subscription.get("action").cloned().unwrap_or(Value::Null);
-    if !entitled
-        && (action["id"].as_str().is_none()
-            || action["url"].as_str().is_none()
-            || (action["title"].as_str().is_none() && action["message"].as_str().is_none()))
-    {
+    if !entitled && (action["id"].as_str().is_none() || action["url"].as_str().is_none()) {
         return unknown_subscription(
             "Profile response did not include a valid subscription action.".to_string(),
         );

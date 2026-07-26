@@ -220,6 +220,48 @@ async fn inactive_subscription_surfaces_backend_human_action() {
 }
 
 #[tokio::test]
+async fn blocked_subscription_accepts_minimal_backend_action() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_subscription(
+        &server,
+        json!({
+            "entitled": false,
+            "status": "inactive",
+            "plan": "Basic",
+            "action": {
+                "id": "subscribe-basic",
+                "url": "https://flowleap.co/en/pricing",
+            },
+        }),
+    )
+    .await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "server", "valid": true },
+            "uspto": { "source": "server", "valid": true },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(1));
+    let report = stdout_json(&output);
+    assert_eq!(step_ids(&report), ["subscribe-basic"]);
+    assert_eq!(
+        report["nextSteps"][0]["title"],
+        "Resolve the FlowLeap subscription"
+    );
+}
+
+#[tokio::test]
 async fn unavailable_profile_is_unknown_and_never_assumes_purchase() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
