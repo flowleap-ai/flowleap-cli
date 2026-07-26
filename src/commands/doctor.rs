@@ -34,6 +34,11 @@ pub async fn run(ctx: &Context) -> Result<()> {
 
     let authenticated = ctx.credentials.auth_header().is_some();
 
+    // Subscription entitlement is part of readiness, not an inference from
+    // plan labels or billing statuses. The backend profile owns that policy
+    // and returns a normalized contract for doctor to consume.
+    let subscription = subscription_status(ctx, reachable, authenticated).await;
+
     // Best-effort server verdicts (POST /v1/keys/validate) so "key missing
     // locally but covered by the server" produces no next step. Any failure —
     // unauthenticated, unreachable, HTTP error — falls back to local key
@@ -46,9 +51,12 @@ pub async fn run(ctx: &Context) -> Result<()> {
         None
     };
 
-    let next_steps = next_steps(ctx, authenticated, verdicts.as_ref());
+    let next_steps = next_steps(ctx, authenticated, verdicts.as_ref(), &subscription);
     // Ready means nothing blocks work — stricter than `ok` (reachability).
-    let ready = reachable && authenticated && next_steps.is_empty();
+    let ready = reachable
+        && authenticated
+        && subscription["entitled"] == Value::Bool(true)
+        && next_steps.is_empty();
 
     let key_validation = match &verdicts {
         Some(_) => json!({ "source": "server", "note": Value::Null }),
@@ -90,6 +98,7 @@ pub async fn run(ctx: &Context) -> Result<()> {
             },
         },
         "keyValidation": key_validation,
+        "subscription": subscription,
         "backend": {
             "reachable": reachable,
             "healthStatus": status,
@@ -156,6 +165,7 @@ fn render_human(report: &Value) {
     }
 
     // Provider keys, one line each.
+    subscription_line(report);
     provider_line(report, "epo", "EPO keys", "store-epo-keys");
     provider_line(report, "uspto", "USPTO key", "store-uspto-key");
 
@@ -209,6 +219,30 @@ fn render_human(report: &Value) {
     }
 }
 
+/// Render the normalized entitlement status from the profile contract.
+fn subscription_line(report: &Value) {
+    use colored::Colorize;
+
+    match report["subscription"]["entitled"].as_bool() {
+        Some(true) => {
+            let status = report["subscription"]["status"]
+                .as_str()
+                .unwrap_or("active");
+            println!("  {} Subscription entitled ({status})", "✓".green());
+        }
+        Some(false) => {
+            let status = report["subscription"]["status"]
+                .as_str()
+                .unwrap_or("inactive");
+            println!("  {} Subscription not entitled ({status})", "✗".red());
+        }
+        None if report["auth"]["available"] == Value::Bool(true) => {
+            println!("  {} Subscription could not be verified", "✗".red());
+        }
+        None => println!("  {} Subscription checked after sign-in", "•".yellow()),
+    }
+}
+
 /// One provider checklist line, derived from the report alone. Blocking is
 /// "this provider has a pending store step in nextSteps": ✗ when blocking,
 /// ✓ when keys are set locally, and • when neither — the only way to be
@@ -241,11 +275,17 @@ fn provider_line(report: &Value, provider: &str, label: &str, store_step_id: &st
 
 /// The pending, blocking onboarding steps in dependency order. Step ids are a
 /// public contract (see docs/adr/0001): `auth-login`, `mint-personal-token`,
-/// `obtain-epo-keys`, `store-epo-keys`, `obtain-uspto-key`, `store-uspto-key`,
-/// `verify-keys`. Steps whose need is already covered (e.g. a provider the
-/// server has its own keys for) are omitted — the list means "what blocks
-/// you", not "what could be configured".
-fn next_steps(ctx: &Context, authenticated: bool, verdicts: Option<&Value>) -> Vec<Value> {
+/// `subscribe-basic`, `resolve-billing`, `verify-subscription`,
+/// `obtain-epo-keys`, `store-epo-keys`, `obtain-uspto-key`,
+/// `store-uspto-key`, `verify-keys`. Steps whose need is already covered
+/// (e.g. a provider the server has its own keys for) are omitted — the list
+/// means "what blocks you", not "what could be configured".
+fn next_steps(
+    ctx: &Context,
+    authenticated: bool,
+    verdicts: Option<&Value>,
+    subscription: &Value,
+) -> Vec<Value> {
     let mut steps = Vec::new();
 
     if !authenticated {
@@ -264,6 +304,32 @@ fn next_steps(ctx: &Context, authenticated: bool, verdicts: Option<&Value>) -> V
             Some("flowleap --json auth create-token --name <n> --store"),
             None,
         ));
+    }
+
+    if authenticated {
+        match subscription["entitled"].as_bool() {
+            Some(true) => {}
+            Some(false) => {
+                let action = &subscription["action"];
+                steps.push(step(
+                    action["id"].as_str().unwrap_or("subscription-action"),
+                    "human",
+                    action["title"]
+                        .as_str()
+                        .or_else(|| action["message"].as_str())
+                        .unwrap_or("Resolve the FlowLeap subscription"),
+                    None,
+                    action["url"].as_str(),
+                ));
+            }
+            None => steps.push(step(
+                "verify-subscription",
+                "agent",
+                "Verify the FlowLeap subscription entitlement",
+                Some("flowleap --json doctor"),
+                None,
+            )),
+        }
     }
 
     let epo_pending = provider_pending(verdicts, "epo", ctx.credentials.epo_pair().is_some());
@@ -312,6 +378,81 @@ fn next_steps(ctx: &Context, authenticated: bool, verdicts: Option<&Value>) -> V
     }
 
     steps
+}
+
+/// Fetch and validate the backend-owned normalized subscription contract.
+/// Unknown is deliberately distinct from not entitled: a failed or malformed
+/// profile response must never tell a human to purchase a plan.
+async fn subscription_status(ctx: &Context, reachable: bool, authenticated: bool) -> Value {
+    if !reachable || !authenticated || ctx.dry_run {
+        return json!({
+            "source": "not-checked",
+            "entitled": Value::Null,
+            "status": "unknown",
+            "plan": Value::Null,
+            "action": Value::Null,
+            "note": if !authenticated {
+                "Subscription entitlement is checked after sign-in."
+            } else if !reachable {
+                "Subscription entitlement could not be checked while the backend is unreachable."
+            } else {
+                "Dry-run mode does not send the profile request."
+            },
+        });
+    }
+
+    let envelope = match ctx.execute_json_envelope(ctx.get("/api/profile")).await {
+        Ok(envelope) => envelope,
+        Err(err) => return unknown_subscription(err.to_string()),
+    };
+
+    if envelope["ok"] != Value::Bool(true) {
+        let status = envelope["status"].as_u64().unwrap_or_default();
+        return unknown_subscription(format!("Profile request failed with HTTP {status}."));
+    }
+
+    let subscription = &envelope["body"]["subscription"];
+    let Some(entitled) = subscription["entitled"].as_bool() else {
+        return unknown_subscription(
+            "Profile response did not include a valid subscription entitlement.".to_string(),
+        );
+    };
+    let Some(status) = subscription["status"].as_str() else {
+        return unknown_subscription(
+            "Profile response did not include a valid subscription status.".to_string(),
+        );
+    };
+
+    let action = subscription.get("action").cloned().unwrap_or(Value::Null);
+    if !entitled
+        && (action["id"].as_str().is_none()
+            || action["url"].as_str().is_none()
+            || (action["title"].as_str().is_none() && action["message"].as_str().is_none()))
+    {
+        return unknown_subscription(
+            "Profile response did not include a valid subscription action.".to_string(),
+        );
+    }
+
+    json!({
+        "source": "profile",
+        "entitled": entitled,
+        "status": status,
+        "plan": subscription.get("plan").cloned().unwrap_or(Value::Null),
+        "action": action,
+        "note": Value::Null,
+    })
+}
+
+fn unknown_subscription(note: String) -> Value {
+    json!({
+        "source": "unknown",
+        "entitled": Value::Null,
+        "status": "unknown",
+        "plan": Value::Null,
+        "action": Value::Null,
+        "note": note,
+    })
 }
 
 /// Session-only auth: signed in with a short-lived Clerk session token and no

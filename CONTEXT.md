@@ -5,6 +5,37 @@ FlowLeap agent skills.
 
 ## Language
 
+**FlowLeap user**:
+A patent professional who accesses FlowLeap capabilities through an agent
+harness of their choice. They need not understand or operate the CLI directly.
+_Avoid_: Developer, CLI operator
+
+**Agent harness**:
+The user-chosen local environment that hosts the agent operating FlowLeap,
+provides shell and filesystem access, and can persist MCP configuration or
+agent instructions, such as Codex, Claude Code, Cursor, or Gemini CLI.
+Web-only chat applications are outside the CLI's supported environment.
+_Avoid_: FlowLeap app, web chat
+
+**Harness-integrated**:
+The CLI is Ready and the chosen agent harness has a persistent FlowLeap
+integration through MCP, installed skills/rules, or both. The harness can
+discover and invoke FlowLeap in later sessions without repeating setup.
+_Avoid_: Ready, installed
+
+**Registry download**:
+An npm registry download event for a published `flowleap` package version. It
+may come from automation, caching, CI, or a person and does not prove an
+installation, CLI execution, or user.
+_Avoid_: download user, install, adoption
+
+**Binary fetch**:
+A retrieval of a native FlowLeap release asset, normally triggered when the
+npm wrapper is executed for the first time for one version and platform. It is
+a closer execution proxy than a Registry download but is still not a unique
+person.
+_Avoid_: active user
+
 **CLI skill**:
 A SKILL.md in this repo's `skills/` directory, written in the CLI dialect —
 its instructions invoke `flowleap …` commands. Canonical: this is where
@@ -42,9 +73,15 @@ covered (e.g. a provider the server has its own keys for) are not next
 steps — the list means "what blocks you," not "what could be configured."
 
 **Ready**:
-Nothing blocks work: backend reachable, authenticated, no next steps.
-Distinct from "reachable" — a reachable backend with no credentials is not
-ready.
+Nothing blocks work: backend reachable, authenticated, subscription entitlement
+active, no next steps. Distinct from "reachable" and "authenticated" — neither
+proves that patent-data work is authorized.
+
+**Subscription entitlement**:
+The account state that authorizes FlowLeap patent-data work, granted by an
+active Basic subscription or qualifying trial. Authentication identifies the
+account; it does not provide this entitlement.
+_Avoid_: signup, authentication
 
 **Session token**:
 The short-lived credential produced by the browser device-flow sign-in. It
