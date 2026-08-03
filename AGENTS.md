@@ -40,7 +40,7 @@ before trusting `skills install` output or regenerating goldens.
 | `src/commands/legal.rs` | Patent-law document search (legal RAG) |
 | `src/commands/citation.rs` | USPTO enriched citation search |
 | `src/commands/api.rs` | Profile/usage + raw API escape hatch |
-| `src/commands/health.rs` / `doctor.rs` | Health probes and environment diagnosis |
+| `src/commands/health.rs` / `doctor.rs` | Health probes and readiness diagnosis, including normalized subscription entitlement from `/api/profile` |
 | `src/commands/config_cmd.rs` | CLI configuration management |
 | `src/commands/upgrade.rs` | Channel-aware self-update (`upgrade`/`update`): detects npm/Homebrew/raw-binary/cargo from the running binary's canonical path; raw binaries self-update with sha256-verified atomic swap; `--check` reports `{channel, currentVersion, latestVersion, updateAvailable, command}` with no side effects |
 | `src/update.rs` | Once-a-day update notice (recommends `flowleap upgrade`) + `cached_latest()` seam consumed by `doctor` |

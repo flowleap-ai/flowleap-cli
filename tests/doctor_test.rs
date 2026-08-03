@@ -33,6 +33,31 @@ async fn mount_validate(server: &MockServer, providers: Value) {
         .await;
 }
 
+/// Mount GET /api/profile with the normalized subscription entitlement
+/// contract consumed by doctor.
+async fn mount_subscription(server: &MockServer, subscription: Value) {
+    Mock::given(method("GET"))
+        .and(path("/api/profile"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "subscription": subscription })),
+        )
+        .mount(server)
+        .await;
+}
+
+async fn mount_active_subscription(server: &MockServer) {
+    mount_subscription(
+        server,
+        json!({
+            "entitled": true,
+            "status": "active",
+            "plan": "Basic",
+            "action": null,
+        }),
+    )
+    .await;
+}
+
 /// The step ids of a report's nextSteps, in order.
 fn step_ids(report: &Value) -> Vec<&str> {
     report["nextSteps"]
@@ -71,6 +96,16 @@ fn assert_existing_fields(report: &Value) {
 async fn ready_machine_exits_0_with_empty_next_steps() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
+    mount_subscription(
+        &server,
+        json!({
+            "entitled": true,
+            "status": "active",
+            "plan": "Basic",
+            "action": null,
+        }),
+    )
+    .await;
     mount_validate(
         &server,
         json!({
@@ -94,7 +129,216 @@ async fn ready_machine_exits_0_with_empty_next_steps() {
     assert_eq!(report["ok"], true);
     assert_eq!(report["backend"]["healthStatus"], 200);
     assert_eq!(report["keyValidation"]["source"], "server");
+    assert_eq!(report["subscription"]["source"], "profile");
+    assert_eq!(report["subscription"]["entitled"], true);
+    assert_eq!(report["subscription"]["status"], "active");
     assert_existing_fields(&report);
+}
+
+#[tokio::test]
+async fn trialing_subscription_is_entitled_and_ready() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_subscription(
+        &server,
+        json!({
+            "entitled": true,
+            "status": "trialing",
+            "plan": "Basic",
+            "action": null,
+        }),
+    )
+    .await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "server", "valid": true },
+            "uspto": { "source": "server", "valid": true },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0));
+    let report = stdout_json(&output);
+    assert_eq!(report["ready"], true);
+    assert_eq!(report["subscription"]["entitled"], true);
+    assert_eq!(report["subscription"]["status"], "trialing");
+}
+
+#[tokio::test]
+async fn inactive_subscription_surfaces_backend_human_action() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_subscription(
+        &server,
+        json!({
+            "entitled": false,
+            "status": "inactive",
+            "plan": "Basic",
+            "action": {
+                "id": "subscribe-basic",
+                "title": "Subscribe to FlowLeap Basic",
+                "url": "https://flowleap.co/en/pricing",
+            },
+        }),
+    )
+    .await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "server", "valid": true },
+            "uspto": { "source": "server", "valid": true },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(1));
+    let report = stdout_json(&output);
+    assert_eq!(report["ready"], false);
+    assert_eq!(report["subscription"]["source"], "profile");
+    assert_eq!(report["subscription"]["entitled"], false);
+    assert_eq!(step_ids(&report), ["subscribe-basic"]);
+    assert_eq!(report["nextSteps"][0]["actor"], "human");
+    assert_eq!(
+        report["nextSteps"][0]["url"],
+        "https://flowleap.co/en/pricing"
+    );
+}
+
+#[tokio::test]
+async fn blocked_subscription_accepts_minimal_backend_action() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_subscription(
+        &server,
+        json!({
+            "entitled": false,
+            "status": "inactive",
+            "plan": "Basic",
+            "action": {
+                "id": "subscribe-basic",
+                "url": "https://flowleap.co/en/pricing",
+            },
+        }),
+    )
+    .await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "server", "valid": true },
+            "uspto": { "source": "server", "valid": true },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(1));
+    let report = stdout_json(&output);
+    assert_eq!(step_ids(&report), ["subscribe-basic"]);
+    assert_eq!(
+        report["nextSteps"][0]["title"],
+        "Resolve the FlowLeap subscription"
+    );
+}
+
+#[tokio::test]
+async fn unavailable_profile_is_unknown_and_never_assumes_purchase() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/profile"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({ "error": "boom" })))
+        .mount(&server)
+        .await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "server", "valid": true },
+            "uspto": { "source": "server", "valid": true },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[
+            ("FLOWLEAP_API_KEY", "fl_pat_test"),
+            ("FLOWLEAP_MAX_RETRIES", "0"),
+        ],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(1));
+    let report = stdout_json(&output);
+    assert_eq!(report["ready"], false);
+    assert_eq!(report["subscription"]["source"], "unknown");
+    assert_eq!(report["subscription"]["entitled"], Value::Null);
+    assert_eq!(step_ids(&report), ["verify-subscription"]);
+    assert_eq!(report["nextSteps"][0]["actor"], "agent");
+    assert!(
+        !report.to_string().contains("subscribe-basic"),
+        "unknown must not guess a billing action: {report}"
+    );
+}
+
+#[tokio::test]
+async fn malformed_profile_is_unknown_and_never_assumes_purchase() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_subscription(
+        &server,
+        json!({
+            "status": "inactive",
+            "plan": "Basic",
+            "action": null,
+        }),
+    )
+    .await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "server", "valid": true },
+            "uspto": { "source": "server", "valid": true },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(1));
+    let report = stdout_json(&output);
+    assert_eq!(report["subscription"]["source"], "unknown");
+    assert_eq!(step_ids(&report), ["verify-subscription"]);
+    assert!(
+        !report.to_string().contains("subscribe-basic"),
+        "malformed profile must not guess a billing action: {report}"
+    );
 }
 
 /// Unauthenticated: auth-login comes first with a human actor and a runnable
@@ -143,6 +387,7 @@ async fn unauthenticated_lists_auth_login_first_and_exits_1() {
 async fn session_only_auth_pends_mint_personal_token() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
+    mount_active_subscription(&server).await;
     mount_validate(
         &server,
         json!({
@@ -178,6 +423,7 @@ async fn session_only_auth_pends_mint_personal_token() {
 async fn server_covered_provider_steps_are_omitted() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
+    mount_active_subscription(&server).await;
     mount_validate(
         &server,
         json!({
@@ -216,6 +462,7 @@ async fn server_covered_provider_steps_are_omitted() {
 async fn rejected_user_keys_are_blocking() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
+    mount_active_subscription(&server).await;
     mount_validate(
         &server,
         json!({
@@ -252,6 +499,7 @@ async fn rejected_user_keys_are_blocking() {
 async fn validation_call_failure_falls_back_to_local_presence() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
+    mount_active_subscription(&server).await;
     Mock::given(method("POST"))
         .and(path("/v1/keys/validate"))
         .respond_with(ResponseTemplate::new(500).set_body_json(json!({ "error": "boom" })))
@@ -290,6 +538,7 @@ async fn validation_call_failure_falls_back_to_local_presence() {
 async fn validation_call_failure_with_missing_local_keys_blocks() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
+    mount_active_subscription(&server).await;
     Mock::given(method("POST"))
         .and(path("/v1/keys/validate"))
         .respond_with(ResponseTemplate::new(500).set_body_json(json!({ "error": "boom" })))
@@ -346,9 +595,8 @@ async fn unreachable_backend_emits_offline_checklist_and_exits_1() {
     assert_existing_fields(&report);
 }
 
-/// A reachable, authenticated machine with no blocking steps can still be
-/// not-ready when the backend is unreachable — `ready` is stricter than an
-/// empty nextSteps.
+/// An authenticated offline machine cannot verify entitlement, so it is
+/// not-ready and carries the agent-owned verification step.
 #[tokio::test]
 async fn unreachable_backend_with_credentials_is_not_ready() {
     let output = run_cli(
@@ -366,7 +614,8 @@ async fn unreachable_backend_with_credentials_is_not_ready() {
 
     assert_eq!(output.status.code(), Some(1));
     let report = stdout_json(&output);
-    assert_eq!(report["nextSteps"], json!([]));
+    assert_eq!(step_ids(&report), ["verify-subscription"]);
+    assert_eq!(report["subscription"]["source"], "not-checked");
     assert_eq!(report["ready"], false, "unreachable is never ready");
 }
 
@@ -391,6 +640,7 @@ fn stdout_human(output: &std::process::Output) -> String {
 async fn human_ready_machine_renders_all_check_marks_and_no_next_steps() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
+    mount_active_subscription(&server).await;
     mount_validate(
         &server,
         json!({
@@ -419,6 +669,10 @@ async fn human_ready_machine_renders_all_check_marks_and_no_next_steps() {
     assert!(
         stdout.contains("✓ Authenticated (personal token)"),
         "auth: {stdout}"
+    );
+    assert!(
+        stdout.contains("✓ Subscription entitled (active)"),
+        "subscription: {stdout}"
     );
     assert!(stdout.contains("✓ EPO keys: set locally"), "epo: {stdout}");
     assert!(
@@ -468,6 +722,7 @@ async fn human_unauthenticated_renders_cross_and_actor_tagged_steps() {
 async fn human_server_covered_provider_renders_dot_and_no_step() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
+    mount_active_subscription(&server).await;
     mount_validate(
         &server,
         json!({

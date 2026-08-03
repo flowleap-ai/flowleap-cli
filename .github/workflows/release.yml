@@ -149,6 +149,15 @@ jobs:
           # so bumping package.json here is sufficient.
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
 
+      - name: Verify npm package mirrors and tarball
+        run: |
+          cmp README.md npm/README.md
+          cmp LICENSE npm/LICENSE
+          cd npm
+          npm pack --dry-run --json > "$RUNNER_TEMP/npm-pack.json"
+          cd ..
+          node scripts/verify-npm-package.mjs "$RUNNER_TEMP/npm-pack.json"
+
       - name: Publish to npm
         run: cd npm && npm publish --access public --provenance
         env:

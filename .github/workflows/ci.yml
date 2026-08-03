@@ -16,7 +16,7 @@ env:
 
 jobs:
   check:
-    name: fmt + clippy + test
+    name: fmt + clippy + test + build + npm pack
     runs-on: ubuntu-latest
 
     steps:
@@ -30,6 +30,10 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Format check
         run: cargo fmt --all --check
 
@@ -38,3 +42,15 @@ jobs:
 
       - name: Test
         run: cargo test
+
+      - name: Build
+        run: cargo build
+
+      - name: Verify npm package mirrors and tarball
+        run: |
+          cmp README.md npm/README.md
+          cmp LICENSE npm/LICENSE
+          cd npm
+          npm pack --dry-run --json > "$RUNNER_TEMP/npm-pack.json"
+          cd ..
+          node scripts/verify-npm-package.mjs "$RUNNER_TEMP/npm-pack.json"
