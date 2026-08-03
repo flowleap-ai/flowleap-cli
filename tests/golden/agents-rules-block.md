@@ -94,10 +94,12 @@ flowleap patent search --query <query> [flags]
 flowleap patent build-query <description> [flags]
 ```
 
-#### flowleap-patstat — Portfolio Analytics over the PATSTAT snapshot — structured-criteria aggregation by named applicant, CPC/IPC class, office, year, family, and grant status, with harmonized entity resolution and Data Edition provenance.
+#### flowleap-patstat — Portfolio Analytics AND guarded SQL over the PATSTAT snapshot — structured-criteria aggregation by named applicant, CPC/IPC class, office, year, family, and grant status, with harmonized entity resolution and Data Edition provenance; plus agent-written SELECTs against the flowleap.* semantic views for any aggregate the typed commands don't cover (landscapes, grant rates, citation impact, inventor analytics).
 
 ```bash
 flowleap --json patstat portfolio "Siemens AG" --from-year 2015 --to-year 2023
+flowleap patstat docs --section examples
+flowleap patstat query "SELECT office, COUNT(DISTINCT family_id) AS inventions FROM flowleap.applications a JOIN flowleap.applicants ap ON ap.application_id = a.application_id WHERE UPPER(ap.name) LIKE 'SIEMENS%' GROUP BY office ORDER BY inventions DESC" --question "where does Siemens hold the most inventions?"
 flowleap --json tools run patstat_portfolio applicant="<applicant name>"
 ```
 
