@@ -9,10 +9,15 @@ use crate::output;
 #[command(after_help = "Examples:
   flowleap patstat portfolio Siemens
   flowleap patstat portfolio \"Kia Motors\" --from-year 2015 --to-year 2024
+  flowleap patstat docs --section semantic-model
+  flowleap patstat docs --section examples
+  flowleap patstat query \"SELECT office, COUNT(DISTINCT family_id) AS inventions FROM flowleap.applications GROUP BY office\" --question \"filings by office\"
 
 Note: an ambiguous applicant name (matching several distinct corporate
 entities) is never merged or auto-picked — re-run with one exact candidate
-name from the list the command prints.")]
+name from the list the command prints. For query, fetch
+`docs --section semantic-model` first and follow the guarded-sql workflow
+(`docs --workflow guarded-sql`): one informed retry per error, then stop.")]
 pub struct PatstatArgs {
     #[command(subcommand)]
     command: PatstatCommand,
@@ -35,6 +40,47 @@ enum PatstatCommand {
         #[arg(long)]
         to_year: Option<i32>,
     },
+
+    /// Run ONE guarded SQL SELECT against the flowleap.* semantic views
+    /// (Layer 2, backend ADR 0010). The backend gates deterministically:
+    /// single-SELECT parse check, flowleap-only allowlist, EXPLAIN cost
+    /// ceiling, 5000-row/5MB hard caps, 20s timeout. A typed patstat_sql_*
+    /// error message carries the exact fix instruction — fix the SQL once,
+    /// re-run with --retry-of, then stop.
+    Query {
+        /// One SQL SELECT; every table schema-qualified as flowleap.<view>
+        sql: String,
+
+        /// The user's question, verbatim (audit-only; feeds the query-review
+        /// pipeline — always send it)
+        #[arg(long)]
+        question: Option<String>,
+
+        /// On a retry only: marker tying this attempt to the error it fixes
+        #[arg(long)]
+        retry_of: Option<String>,
+    },
+
+    /// PATSTAT analytics docs and served sections. --section semantic-model
+    /// is the full schema + interpretation-conventions YAML (read BEFORE
+    /// writing query SQL); --section examples is verified question→SQL pairs.
+    Docs {
+        /// Served data section: semantic-model | examples
+        #[arg(long, conflicts_with_all = ["workflow", "endpoint", "compact"])]
+        section: Option<String>,
+
+        /// Workflow guide by name (e.g. guarded-sql)
+        #[arg(long, conflicts_with_all = ["endpoint", "compact"])]
+        workflow: Option<String>,
+
+        /// One endpoint's docs by name (e.g. query, portfolio)
+        #[arg(long, conflicts_with = "compact")]
+        endpoint: Option<String>,
+
+        /// Compact endpoint/workflow/section listing
+        #[arg(long)]
+        compact: bool,
+    },
 }
 
 pub async fn run(ctx: &Context, args: PatstatArgs) -> Result<()> {
@@ -46,7 +92,202 @@ pub async fn run(ctx: &Context, args: PatstatArgs) -> Result<()> {
             from_year,
             to_year,
         } => portfolio(ctx, &applicant, from_year, to_year).await,
+        PatstatCommand::Query {
+            sql,
+            question,
+            retry_of,
+        } => query(ctx, &sql, question, retry_of).await,
+        PatstatCommand::Docs {
+            section,
+            workflow,
+            endpoint,
+            compact,
+        } => docs(ctx, section, workflow, endpoint, compact).await,
     }
+}
+
+async fn query(
+    ctx: &Context,
+    sql: &str,
+    question: Option<String>,
+    retry_of: Option<String>,
+) -> Result<()> {
+    let mut body = json!({ "sql": sql });
+    if let Some(question) = question {
+        body["question"] = json!(question);
+    }
+    if let Some(retry_of) = retry_of {
+        body["retryOf"] = json!(retry_of);
+    }
+
+    let envelope = ctx
+        .execute_json_envelope(ctx.post("/v1/patstat/query", &body))
+        .await?;
+    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
+        output::print_json(&envelope);
+        return Ok(());
+    }
+
+    let http_ok = envelope.get("ok").and_then(Value::as_bool) == Some(true);
+    let resp_body = envelope.get("body").cloned().unwrap_or(Value::Null);
+
+    if !http_ok {
+        return Err(render_query_error(ctx, &envelope, &resp_body));
+    }
+
+    if ctx.output_format == "json" {
+        output::print_json(&resp_body);
+        return Ok(());
+    }
+
+    print_query_result(&resp_body);
+    Ok(())
+}
+
+/// Typed rendering for the guarded-SQL error family. Every `patstat_sql_*`
+/// message already carries the exact parser/Postgres detail plus a recovery
+/// line (the retry prompt) — it is relayed VERBATIM, never rephrased, with
+/// the one-retry contract appended. `patstat_busy` is a back-off signal
+/// (retry the SAME SQL after Retry-After), never a rewrite signal.
+fn render_query_error(ctx: &Context, envelope: &Value, body: &Value) -> anyhow::Error {
+    let code = body
+        .pointer("/error/code")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+
+    if code.starts_with("patstat_sql_") || code == "patstat_busy" {
+        if ctx.output_format == "json" {
+            output::print_json(body);
+        } else {
+            let message = body
+                .pointer("/error/message")
+                .and_then(Value::as_str)
+                .unwrap_or("Guarded SQL rejected.");
+            println!("Guarded SQL rejected ({code}): {message}");
+            for key in ["sqlstate", "position", "hint", "detail", "relations", "estimated_cost", "cost_ceiling", "row_cap", "timeout_ms"] {
+                if let Some(value) = body.pointer(&format!("/error/{key}")) {
+                    println!("  {key}: {value}");
+                }
+            }
+            println!();
+            if code == "patstat_busy" {
+                println!("Back off and retry the SAME SQL — this is load, not a problem with the query.");
+            } else {
+                println!(
+                    "Fix the SQL once per the instruction above and re-run with --retry-of {code}; \
+                     after a second failure, stop and report the error."
+                );
+            }
+        }
+    } else if code == "patstat_unavailable" {
+        render_unavailable(ctx, body);
+    } else {
+        render_generic_error(ctx, envelope);
+    }
+
+    match envelope.get("status").and_then(Value::as_u64) {
+        Some(status) => crate::client::PrintedError::with_status(status as u16).into(),
+        None => crate::client::PrintedError::new().into(),
+    }
+}
+
+/// Render guarded-SQL rows as a table with generic columns (taken from the
+/// first row), then rowCount, warn-band warnings, and the data-edition
+/// provenance line. The interpretation contract rides along: state the
+/// counting unit/year basis chosen, and always name the edition.
+fn print_query_result(result: &Value) {
+    let rows = result
+        .get("rows")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    if rows.is_empty() {
+        println!("0 rows — the filters may be too narrow, or the entity/CPC prefix may not match.");
+        println!("Probe candidates before assuming absence (see: flowleap patstat docs --workflow guarded-sql).");
+    } else {
+        let keys: Vec<String> = rows[0]
+            .as_object()
+            .map(|obj| obj.keys().cloned().collect())
+            .unwrap_or_default();
+        let columns: Vec<(&str, &str)> = keys.iter().map(|k| (k.as_str(), k.as_str())).collect();
+        output::print_table(&rows, &columns);
+    }
+
+    if let Some(row_count) = result.get("rowCount").and_then(Value::as_u64) {
+        println!("
+Rows: {row_count}");
+    }
+    if let Some(warnings) = result.get("warnings").and_then(Value::as_array) {
+        for warning in warnings {
+            let code = warning.get("code").and_then(Value::as_str).unwrap_or("warning");
+            let message = warning.get("message").and_then(Value::as_str).unwrap_or("");
+            println!("Warning ({code}): {message}");
+        }
+    }
+    if let Some(edition) = result.get("data_edition").and_then(Value::as_str) {
+        println!("Source: PATSTAT data edition {edition} — state the interpretation used (counting unit, year basis) and name this edition when quoting the numbers.");
+    }
+}
+
+async fn docs(
+    ctx: &Context,
+    section: Option<String>,
+    workflow: Option<String>,
+    endpoint: Option<String>,
+    compact: bool,
+) -> Result<()> {
+    let path = if let Some(section) = &section {
+        format!("/v1/patstat/docs?section={section}")
+    } else if let Some(workflow) = &workflow {
+        format!("/v1/patstat/docs?workflow={workflow}")
+    } else if let Some(endpoint) = &endpoint {
+        format!("/v1/patstat/docs?endpoint={endpoint}")
+    } else if compact {
+        "/v1/patstat/docs?format=compact".to_string()
+    } else {
+        "/v1/patstat/docs".to_string()
+    };
+
+    let envelope = ctx.execute_json_envelope(ctx.get(&path)).await?;
+    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
+        output::print_json(&envelope);
+        return Ok(());
+    }
+
+    let http_ok = envelope.get("ok").and_then(Value::as_bool) == Some(true);
+    let resp_body = envelope.get("body").cloned().unwrap_or(Value::Null);
+
+    if !http_ok {
+        let code = resp_body
+            .pointer("/error/code")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if code == "patstat_unavailable" {
+            render_unavailable(ctx, &resp_body);
+        } else {
+            render_generic_error(ctx, &envelope);
+        }
+        return Err(match envelope.get("status").and_then(Value::as_u64) {
+            Some(status) => crate::client::PrintedError::with_status(status as u16).into(),
+            None => crate::client::PrintedError::new().into(),
+        });
+    }
+
+    // The semantic model ships as verbatim YAML — print it raw in human mode
+    // so nothing is lost between the backend's single source and the agent.
+    if ctx.output_format != "json" {
+        if let Some(yaml) = resp_body.pointer("/data/yaml").and_then(Value::as_str) {
+            if let Some(edition) = resp_body.pointer("/data/data_edition").and_then(Value::as_str) {
+                println!("# Loaded edition: {edition}");
+            }
+            println!("{yaml}");
+            return Ok(());
+        }
+    }
+
+    output::print_json(&resp_body);
+    Ok(())
 }
 
 async fn portfolio(
