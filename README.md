@@ -148,7 +148,7 @@ To stay current:
 | `legal` | Search patent-law reference documents (EPC, EPO Guidelines, MPEP, …) |
 | `citation` | USPTO enriched citation data: search, forward, stats, novelty |
 | `analytics` | Full-corpus patent analytics (filing trends, countries, assignees, CPC) |
-| `patstat` | Aggregate PATSTAT portfolio analytics for one applicant (filings by year/office/grant status) |
+| `patstat` | PATSTAT analytics: portfolio aggregates for one applicant, guarded SQL, and `graph` — a named node and the relationships around it |
 | `ocr` | Extract text from a PDF, image, or document via OCR (file or URL) |
 | `analyze-claim` | Analyze a patent claim: keywords, IPC codes, search queries, elements |
 | `compare` | Compare 2–10 patents side by side (bibliography) |
@@ -187,6 +187,7 @@ flowleap legal search "doctrine of equivalents" --limit 10
 flowleap citation search 16000001 --size 20
 flowleap analytics --keyword battery --country US --date-from 2020-01-01
 flowleap patstat portfolio Siemens --from-year 2015 --to-year 2024
+flowleap patstat graph resolve EP3477840
 
 # Documents and claims
 flowleap ocr ./office-action.pdf > office-action.md

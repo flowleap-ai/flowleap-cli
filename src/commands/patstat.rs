@@ -5,6 +5,8 @@ use serde_json::{json, Value};
 use crate::client::Context;
 use crate::output;
 
+mod graph;
+
 #[derive(Parser)]
 #[command(after_help = "Examples:
   flowleap patstat portfolio Siemens
@@ -12,12 +14,15 @@ use crate::output;
   flowleap patstat docs --section semantic-model
   flowleap patstat docs --section examples
   flowleap patstat query \"SELECT office, COUNT(DISTINCT family_id) AS inventions FROM flowleap.applications GROUP BY office\" --question \"filings by office\"
+  flowleap patstat graph resolve EP3477840
 
 Note: an ambiguous applicant name (matching several distinct corporate
 entities) is never merged or auto-picked — re-run with one exact candidate
 name from the list the command prints. For query, fetch
 `docs --section semantic-model` first and follow the guarded-sql workflow
-(`docs --workflow guarded-sql`): one informed retry per error, then stop.")]
+(`docs --workflow guarded-sql`): one informed retry per error, then stop.
+Criteria shape picks the surface: aggregate counts by structured criteria are
+portfolio/query, a named node and its relationships is `graph`.")]
 pub struct PatstatArgs {
     #[command(subcommand)]
     command: PatstatCommand,
@@ -81,6 +86,12 @@ enum PatstatCommand {
         #[arg(long)]
         compact: bool,
     },
+
+    /// Graph Analytics over the PATSTAT snapshot: a named node and the
+    /// relationships around it — citation networks, family coverage,
+    /// applicant landscapes — every edge carrying a confidence tag and
+    /// row-level provenance. Aggregate counts stay with portfolio/query.
+    Graph(graph::GraphArgs),
 }
 
 pub async fn run(ctx: &Context, args: PatstatArgs) -> Result<()> {
@@ -103,6 +114,7 @@ pub async fn run(ctx: &Context, args: PatstatArgs) -> Result<()> {
             endpoint,
             compact,
         } => docs(ctx, section, workflow, endpoint, compact).await,
+        PatstatCommand::Graph(args) => graph::run(ctx, args).await,
     }
 }
 
@@ -164,14 +176,26 @@ fn render_query_error(ctx: &Context, envelope: &Value, body: &Value) -> anyhow::
                 .and_then(Value::as_str)
                 .unwrap_or("Guarded SQL rejected.");
             println!("Guarded SQL rejected ({code}): {message}");
-            for key in ["sqlstate", "position", "hint", "detail", "relations", "estimated_cost", "cost_ceiling", "row_cap", "timeout_ms"] {
+            for key in [
+                "sqlstate",
+                "position",
+                "hint",
+                "detail",
+                "relations",
+                "estimated_cost",
+                "cost_ceiling",
+                "row_cap",
+                "timeout_ms",
+            ] {
                 if let Some(value) = body.pointer(&format!("/error/{key}")) {
                     println!("  {key}: {value}");
                 }
             }
             println!();
             if code == "patstat_busy" {
-                println!("Back off and retry the SAME SQL — this is load, not a problem with the query.");
+                println!(
+                    "Back off and retry the SAME SQL — this is load, not a problem with the query."
+                );
             } else {
                 println!(
                     "Fix the SQL once per the instruction above and re-run with --retry-of {code}; \
@@ -215,12 +239,17 @@ fn print_query_result(result: &Value) {
     }
 
     if let Some(row_count) = result.get("rowCount").and_then(Value::as_u64) {
-        println!("
-Rows: {row_count}");
+        println!(
+            "
+Rows: {row_count}"
+        );
     }
     if let Some(warnings) = result.get("warnings").and_then(Value::as_array) {
         for warning in warnings {
-            let code = warning.get("code").and_then(Value::as_str).unwrap_or("warning");
+            let code = warning
+                .get("code")
+                .and_then(Value::as_str)
+                .unwrap_or("warning");
             let message = warning.get("message").and_then(Value::as_str).unwrap_or("");
             println!("Warning ({code}): {message}");
         }
@@ -278,7 +307,10 @@ async fn docs(
     // so nothing is lost between the backend's single source and the agent.
     if ctx.output_format != "json" {
         if let Some(yaml) = resp_body.pointer("/data/yaml").and_then(Value::as_str) {
-            if let Some(edition) = resp_body.pointer("/data/data_edition").and_then(Value::as_str) {
+            if let Some(edition) = resp_body
+                .pointer("/data/data_edition")
+                .and_then(Value::as_str)
+            {
                 println!("# Loaded edition: {edition}");
             }
             println!("{yaml}");
