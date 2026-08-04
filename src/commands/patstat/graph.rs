@@ -20,14 +20,21 @@ use crate::output;
 #[derive(Parser)]
 #[command(after_help = "Examples:
   flowleap patstat graph resolve EP3477840
-  flowleap patstat graph resolve US5960411
   flowleap patstat graph resolve \"Siemens\"
-  flowleap --json patstat graph resolve EP3477840
+  flowleap patstat graph neighborhood EP3477840
+  flowleap patstat graph neighborhood pat:56123456 --depth 2 --edge-types cites,cited_by
+  flowleap patstat graph path EP3477840 US5960411 --max-hops 3
+  flowleap patstat graph explain EP3477840 --token-budget 4000
+  flowleap --json patstat graph explain pat:56123456
 
 Criteria shape picks the engine: a named node and its relationships (citations,
 family, co-applicants) is a graph question; aggregate counts by structured
 criteria stay with `patstat portfolio` / `patstat query`, and free-text keyword
 discovery stays with `patent search`.
+
+Node arguments take a `pat:<appln_id>` id or a publication number. If a number
+is ambiguous the verbs refuse it rather than guess — run `graph resolve` first
+and pass the `pat:` id of the one you meant.
 
 Graph answers are PATSTAT snapshot data — for current legal status use the live
 document tools (`flowleap ops legal`, `flowleap uspto`). A publication number
@@ -48,11 +55,185 @@ enum GraphCommand {
         /// Publication number (e.g. EP3477840, US5960411) or applicant name
         query: String,
     },
+
+    /// Bounded expansion around one node: the edges reachable in 1–2 hops,
+    /// examiner citations ranked first, each carrying its confidence tag and
+    /// `at=` provenance ref. Per-hop cap 200 with loud TRUNCATED notices —
+    /// narrow with --edge-types rather than reading a capped list as complete.
+    Neighborhood {
+        /// `pat:<appln_id>` node id, or a publication number to resolve
+        node: String,
+
+        /// Hops to expand: 1 or 2 (default 1; 2 is much wider)
+        #[arg(long)]
+        depth: Option<i32>,
+
+        /// Comma-separated edge subset, e.g. cites,cited_by. Full set: cites,
+        /// cited_by, in_family, has_applicant, has_inventor, classified_as,
+        /// claims_priority
+        #[arg(long)]
+        edge_types: Option<String>,
+
+        /// Token budget for the text serialization, clamped to 100–20000
+        /// (default 2000). Trims `text` only — `--json` data stays complete.
+        #[arg(long)]
+        token_budget: Option<i32>,
+    },
+
+    /// Shortest citation/family path between two patents (bidirectional BFS).
+    /// Absence of a path is not proof of unrelatedness — unrelated technology
+    /// areas commonly have none, and the search itself reports its own limits.
+    Path {
+        /// First endpoint: `pat:<appln_id>` or a publication number
+        a: String,
+
+        /// Second endpoint: `pat:<appln_id>` or a publication number
+        b: String,
+
+        /// Maximum hops to search: 1–4 (default 4)
+        #[arg(long)]
+        max_hops: Option<i32>,
+
+        /// Token budget for the text serialization, clamped to 100–20000
+        /// (default 2000)
+        #[arg(long)]
+        token_budget: Option<i32>,
+    },
+
+    /// One node's card plus its top connections, with everything beyond the
+    /// top grouped by relation carrying TRUE counts — the "why does this node
+    /// matter" view.
+    Explain {
+        /// `pat:<appln_id>` node id, or a publication number to resolve
+        node: String,
+
+        /// Token budget for the text serialization, clamped to 100–20000
+        /// (default 2000)
+        #[arg(long)]
+        token_budget: Option<i32>,
+    },
 }
 
 pub async fn run(ctx: &Context, args: GraphArgs) -> Result<()> {
     match args.command {
         GraphCommand::Resolve { query } => resolve(ctx, &query).await,
+        GraphCommand::Neighborhood {
+            node,
+            depth,
+            edge_types,
+            token_budget,
+        } => {
+            verb(
+                ctx,
+                "neighborhood",
+                &[
+                    ("node", Some(node)),
+                    ("depth", depth.map(|depth| depth.to_string())),
+                    ("edge_types", edge_types),
+                    ("token_budget", token_budget.map(|n| n.to_string())),
+                ],
+            )
+            .await
+        }
+        GraphCommand::Path {
+            a,
+            b,
+            max_hops,
+            token_budget,
+        } => {
+            verb(
+                ctx,
+                "path",
+                &[
+                    ("a", Some(a)),
+                    ("b", Some(b)),
+                    ("max_hops", max_hops.map(|hops| hops.to_string())),
+                    ("token_budget", token_budget.map(|n| n.to_string())),
+                ],
+            )
+            .await
+        }
+        GraphCommand::Explain { node, token_budget } => {
+            verb(
+                ctx,
+                "explain",
+                &[
+                    ("node", Some(node)),
+                    ("token_budget", token_budget.map(|n| n.to_string())),
+                ],
+            )
+            .await
+        }
+    }
+}
+
+/// Run one agent verb: `GET /v1/patstat/graph/<verb>` with the caller's
+/// parameters, then relay the result.
+///
+/// The three verbs differ only in which parameters they take — the response
+/// contract (`{ success, text, data }`), the error family, and the relay
+/// discipline are identical, so they share one execution path. Bounds
+/// (`depth` 1–2, `max_hops` 1–4, `token_budget` 100–20000) are deliberately
+/// NOT re-checked here: the backend owns them, and relaying its typed
+/// `patstat_invalid_request` keeps one source of truth instead of two that
+/// can drift.
+async fn verb(ctx: &Context, verb: &str, params: &[(&str, Option<String>)]) -> Result<()> {
+    let path = format!("/v1/patstat/graph/{verb}?{}", query_string(params));
+
+    let envelope = ctx.execute_json_envelope(ctx.get(&path)).await?;
+    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
+        output::print_json(&envelope);
+        return Ok(());
+    }
+
+    let http_ok = envelope.get("ok").and_then(Value::as_bool) == Some(true);
+    let resp_body = envelope.get("body").cloned().unwrap_or(Value::Null);
+
+    if !http_ok {
+        return Err(render_graph_error(ctx, &envelope, &resp_body));
+    }
+
+    if ctx.output_format == "json" {
+        output::print_json(&resp_body);
+    } else {
+        print_verb_text(&resp_body);
+    }
+
+    Ok(())
+}
+
+/// Query string from the parameters that are actually set. Absent flags are
+/// omitted entirely rather than sent as defaults, so the backend's documented
+/// defaults stay the single source of truth.
+fn query_string(params: &[(&str, Option<String>)]) -> String {
+    params
+        .iter()
+        .filter_map(|(key, value)| {
+            value
+                .as_ref()
+                .map(|value| format!("{key}={}", encode_url_component(value)))
+        })
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// Human mode is the backend `text` field printed VERBATIM.
+///
+/// That string is already the product the verbs exist to produce: a
+/// token-budgeted, line-per-fact serialization where every edge carries its
+/// confidence tag and `at=` provenance ref, labels are quoted as inert data
+/// (injection-guarded), the Data Edition rides in the header, and truncation
+/// is announced in-band. Re-rendering it here could only lose those
+/// guarantees, so nothing is reformatted, summarized, or reordered — a
+/// `found: false` path prints its own NOT FOUND line and exits 0, because a
+/// searched-and-absent answer is a successful answer.
+fn print_verb_text(body: &Value) {
+    match body.get("text").and_then(Value::as_str) {
+        Some(text) => println!("{text}"),
+        // No `text` field means this is not the response shape the verb
+        // contract promises — show the caller what actually arrived rather
+        // than printing nothing.
+        None => output::print_json(body),
     }
 }
 
