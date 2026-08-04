@@ -7,10 +7,10 @@ description: Portfolio Analytics AND guarded SQL over the PATSTAT snapshot — s
 
 Auth and global flags: see `flowleap-shared`.
 
-## Topic Analytics vs Portfolio Analytics — routing rule
+## Which engine? — the three-way routing rule
 
-FlowLeap runs two aggregate-analytics engines, split by *criteria shape*, not
-by metric:
+FlowLeap runs three analytics engines, split by *criteria shape*, not by
+metric:
 
 - **Topic Analytics** (`flowleap analytics`, the Google-Patents corpus
   engine) — the question's essential criterion is **free-text keywords** over
@@ -20,15 +20,24 @@ by metric:
   engine) — the question is expressible in **structured criteria**: named
   applicant (entity-resolved, harmonized names), CPC/IPC class, office, year,
   family, grant status. Family-level counting, zero marginal cost.
+- **Graph Analytics** (`flowleap patstat graph …` → `flowleap-patstat-graph`)
+  — the question is about **a named node and the relationships around it**:
+  who cites EP3477840, the citation/family path between two patents, where a
+  family has coverage, an applicant's co-applicant network. Typed nodes and
+  edges, each with a confidence tag and row-level provenance.
 
-Routing rule: if the question needs free text, use `flowleap analytics`; if
-it is structured criteria — especially a named company — use
-`flowleap patstat`. Individual documents (one known publication or
-application) are neither — use the search/retrieval skills (`flowleap-patent`,
-`flowleap-uspto`, `flowleap-ops`). Entity-centric *graph* questions about a
-specific patent or applicant — citation neighborhood, family coverage, the
-path between two patents, a landscape as typed nodes/edges with provenance —
-belong to `flowleap-patstat-graph` (the PATSTAT graph engine), not here.
+Routing rule: free text → `flowleap analytics`; structured criteria,
+especially a named company → `flowleap patstat`; a *connection* rather than a
+count → `flowleap-patstat-graph`. If the answer is a table of counts it is
+here; if it is who-links-to-what, it is traversal — go across. Individual
+documents (one known publication or application) are none of the three — use
+the search/retrieval skills (`flowleap-patent`, `flowleap-uspto`,
+`flowleap-ops`).
+
+Note that `patstat portfolio` and `graph applicant` draw entity boundaries
+differently: `portfolio` groups by name-prefix aliases, `graph applicant`
+takes one harmonized `psn_id`. They may disagree about where one company ends
+and another begins — always say which produced a number.
 
 ## Portfolio
 
