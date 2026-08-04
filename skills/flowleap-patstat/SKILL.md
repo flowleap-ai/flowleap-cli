@@ -25,7 +25,10 @@ Routing rule: if the question needs free text, use `flowleap analytics`; if
 it is structured criteria — especially a named company — use
 `flowleap patstat`. Individual documents (one known publication or
 application) are neither — use the search/retrieval skills (`flowleap-patent`,
-`flowleap-uspto`, `flowleap-ops`).
+`flowleap-uspto`, `flowleap-ops`). Entity-centric *graph* questions about a
+specific patent or applicant — citation neighborhood, family coverage, the
+path between two patents, a landscape as typed nodes/edges with provenance —
+belong to `flowleap-patstat-graph` (the PATSTAT graph engine), not here.
 
 ## Portfolio
 
