@@ -188,6 +188,9 @@ flowleap citation search 16000001 --size 20
 flowleap analytics --keyword battery --country US --date-from 2020-01-01
 flowleap patstat portfolio Siemens --from-year 2015 --to-year 2024
 flowleap patstat graph resolve EP3477840
+flowleap patstat graph neighborhood EP3477840 --depth 2 --edge-types cites,cited_by
+flowleap patstat graph path EP3477840 US5960411
+flowleap patstat graph explain pat:56123456
 
 # Documents and claims
 flowleap ocr ./office-action.pdf > office-action.md
