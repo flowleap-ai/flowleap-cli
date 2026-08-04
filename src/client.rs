@@ -472,6 +472,24 @@ pub fn print_rate_limit_hint_box(hint: &Value) {
     eprintln!("└{}", "─".repeat(64));
 }
 
+/// Where the effective credential comes from, in the same precedence order
+/// [`Credentials::auth_header`] resolves it: environment first, then stored
+/// config. Shared by `auth status` and `doctor` so the two can never name the
+/// same credential differently.
+pub fn credential_source(ctx: &Context) -> &'static str {
+    if std::env::var("FLOWLEAP_TOKEN").is_ok() {
+        "env-token"
+    } else if std::env::var("FLOWLEAP_API_KEY").is_ok() {
+        "env-api-key"
+    } else if ctx.credentials.token.is_some() {
+        "config-token"
+    } else if ctx.credentials.api_key.is_some() {
+        "config-api-key"
+    } else {
+        "missing"
+    }
+}
+
 pub fn encode_url_component(value: &str) -> String {
     let mut encoded = String::new();
     for byte in value.bytes() {

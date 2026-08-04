@@ -87,9 +87,26 @@ requires an OAuth session — API tokens cannot mint further tokens
 
 ```bash
 flowleap auth status
+flowleap --json auth status
 ```
 
-Shows: base URL, authentication method, default model, and user profile (if authenticated).
+Shows base URL, credential source, default model, and — when the credential
+works — the user profile. It **verifies** the credential against the backend
+rather than reporting that one is merely stored, so an expired token is caught
+here instead of at the next data command.
+
+Branch on `verification.state` (or the exit code):
+
+| State | Exit | What to do |
+|-------|------|------------|
+| `valid` | 0 | Proceed. |
+| `rejected` | 3 | The credential is expired, revoked, or wrong. A human must re-run `flowleap auth login`; do not retry. |
+| `absent` | 3 | No credential configured — see the login options above. |
+| `unverified` | 7 | The backend could not be reached, so validity is **unknown**. Retry later; do NOT tell the user their credential is invalid. |
+
+`verification.checked` is `true` only when a live check reached a verdict.
+`unverified` means no conclusion was reached — treat it as "unknown", never as
+a failure of the credential itself.
 
 ### Logout
 

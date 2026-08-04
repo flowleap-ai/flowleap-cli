@@ -74,6 +74,14 @@ Token lifecycle: `flowleap auth login` (OAuth) → `flowleap auth create-token
 --name <n> [--store]` → `flowleap auth tokens` / `flowleap auth revoke-token <id>`.
 API tokens cannot mint further tokens (backend-enforced).
 
+`flowleap auth status` **verifies** the credential (it probes `/api/profile`),
+so it reports whether the credential works, not merely that one is stored:
+`verification.state` is `valid` (exit 0), `rejected` — present but refused with
+a 401 (exit 3), `absent` (exit 3), or `unverified` when the check could not be
+completed (exit 7; `--dry-run` keeps exit 0). Read `verification.checked` before
+trusting a state: an unreachable backend yields `unverified`, never `rejected`,
+because the absence of a verdict is not evidence against the credential.
+
 All `/v1/*` patent-data routes additionally require an active subscription
 (402 `subscription_required` with an `upgradeUrl`) and share a fixed
 60 requests/minute/user rate limit (429 + `Retry-After`, surfaced as

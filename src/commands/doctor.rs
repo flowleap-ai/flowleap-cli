@@ -418,15 +418,5 @@ fn classify_error(message: &str) -> (&'static str, &'static str) {
 }
 
 fn auth_source(ctx: &Context) -> &'static str {
-    if std::env::var("FLOWLEAP_TOKEN").is_ok() {
-        "env-token"
-    } else if std::env::var("FLOWLEAP_API_KEY").is_ok() {
-        "env-api-key"
-    } else if ctx.credentials.token.is_some() {
-        "config-token"
-    } else if ctx.credentials.api_key.is_some() {
-        "config-api-key"
-    } else {
-        "missing"
-    }
+    crate::client::credential_source(ctx)
 }
