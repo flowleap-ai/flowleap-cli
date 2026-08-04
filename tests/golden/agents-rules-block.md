@@ -103,10 +103,10 @@ flowleap patstat query "SELECT office, COUNT(DISTINCT family_id) AS inventions F
 flowleap --json tools run patstat_portfolio applicant="<applicant name>"
 ```
 
-#### flowleap-patstat-graph — Typed graph queries over the PATSTAT snapshot — citation networks, worldwide family/coverage, applicant landscapes, shortest citation/family paths, and node explanations, every edge carrying a confidence tag (EXTRACTED/INFERRED/AMBIGUOUS) and a PATSTAT row provenance ref.
+#### flowleap-patstat-graph — Graph Analytics over the PATSTAT snapshot — a named node and the relationships around it.
 
 ```bash
-flowleap --json api request get "/v1/patstat/graph/patent/EP3477840"
+flowleap patstat graph resolve EP3477840
 ```
 
 #### flowleap-shared — Shared reference for every FlowLeap skill — authentication (OAuth device flow, fl_pat_ personal API tokens), credential storage, config precedence, global flags, and output formats.

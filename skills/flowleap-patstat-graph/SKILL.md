@@ -1,68 +1,116 @@
 ---
 name: flowleap-patstat-graph
-description: Typed graph queries over the PATSTAT snapshot — citation networks, worldwide family/coverage, applicant landscapes, shortest citation/family paths, and node explanations, every edge carrying a confidence tag (EXTRACTED/INFERRED/AMBIGUOUS) and a PATSTAT row provenance ref. Trigger when an agent needs a specific patent's citation neighborhood or family coverage, "how are patent X and patent Y connected", why a patent matters (connection profile), or an applicant's landscape as typed graph data — anything entity-centric with provenance, as opposed to corpus aggregates (flowleap-patstat) or document retrieval (flowleap-patent/flowleap-ops).
+description: Graph Analytics over the PATSTAT snapshot — a named node and the relationships around it. Worldwide DOCDB citation networks (who cites a patent, examiner vs applicant origin), citation/family paths between two patents, family coverage, and an applicant's co-applicant network with top CPC and jurisdictions, every edge carrying a confidence tag (EXTRACTED/INFERRED/AMBIGUOUS) and a PATSTAT row provenance ref. Trigger when an agent needs a traversal answer about a specific patent or applicant — "who cites EP3477840", "how are patent X and patent Y connected", "why does this patent matter", "who does this company file with", where a family has coverage — as opposed to corpus aggregate counts (flowleap-patstat), free-text keyword analytics (flowleap analytics), or document retrieval (flowleap-patent/flowleap-ops).
 ---
 
-# FlowLeap Patstat Graph (Graph Engine)
+# FlowLeap Patstat Graph (Graph Analytics)
 
-Auth and global flags: see `flowleap-shared`. All endpoints are plain
-authenticated GETs — call them through the raw API passthrough (method is
-lowercase):
+Auth and global flags: see `flowleap-shared`. Six native commands under
+`flowleap patstat graph` — no raw API passthrough needed.
+
+## Routing: which engine answers this?
+
+FlowLeap runs three analytics engines, split by **criteria shape**:
+
+| The question's essential criterion | Engine | Skill |
+|---|---|---|
+| Free-text keywords over title/abstract | Topic Analytics | `flowleap analytics` |
+| Structured criteria → a table of counts | Portfolio Analytics | `flowleap-patstat` |
+| **A named node and its relationships** | **Graph Analytics** | **this skill** |
+
+If the answer is a count, go to `flowleap-patstat`. If it is a *connection* —
+who cites what, what links these two patents, who co-files with whom — it is
+here. One known document's text, claims, or legal status is neither: use
+`flowleap-patent` / `flowleap-ops` / `flowleap-uspto`.
+
+## The six commands
 
 ```bash
-flowleap --json api request get "/v1/patstat/graph/patent/EP3477840"
+flowleap patstat graph resolve EP3477840
+flowleap patstat graph patent EP3477840
+flowleap patstat graph applicant 98765
+flowleap patstat graph neighborhood pat:56123456 --depth 2 --edge-types cites,cited_by
+flowleap patstat graph path EP3477840 US5960411 --max-hops 3
+flowleap patstat graph explain EP3477840 --token-budget 4000
 ```
 
-The passthrough wraps every response as `{ ok, status, body, contentType }` —
-the endpoint's payload is under **`body`** (so a verb's agent text is
-`body.text`, a composite's metadata is `body.meta`, and error envelopes are
-`body.error`). Against a non-production backend (pre-merge testing), add
-`--base-url http://localhost:8000`.
+| Command | Answers |
+|---|---|
+| `resolve <query>` | Number → its `pat:<appln_id>` anchor; free text → ranked applicant entities with `psn_id`, largest portfolio first |
+| `patent <number>` | The whole patent picture in one call: anchor, backward/forward citations, family, applicants/inventors/CPC, priorities |
+| `applicant <psn_id>` | One harmonized entity: filings by year, top CPC, jurisdictions, co-applicants |
+| `neighborhood <node>` | Bounded 1–2 hop expansion, examiner citations ranked first |
+| `path <a> <b>` | Shortest citation/family path between two patents |
+| `explain <node>` | Node card + top connections, the remainder grouped with TRUE counts |
 
-## Routing rule (vs. the other PATSTAT skills)
+Node ids are `pat:<appln_id>`, `person:<psn_id>`, `family:<docdb_family_id>`,
+`cpc:<symbol>`.
 
-- **This skill** — entity-centric graph questions about *specific* patents or
-  applicants: who cites EP3477840, where its family has coverage, the path
-  between two patents, an applicant's landscape as structured data.
-- **`flowleap-patstat`** — corpus *aggregates* by structured criteria
-  (portfolio counts, guarded SQL for landscapes-by-numbers). If the answer is
-  a table of counts, go there.
-- **`flowleap-patent` / `flowleap-ops` / `flowleap-uspto`** — document
-  retrieval (biblio, claims, full text, legal status) for a known publication.
+## Start with resolve
 
-## The six endpoints
+`resolve` is how a human input becomes a node id, and the graph verbs
+**refuse** rather than guess:
 
-| Endpoint | Query params | Purpose |
-|---|---|---|
-| `/v1/patstat/graph/resolve` | `q` (number or free text) | Number → the patent anchor; text → ranked applicant entities, largest portfolio first |
-| `/v1/patstat/graph/patent/:number` | — | Full patent view: anchor, backward/forward citations, family, header (applicants/inventors/CPC) |
-| `/v1/patstat/graph/applicant/:psnId` | — | Applicant landscape: filings/year, top CPC, jurisdictions, co-applicants |
-| `/v1/patstat/graph/neighborhood` | `node`, `depth` (≤2), `edge_types` (csv), `token_budget` | Bounded expansion around any node |
-| `/v1/patstat/graph/path` | `a`, `b`, `max_hops` (≤4), `token_budget` | Shortest citation/family path between two patents |
-| `/v1/patstat/graph/explain` | `node`, `token_budget` | Node card + top connections, remainder grouped with true counts |
+- An ambiguous publication number is rejected with HTTP 400
+  `patstat_invalid_request` whose message names the candidates in prose. The
+  verbs never prompt — run `resolve` and pass the `pat:` id you meant.
+- `applicant` takes a strict numeric `psn_id`, which only `resolve <name>`
+  produces. A company name will not work there.
+- Passing a company name to a verb is refused the same way ("not a patent
+  node").
 
-Node ids: `pat:<appln_id>`, `person:<psn_id>`, `family:<docdb_family_id>`,
-`cpc:<symbol>`. `resolve` turns human inputs into these ids — start there
-when you only have a publication number or a company name.
+`resolve` on a company name is a **pick-one list, not an answer** — present
+the ranked candidates and let the user choose. It exits 0. An ambiguous
+*number* exits 1, so a script can never mistake a pick-one prompt for a
+resolved anchor.
 
-## Reading responses
+## Reading output
 
-The verb endpoints (`neighborhood`, `path`, `explain`) return
-`{ success, text, data }`:
+**Human mode, `neighborhood` / `path` / `explain`** — the command prints the
+backend's line-per-fact `text` verbatim:
 
-- **`text`** — line-per-fact plain text built for agent consumption:
-  `EP3477840 --cites [EXTRACTED 1.0]--> DE4302443 at=tls212:530028653`.
-  Quote these lines (with their confidence tag and `at=` ref) rather than
-  re-deriving facts from `data`. Pass `token_budget` (default 2000) and
-  respect `TRUNCATED` notices — they include narrowing hints specific to the
-  verb; never present a truncated listing as complete.
-- **`data`** — the typed graph (nodes/edges) when you need structure.
+```
+EP3477840 --cites [EXTRACTED 1.0]--> DE4302443 at=tls212:530028653
+```
 
-The composite endpoints (`patent/:number`, `applicant/:psnId`) return typed
-JSON only. Same rules apply to their `meta`: `meta.truncation` lists every
-capped listing with its TRUE total ("showing 200 of 2,244" — say so),
-`meta.data_quality` flags sentinel/unknown dates (PATSTAT stores unknown
-years as 9999 — never quote them as years).
+Quote those lines with their confidence tag and `at=` ref rather than
+re-deriving facts. The Data Edition is in the header, and `TRUNCATED` notices
+carry verb-specific narrowing hints — never present a truncated listing as
+complete.
+
+**Human mode, `patent` / `applicant`** — section tables, in a fixed order.
+`graph patent`: Anchor → Applicants → Inventors → CPC Classifications →
+Backward Citations (Patents → Non-Patent Literature → Unresolved) → Forward
+Citations → DOCDB Family → Priority Claims → data-quality flags → edition and
+attribution footer. `graph applicant`: entity card → Filings by Year → Top CPC
+→ Jurisdictions → Co-Applicants → footer.
+
+Every section header prints even when empty, showing `(none recorded)` — an
+absent section means no data, never a parsing slip. Truncation reads literally
+`Showing {shown} of {total} {label}.` — repeat the TRUE total when you quote
+the list. `Filings by Year` is uncapped; do not imply a cap there.
+
+**`--json`, every command** — the backend body exactly as it arrived, with no
+CLI envelope around it. There is no `body` wrapper: read `text`, `data`,
+`meta`, or `error` at the top level.
+
+## Budgets and bounds
+
+- `--token-budget` (default 2000) trims the `text` serialization only; `--json`
+  data stays complete. Out-of-range values are **clamped silently** into
+  100–20000 — never an error, so a huge budget simply gives you the maximum.
+- `--depth` (1 or 2) and `--max-hops` (1–4) are **refused** with a relayed
+  `patstat_invalid_request` message stating the valid range. Read the message
+  rather than guessing.
+- `--edge-types` takes a comma-separated subset of `cites`, `cited_by`,
+  `in_family`, `has_applicant`, `has_inventor`, `classified_as`,
+  `claims_priority`. Narrow with it instead of accepting a capped listing.
+
+`path` reporting `found: false` is a **200 and exit 0** — the search ran and
+there is no path within the hop limit. That is an answer, not a failure, and
+it carries its own caveat: absence is not proof of unrelatedness. Unrelated
+technology areas commonly have no path; raise `--max-hops` only if the
+connection actually matters.
 
 ## Confidence discipline
 
@@ -77,17 +125,35 @@ Every edge carries `confidence`:
 Provenance `at=<table>:<key>` points at the PATSTAT row asserting the
 relationship; carry it when the user needs to verify a claim.
 
-## Ambiguity (422) and errors
+## Errors
 
-Free-text `resolve` returning multiple entities, or an ambiguous publication
-number, is an **interaction step, not a retryable error** — render the ranked
-candidates (they include portfolio sizes and publications for deep-linking)
-and let the user pick; never auto-pick. Other errors follow the FlowLeap
-envelope (`error.code` in the `patstat_*` family); `503` means the graph
-engine's database is unreachable — report it, do not retry-loop.
+| Code | Meaning | What to do |
+|---|---|---|
+| `patstat_invalid_request` (400) | Bad node, ambiguous input, or out-of-range bound | Read the relayed message — it states the fix. Resolve first if ambiguous. |
+| `patstat_patent_ambiguous` (422) | **Composites only**: a number matching several applications, with structured `error.candidates` | Render the candidates; never auto-pick. |
+| `patstat_patent_not_found` / `patstat_entity_not_found` (404) | Nothing matches in the loaded edition | Check the number, or the input may postdate the snapshot. |
+| `patstat_unavailable` (503) | No PATSTAT dataset configured on this deployment | Report plainly; do not retry-loop. |
 
-## Data Edition
+Exit codes follow the CLI-wide table. A `3` means the credential is missing or
+rejected — a human must run `flowleap auth login`; see `flowleap-auth` for the
+verification states.
 
-Like all PATSTAT surfaces, answers are snapshots: carry
-`meta.data_edition` alongside any number you quote, and only compare
-numbers within the same edition.
+## Snapshot honesty
+
+PATSTAT is a named snapshot, not live data. Every result names its Data
+Edition — carry it alongside any number you quote, and only compare numbers
+within the same edition. For **current legal status** (in force, lapsed,
+opposed) the snapshot is the wrong source: use the live document tools
+(`flowleap ops legal`, `flowleap-uspto`).
+
+Two boundaries worth stating to users:
+
+- **`graph applicant` vs `patstat portfolio`** draw entity boundaries
+  differently. `applicant` is one harmonized `psn_id`; `portfolio` groups by
+  name-prefix aliases. They may disagree about where one company ends and
+  another begins — say which one a number came from.
+- **This engine vs `flowleap-citation`** are different citation universes.
+  Here: the worldwide DOCDB citation network from the PATSTAT snapshot, with
+  examiner-vs-applicant origin. There: USPTO office-action enriched citations
+  — US only, with X/Y/A relevance categories. Neither is a superset; pick by
+  whether the question is about worldwide structure or US examiner reasoning.
