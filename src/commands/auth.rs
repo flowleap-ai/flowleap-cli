@@ -476,40 +476,238 @@ async fn logout(session_only: bool) -> Result<()> {
     Ok(())
 }
 
-async fn status(ctx: &Context) -> Result<()> {
-    println!("Base URL:  {}", ctx.config.base_url);
+/// What is actually known about the stored credential.
+///
+/// The distinction that matters is between *present* and *working*: reporting
+/// presence as "Authenticated" is what let an expired token read as healthy
+/// until the next data command 401'd. [`Unverified`] is the honest fourth
+/// state — a credential that could not be checked because the backend was
+/// unreachable is not thereby invalid, and sending someone to re-authenticate
+/// over a dropped connection would not help them.
+///
+/// [`Unverified`]: CredentialState::Unverified
+enum CredentialState {
+    /// No credential in the environment or the config.
+    Absent,
+    /// The backend accepted it and identified the caller.
+    Valid,
+    /// The backend refused it (HTTP 401) — expired, revoked, or wrong.
+    Rejected,
+    /// Present, but validity is unknown: the check could not be completed.
+    Unverified {
+        reason: String,
+        /// The HTTP status when the backend answered but unusably; `None`
+        /// when it was never reached (network failure, or a dry run).
+        http_status: Option<u16>,
+    },
+}
 
-    if ctx.credentials.token.is_some() {
-        println!("Auth:      {} (token)", "Authenticated".green());
-    } else if ctx.credentials.api_key.is_some() {
-        println!("Auth:      {} (API key)", "Authenticated".green());
-    } else {
-        println!("Auth:      {}", "Not authenticated".red());
-        println!("\nRun 'flowleap auth login' to authenticate via OAuth,");
-        println!("or 'flowleap auth login --api-key <key>' to store an API key.");
-    }
-
-    if let Some(ref model) = ctx.config.default_model {
-        println!("Model:     {}", model);
-    }
-
-    // Try to fetch profile if authenticated
-    if ctx.credentials.auth_header().is_some() {
-        let req = ctx.get("/api/profile");
-        match ctx.execute_json(req).await {
-            Ok(profile) => {
-                if let Some(email) = profile.get("email").and_then(|e| e.as_str()) {
-                    println!("Email:     {}", email);
-                }
-                if let Some(name) = profile.get("name").and_then(|n| n.as_str()) {
-                    println!("Name:      {}", name);
-                }
-            }
-            Err(_) => {
-                // Profile fetch is best-effort
-            }
+impl CredentialState {
+    /// The machine-readable verdict for `--json`, and the switch the human
+    /// rendering keys off.
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Absent => "absent",
+            Self::Valid => "valid",
+            Self::Rejected => "rejected",
+            Self::Unverified { .. } => "unverified",
         }
     }
+}
 
-    Ok(())
+async fn status(ctx: &Context) -> Result<()> {
+    let source = crate::client::credential_source(ctx);
+    let (state, profile) = verify_credential(ctx).await;
+
+    let mut report = serde_json::json!({
+        "baseUrl": ctx.config.base_url,
+        "credential": {
+            "present": !matches!(state, CredentialState::Absent),
+            "source": source,
+        },
+        "verification": {
+            "state": state.name(),
+            // Whether a live check actually reached a verdict, so a consumer
+            // can tell "known good" from "assumed good".
+            "checked": matches!(state, CredentialState::Valid | CredentialState::Rejected),
+        },
+    });
+    if let CredentialState::Unverified {
+        reason,
+        http_status,
+    } = &state
+    {
+        report["verification"]["reason"] = serde_json::json!(reason);
+        if let Some(status) = http_status {
+            report["verification"]["httpStatus"] = serde_json::json!(status);
+        }
+    }
+    if let Some(profile) = &profile {
+        let identity: serde_json::Map<String, serde_json::Value> = ["email", "name"]
+            .iter()
+            .filter_map(|key| profile.get(key).map(|v| (key.to_string(), v.clone())))
+            .collect();
+        if !identity.is_empty() {
+            report["profile"] = serde_json::Value::Object(identity);
+        }
+    }
+    if let Some(model) = &ctx.config.default_model {
+        report["defaultModel"] = serde_json::json!(model);
+    }
+
+    if ctx.output_format == "json" {
+        crate::output::print_json(&report);
+    } else {
+        let both_stored = ctx.credentials.token.is_some() && ctx.credentials.api_key.is_some();
+        print_status_human(&state, source, &report, both_stored);
+    }
+
+    // Exit contract (mirrors `doctor`): the report is always fully emitted
+    // first, then the state picks the documented code — 0 verified, 3 when a
+    // credential is missing or refused (both mean "run auth login"), and the
+    // status-derived code otherwise, which is 7 for an unreachable backend.
+    // A dry run sends nothing and so can prove nothing; like doctor's, it
+    // keeps the success exit.
+    if ctx.dry_run {
+        return Ok(());
+    }
+    match state {
+        CredentialState::Valid => Ok(()),
+        CredentialState::Absent | CredentialState::Rejected => Err(
+            crate::client::PrintedError::with_exit_code(crate::client::EXIT_AUTH_REQUIRED).into(),
+        ),
+        CredentialState::Unverified { http_status, .. } => {
+            let code = http_status
+                .map(crate::client::exit_code_for_status)
+                .unwrap_or(crate::client::EXIT_NETWORK);
+            Err(crate::client::PrintedError::with_exit_code(code).into())
+        }
+    }
+}
+
+/// Probe the stored credential against `/api/profile` and report what came
+/// back.
+///
+/// This request was already being made on every `auth status` run — its
+/// result was simply discarded as "best-effort", which is precisely why an
+/// expired token could still print "Authenticated". Validation therefore
+/// costs no extra round trip and needs no opt-in flag: the verdict is just no
+/// longer thrown away.
+///
+/// The probe goes through the normal client path, so a `Rejected` verdict
+/// already accounts for the session-token-to-API-key fallback — it means the
+/// effective credential was refused, not merely the first one tried.
+async fn verify_credential(ctx: &Context) -> (CredentialState, Option<serde_json::Value>) {
+    if ctx.credentials.auth_header().is_none() {
+        return (CredentialState::Absent, None);
+    }
+    if ctx.dry_run {
+        return (
+            CredentialState::Unverified {
+                reason: "Dry run — no request was sent, so the credential was not checked."
+                    .to_string(),
+                http_status: None,
+            },
+            None,
+        );
+    }
+
+    match ctx.execute_json(ctx.get("/api/profile")).await {
+        Ok(profile) => (CredentialState::Valid, Some(profile)),
+        Err(err) => match err.downcast_ref::<crate::client::ApiError>() {
+            Some(api) if api.status == 401 => (CredentialState::Rejected, None),
+            // A paywall answers a different question than authentication: the
+            // credential was accepted and the caller identified, so reporting
+            // it as rejected would send them to `auth login` over an unpaid
+            // subscription, which fixes nothing.
+            Some(api) if api.status == 402 => (CredentialState::Valid, None),
+            Some(api) => (
+                CredentialState::Unverified {
+                    reason: format!(
+                        "The backend answered HTTP {} instead of a profile, so the credential \
+                         could not be checked.",
+                        api.status
+                    ),
+                    http_status: Some(api.status),
+                },
+                None,
+            ),
+            // Network failure, timeout, or an unparseable response: never
+            // reached a verdict, so it is not evidence against the credential.
+            None => (
+                CredentialState::Unverified {
+                    reason: err.to_string(),
+                    http_status: None,
+                },
+                None,
+            ),
+        },
+    }
+}
+
+/// Human rendering, reading the same report `--json` emits so the two views
+/// cannot drift. Each state gets a distinct marker and, when something is
+/// wrong, the specific command that fixes it.
+fn print_status_human(
+    state: &CredentialState,
+    source: &str,
+    report: &serde_json::Value,
+    both_stored: bool,
+) {
+    println!("Base URL:  {}", report["baseUrl"].as_str().unwrap_or(""));
+
+    match state {
+        CredentialState::Valid => println!(
+            "Auth:      {} ({source}) — verified against the backend",
+            "Valid".green()
+        ),
+        CredentialState::Rejected => println!(
+            "Auth:      {} ({source}) — the backend refused this credential (HTTP 401)",
+            "Rejected".red()
+        ),
+        CredentialState::Unverified { reason, .. } => {
+            println!(
+                "Auth:      {} ({source}) — could not verify",
+                "Present".yellow()
+            );
+            println!("           {reason}");
+        }
+        CredentialState::Absent => println!("Auth:      {}", "Not authenticated".red()),
+    }
+
+    for (label, key) in [("Email:    ", "email"), ("Name:     ", "name")] {
+        if let Some(value) = report["profile"].get(key).and_then(|v| v.as_str()) {
+            println!("{label} {value}");
+        }
+    }
+    if let Some(model) = report["defaultModel"].as_str() {
+        println!("Model:     {model}");
+    }
+
+    match state {
+        CredentialState::Absent => {
+            println!("\nRun 'flowleap auth login' to authenticate via OAuth,");
+            println!("or 'flowleap auth login --api-key <key>' to store an API key.");
+        }
+        CredentialState::Rejected => {
+            println!("\nThe stored credential is present but expired, revoked, or wrong.");
+            println!("Run 'flowleap auth login' to re-authenticate, or");
+            println!("'flowleap auth create-token --name <n> --store' for a long-lived token.");
+            // The one case where a working credential may already be on disk:
+            // an expired session token shadows the API key it is preferred
+            // over, so dropping just the session recovers without a re-login.
+            if both_stored {
+                println!(
+                    "\nBoth a session token and an API key are stored. If the session token is \
+                     the expired one,\n'flowleap auth logout --session-only' drops it and keeps \
+                     the API key."
+                );
+            }
+        }
+        CredentialState::Unverified { .. } => {
+            println!("\nA stored credential is not proof of a working one — this says only that");
+            println!("one is configured. Re-run when the backend is reachable to confirm it.");
+        }
+        CredentialState::Valid => {}
+    }
 }

@@ -245,10 +245,26 @@ Every authenticated request sends `Authorization: Bearer <credential>`. Three wa
 Credentials are stored in `~/.config/flowleap/credentials.toml` (mode 0600).
 
 ```bash
-flowleap auth status                  # what credential is active, and where from
+flowleap auth status                  # is the credential present AND working?
 flowleap auth logout                  # clear everything, including provider keys
 flowleap auth logout --session-only   # keep API key + provider keys
 ```
+
+`auth status` verifies the credential against the backend rather than only
+reporting that one is stored, and exits with the verdict so scripts can branch
+on `$?`:
+
+| State | Meaning | Exit |
+|-------|---------|------|
+| `valid` | The backend accepted the credential | 0 |
+| `rejected` | Present but refused (HTTP 401) — expired, revoked, or wrong | 3 |
+| `absent` | No credential configured | 3 |
+| `unverified` | Could not check (backend unreachable, or `--dry-run`) | 7 (0 for `--dry-run`) |
+
+An unreachable backend is reported as "could not verify", never as invalid —
+the absence of a verdict is not evidence against the credential. `--json` emits
+the same verdict as `{ verification: { state, checked, reason? } }`, where
+`checked` says whether a live check actually reached a conclusion.
 
 ### CI / Headless Use
 
