@@ -8,7 +8,8 @@ FlowLeap is a CLI for the FlowLeap Patent AI backend: patent/USPTO/OPS/academic/
 - Add `--json` to every command for stable machine-readable output.
 - Run `flowleap --json doctor` first to verify config, auth, and backend reachability.
 - Authenticate with `flowleap auth login`, or set `FLOWLEAP_API_KEY`/`FLOWLEAP_TOKEN` for headless use.
-- If an error carries a `providerKeysHint` (`provider_keys_required` / `provider_keys_invalid`), stop — this needs a human. Ask the user to run `flowleap setup`; do not retry or invent keys.
+- If an error carries a `providerKeysHint` (`provider_keys_required` / `provider_keys_invalid`), that office is gated on a patent-data key only the user can add (free from the office). It is a user-action stop, never an exhausted route: do not retry, do not invent keys, and do not substitute web-scraped patent data for that office — searches or single-document reads. Ask the user to run `flowleap setup`.
+- With one office gated and the other live, deliver the live office's results in full, name the gap as a missing-key gap (never as limited coverage), never narrow a prior-art or FTO scope to the keyed office, and ask for the key at the end. `patstat`, `legal`, `academic`, and `npl` stay live keyless — offer them as different data, not as a substitute. Only that explicit error means gated: empty results, truncated payloads, and 5xx keep the normal retries.
 - Discover every backend tool with `flowleap tools list`; run one with `flowleap tools run <name>`.
 
 ### Command Reference
@@ -48,7 +49,7 @@ flowleap --json citation stats 16123456
 flowleap --json citation novelty 16123456
 ```
 
-#### flowleap-keys — Manage BYOK patent-provider credentials (EPO OPS consumer key/secret, USPTO ODP API key) for the FlowLeap CLI — check status, validate live, and hand off to a human for the interactive setup wizard.
+#### flowleap-keys — Manage BYOK patent-data keys (EPO OPS consumer key/secret, USPTO ODP API key) for the FlowLeap CLI — check status, validate live, hand off to a human for the interactive setup wizard, and apply the key-gate doctrine (a gated office is a user-action stop, never an exhausted route).
 
 ```bash
 flowleap --json keys list

@@ -34,6 +34,13 @@ documents (one known publication or application) are none of the three — use
 the search/retrieval skills (`flowleap-patent`, `flowleap-uspto`,
 `flowleap-ops`).
 
+**Keyless, but not a stand-in.** PATSTAT needs no patent-data key, so it stays
+live when EPO OPS or USPTO ODP answers `provider_keys_required`. You may offer it
+to keep work moving — framed for what it is: aggregate counts from a
+twice-yearly snapshot, not documents and not current. It never answers "what
+prior art exists for this claim", and a PATSTAT table never closes a missing-key
+gap in a prior-art, FTO, or invalidity deliverable. See `flowleap-keys`.
+
 Note that `patstat portfolio` and `graph applicant` draw entity boundaries
 differently: `portfolio` groups by name-prefix aliases, `graph applicant`
 takes one harmonized `psn_id`. They may disagree about where one company ends

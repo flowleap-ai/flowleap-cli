@@ -36,6 +36,13 @@ constraint it strips that filter and retries once (a mis-guessed CPC class is a
 common cause of zero recall), then, if still empty, prints guidance to broaden
 to a title search. Watch stderr for these notes.
 
+**Zero recall is not a key gate.** An empty result set, a truncated payload, or
+a 5xx keeps the normal recovery path above. Only an explicit
+`provider_keys_required` means the US office is gated on the user's USPTO ODP
+patent-data key — and that is a user-action stop: do not substitute web-scraped
+US data for it, deliver the other office's results in full, name the gap as a
+missing-key gap, and ask for the free key at the end. See `flowleap-keys`.
+
 ## Search with a full request body
 
 `uspto search` accepts a complete ODP request body via `--body` (inline JSON,

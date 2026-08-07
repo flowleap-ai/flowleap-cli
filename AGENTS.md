@@ -87,10 +87,12 @@ All `/v1/*` patent-data routes additionally require an active subscription
 60 requests/minute/user rate limit (429 + `Retry-After`, surfaced as
 `retryAfterSeconds` in JSON error envelopes).
 
-## Provider Keys (BYOK)
+## Patent-Data Keys (BYOK)
 
 Patent data may require the user's own provider credentials — EPO OPS
-(consumer key + secret, a pair) and USPTO ODP (API key). The CLI stores them in
+(consumer key + secret, a pair) and USPTO ODP (API key). The domain term is
+**patent-data keys**; `provider_keys_required` / `provider_keys_invalid` are the
+wire codes. The CLI stores them in
 `credentials.toml` (0600) and forwards them per-request as
 `x-epo-ops-key`/`x-epo-ops-secret`/`x-uspto-odp-key` headers; they are never
 logged (verbose/dry-run output redacts them).
@@ -109,6 +111,20 @@ the JSON error envelope carries a `providerKeysHint` object with
 `requiresHumanIntervention: true`. Do NOT retry or invent keys — surface the
 hint and ask the user to run `flowleap setup` (or provide keys via env/flags).
 Human/table output renders the same hint as an info box on stderr.
+
+**Key-gate doctrine** — authored in the `flowleap-keys` skill, mirrored from the
+app's shipped prompt so both harnesses have one personality. A
+`provider_keys_required` gate is a user-action stop for that office, never an
+exhausted route: no web-scraped substitute for it (searches or single-document
+reads), and the free key is never framed as a paywall. A gate is read, never
+inferred — only that explicit code means gated, so empty results, truncated
+payloads, and 5xx keep the normal fallbacks. With the other office live, deliver
+its results in full, name the gap as a missing-key gap, ask once at the end, and
+never silently narrow a prior-art or FTO scope. Keyless commands (`patstat`,
+`legal`, `academic`, `npl`) may be offered as *different* data, never as a
+substitute. After the key lands, re-run only the gated office and merge. Keep
+this wording aligned with the app prompt when either side changes
+(abdullahatrash/flowleap-agent-v2#173).
 
 ## Exit Codes & Structured Hints (agent integration)
 

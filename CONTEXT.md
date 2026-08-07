@@ -32,9 +32,30 @@ step it can and relays the rest to the human. Contrast with the interactive
 wizard, where the human drives.
 
 **Actor**:
-Who performs a next step — `human` (browser sign-in, obtaining provider
+Who performs a next step — `human` (browser sign-in, obtaining patent-data
 keys) or `agent` (anything runnable headlessly). Every next step has exactly
 one actor; a task needing both is two steps.
+
+**Patent-Data Key**:
+A credential the USER holds at a patent office — the EPO OPS consumer
+key/secret pair, the USPTO ODP API key — that FlowLeap forwards per request so
+that office's data flows. Free at each office and obtained through a browser
+signup, so getting one is always a human step. `provider_keys_required` /
+`provider_keys_invalid` are the wire codes naming the concept in error
+envelopes, `providerKeysHint` the envelope field.
+_Avoid_: "provider keys" in prose (legacy CLI naming), and any wording that
+reads as a FlowLeap paywall — the office issues the key, FlowLeap only carries
+it.
+
+**Key gate**:
+One office being unreachable because its Patent-Data Key is missing. A
+**user-action stop**, not an exhausted route: only the user adding the key opens
+that office, so no web-scraped substitute stands in for it — searches and
+single-document reads alike. A gate is *read* from an explicit
+`provider_keys_required` result, never *inferred* from an empty, truncated, or
+errored one. Doctrine text: the `flowleap-keys` skill.
+_Avoid_: calling a gated office a coverage gap or a dead route — both hide that
+a two-minute human action fixes it.
 
 **Next step**:
 A pending onboarding action that blocks work. Steps whose need is already

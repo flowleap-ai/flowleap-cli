@@ -30,7 +30,15 @@ flowleap --json patent search --query "<CQL from step 1>" --limit 50
 flowleap --json uspto search --query "<recommended_query from step 1>" --limit 50
 ```
 
-Done when both databases have returned their result sets.
+If one office answers `provider_keys_required`, its patent-data key is missing:
+map the live office in full, label the landscape as covering that office only
+because of a missing key — never as the shape of the field — and ask for the
+free key at the end. `flowleap patstat` aggregates stay available keyless, but
+they are twice-yearly snapshot counts, not a substitute for live search. See
+`flowleap-keys`.
+
+Done when both databases have returned their result sets, or the gated office is
+named as an open missing-key gap.
 
 ### Step 3: Corpus Analytics
 

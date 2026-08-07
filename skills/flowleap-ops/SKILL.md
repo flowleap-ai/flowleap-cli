@@ -9,6 +9,13 @@ Auth and global flags: see `flowleap-shared`.
 
 Direct access to the European Patent Office (EPO) Open Patent Services API.
 
+OPS needs the user's own EPO patent-data key. If a command returns
+`provider_keys_required`, EP/WO is a **user-action stop** — decline that read
+and name the free key as the fix; never serve the claims, description, or
+bibliography from Google Patents, Espacenet, or a web search instead. Only that
+explicit code means gated: an empty payload, a truncated response, or a 5xx is
+an ordinary dead route with the usual fallbacks. See `flowleap-keys`.
+
 ## Commands
 
 ### Search
