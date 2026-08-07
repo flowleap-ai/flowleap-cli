@@ -21,7 +21,7 @@ Environment variable overrides (highest priority):
 - `FLOWLEAP_BASE_URL` — API base URL
 
 The login, token minting/listing/revocation, and 401 self-heal commands live in
-`flowleap-auth`. Patent-provider keys (EPO OPS / USPTO ODP BYOK) live in
+`flowleap-auth`. Patent-data keys (EPO OPS / USPTO ODP BYOK) live in
 `flowleap-keys`.
 
 ## Global Flags
@@ -65,8 +65,17 @@ All `/v1` data routes require an active subscription and share a limit of
 60 requests/minute/user. `doctor`, `health`, `auth`, and `keys test` work
 without a subscription, so setup can always be diagnosed. Error envelopes carry
 additive hints — `subscriptionHint` (402, has `upgradeUrl`, needs a human),
-`providerKeysHint` (missing/rejected EPO/USPTO keys, needs a human), and
-`rateLimitHint` (429, has `retryAfterSeconds`).
+`providerKeysHint` (missing/rejected EPO/USPTO patent-data keys, needs a human),
+and `rateLimitHint` (429, has `retryAfterSeconds`).
+
+A `providerKeysHint` with code `provider_keys_required` is a **user-action stop
+for that office, never an exhausted route**: do not retry, do not invent keys,
+and do not substitute web-scraped patent data for the gated office — searches
+and single-document reads alike. The keys are free from each office. Read the
+gate, never infer it: only that explicit code means gated, so an empty result, a
+truncated payload, or a 5xx stays an ordinary dead route with the normal
+fallbacks. Full doctrine (proceed-then-ask, keyless pivot, resume):
+`flowleap-keys`.
 
 | Exit code | Meaning |
 |-----------|---------|

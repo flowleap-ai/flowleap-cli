@@ -29,7 +29,7 @@ onboarding agent-mediated from that list:
 3. Re-run `flowleap --json doctor` until `ready` is `true` (empty
    `nextSteps`).
 
-Server-covered provider keys never appear in `nextSteps` — the list is only
+Server-covered patent-data keys never appear in `nextSteps` — the list is only
 what actually blocks work. Full contract: `flowleap-shared`.
 
 **CLI not installed?** Install it first — npm when Node is present, the
@@ -52,9 +52,13 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
 
 - **Auth, global flags, config, output formats** → `flowleap-shared`; login,
   token minting, and 401 self-heal → `flowleap-auth`.
-- **Provider keys (EPO OPS / USPTO ODP BYOK)** → `flowleap-keys`. A
+- **Patent-data keys (EPO OPS / USPTO ODP BYOK)** → `flowleap-keys`. A
   `provider_keys_required` / `provider_keys_invalid` hint means a human must sign
-  up in a browser — stop and ask.
+  up in a browser (free at both offices). That is a **user-action stop for that
+  office, never an exhausted route**: do not substitute web-scraped data for it,
+  for searches or single-document reads. Finish the live office, name the gap as
+  a missing-key gap, ask at the end; PATSTAT, legal, and academic/NPL stay live
+  keyless as *different* data. Full doctrine: `flowleap-keys`.
 - **Patent search & CQL** → `flowleap-patent`; **USPTO ODP** → `flowleap-uspto`.
 - **EPO document data** (biblio, claims, description, family, legal) → `flowleap-ops`.
 - **Academic / non-patent literature** → `flowleap-academic`, `flowleap-npl`.

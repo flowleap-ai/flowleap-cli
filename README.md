@@ -33,7 +33,9 @@ The CLI itself is open source (MIT) and free to install. The patent-data command
 - Without an active plan, data commands return HTTP 402 and exit with code 4. In `--json` mode the error envelope carries a structured `subscriptionHint` — `{ requiresHumanIntervention: true, plan: "Basic", upgradeUrl, message }` — with the upgrade URL. **This is expected behavior, not a bug**: agents should surface the URL to a human rather than retry.
 - All `/v1` data routes share a rate limit of 60 requests/minute/user. Exceeding it returns HTTP 429 (exit code 6) with a `rateLimitHint` carrying `retryAfterSeconds`.
 
-Some data sources additionally need your own provider credentials (free signups): EPO OPS (key + secret) and USPTO ODP (API key). Run `flowleap setup` for the guided wizard, or see `flowleap keys --help`.
+Some data sources additionally need your own **patent-data keys** — free signups at each office: EPO OPS (key + secret) and USPTO ODP (API key). Run `flowleap setup` for the guided wizard, or see `flowleap keys --help`. `provider_keys_required` / `provider_keys_invalid` are the wire codes that name them in error envelopes.
+
+**Agent behavior when a key is missing** (the key-gate doctrine, shipped in full in the `flowleap-keys` skill): a `provider_keys_required` error is a **user-action stop for that office, never an exhausted route**. An agent must not substitute web-scraped patent data for the gated office — searches and single-document reads alike — and must not frame the free key as a paywall. With the other office live it delivers those results in full, names the gap as a *missing-key gap* rather than a coverage finding, and asks once at the end of the turn; it never silently narrows a prior-art or FTO scope to the office whose key happens to be set. Keyless commands (`patstat`, `legal`, `academic`, `npl`) stay available meanwhile, offered as *different* data rather than a replacement for live patent search. A gate is read, never inferred: only that explicit code means gated, so an empty result, a truncated payload, or a 5xx keeps the normal retry paths. Once the key is added, only the previously gated office is re-run — no restart, no new session.
 
 `doctor`, `health`, `auth`, and `keys test` work without a subscription, so you can always diagnose your setup.
 
@@ -46,7 +48,7 @@ Two integration paths, both embedded in the binary — no network needed to inst
 
 Authenticate once before wiring either path (`flowleap auth login`, or set `FLOWLEAP_API_KEY` for headless use). An unauthenticated MCP server still starts, but every tool call returns an error explaining how to log in.
 
-Verify readiness any time with the one-command diagnostic — it checks backend reachability, auth, provider keys, and the live tool count, and exits nonzero with fix instructions when something is missing:
+Verify readiness any time with the one-command diagnostic — it checks backend reachability, auth, patent-data keys, and the live tool count, and exits nonzero with fix instructions when something is missing:
 
 ```bash
 flowleap mcp --check
@@ -134,8 +136,8 @@ To stay current:
 | Command | Description |
 |---------|-------------|
 | `doctor` | Check CLI config, auth, and backend reachability |
-| `setup` | Interactive onboarding: backend check, auth, provider keys (human-only) |
-| `keys` | Manage patent-provider keys (EPO OPS, USPTO ODP): set, list, test, rm |
+| `setup` | Interactive onboarding: backend check, auth, patent-data keys (human-only) |
+| `keys` | Manage patent-data keys (EPO OPS, USPTO ODP): set, list, test, rm |
 | `init` | Store initial CLI configuration (base URL) |
 | `auth` | Login (OAuth device flow), logout, status, personal API tokens |
 | `api` | Profile, usage, and the raw authenticated API escape hatch |
@@ -248,8 +250,8 @@ Credentials are stored in `~/.config/flowleap/credentials.toml` (mode 0600).
 
 ```bash
 flowleap auth status                  # is the credential present AND working?
-flowleap auth logout                  # clear everything, including provider keys
-flowleap auth logout --session-only   # keep API key + provider keys
+flowleap auth logout                  # clear everything, including patent-data keys
+flowleap auth logout --session-only   # keep API key + patent-data keys
 ```
 
 `auth status` verifies the credential against the backend rather than only
@@ -296,7 +298,7 @@ Add `--json` (or `--output json`) for stable machine-readable output — recomme
 { "ok": false, "error": { "message": "…" } }
 ```
 
-Envelopes may carry additive structured hints: `subscriptionHint` (402 — upgrade URL, needs a human), `providerKeysHint` (missing/rejected EPO or USPTO keys — needs a human, do not retry), and `rateLimitHint` (429 — wait `retryAfterSeconds`, then retry). Human/table output renders the same hints as info boxes on stderr.
+Envelopes may carry additive structured hints: `subscriptionHint` (402 — upgrade URL, needs a human), `providerKeysHint` (missing/rejected patent-data keys — needs a human, do not retry, and do not substitute web-scraped data for the gated office; see [Access & Pricing](#access--pricing)), and `rateLimitHint` (429 — wait `retryAfterSeconds`, then retry). Human/table output renders the same hints as info boxes on stderr.
 
 Every run exits with a documented code, so scripts can branch on `$?` without parsing JSON:
 
@@ -419,8 +421,8 @@ Precedence: CLI flags > environment variables > config file.
 | `FLOWLEAP_API_KEY` | API key for authentication (an `fl_pat_…` token) |
 | `FLOWLEAP_TOKEN` | Bearer token for authentication |
 | `FLOWLEAP_BASE_URL` | API base URL override |
-| `FLOWLEAP_EPO_KEY` / `FLOWLEAP_EPO_SECRET` | EPO OPS provider key pair |
-| `FLOWLEAP_USPTO_KEY` | USPTO ODP provider key |
+| `FLOWLEAP_EPO_KEY` / `FLOWLEAP_EPO_SECRET` | EPO OPS patent-data key pair |
+| `FLOWLEAP_USPTO_KEY` | USPTO ODP patent-data key |
 | `FLOWLEAP_ASSUME_YES` | Skip confirmation prompts (same as `--yes`) |
 | `FLOWLEAP_NO_UPDATE_CHECK` | Disable the once-a-day update notice (already skipped for `--json`, `--dry-run`, and non-TTY runs) |
 | `FLOWLEAP_RELEASES_API_URL` | Override the GitHub releases API URL `flowleap upgrade` checks (enterprise mirrors) |

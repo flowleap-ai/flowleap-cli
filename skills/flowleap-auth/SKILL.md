@@ -111,7 +111,7 @@ a failure of the credential itself.
 ### Logout
 
 ```bash
-flowleap auth logout                # clear everything, including provider keys
+flowleap auth logout                # clear everything, including patent-data keys
 flowleap auth logout --session-only # clear only the OAuth session token
 ```
 

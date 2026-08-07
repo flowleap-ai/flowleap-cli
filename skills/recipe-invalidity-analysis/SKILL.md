@@ -45,6 +45,12 @@ flowleap --json academic search "<element keywords>" --to-year <priority-year> -
 flowleap --json npl "<element keywords>" --to-year <priority-year> --limit 20
 ```
 
+A `provider_keys_required` on either office is a missing patent-data key, not an
+exhausted search: hunt the live office and the non-patent art in full, record the
+gated office as an open missing-key gap in the invalidity chart (an unsearched
+office weakens the case, so it must never pass as a completed sweep), and ask for
+the free key at the end. See `flowleap-keys`.
+
 ## Step 4: Mine the Prosecution Record
 
 ```bash

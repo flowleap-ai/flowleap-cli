@@ -7,6 +7,13 @@ description: Search EPO patents with CQL and build CQL queries from natural lang
 
 Auth and global flags: see `flowleap-shared`.
 
+EP/WO search runs on the user's own EPO patent-data key. A
+`provider_keys_required` error is a **user-action stop for that office, never an
+exhausted route**: do not fall back to web-scraped patent data, deliver whatever
+the live office (US via `flowleap uspto search`) returns in full, name the gap as
+a missing-key gap, and ask for the free key at the end of the turn. A zero-result
+search is not a gate — reformulate and persist as normal. See `flowleap-keys`.
+
 ## Commands
 
 ### Search Patents

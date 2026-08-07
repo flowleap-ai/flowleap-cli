@@ -36,7 +36,15 @@ flowleap --json uspto search --query "<recommended_query for feature 1>" --limit
 # Repeat for each feature
 ```
 
-Done when both databases have been searched for every feature.
+**A missing patent-data key never narrows a clearance scope.** If one office
+answers `provider_keys_required`, search the live office fully and carry the
+gated office into the deliverable as an explicit missing-key gap — an
+unsearched jurisdiction is not a cleared one, and web-scraped patent data is not
+an acceptable substitute for it. Ask for the free key at the end of the turn;
+when the user adds it, re-run only that office and merge. See `flowleap-keys`.
+
+Done when both databases have been searched for every feature, or the gated
+office is recorded as an open missing-key gap.
 
 ### Step 3: Screen to Live, In-Market Candidates
 

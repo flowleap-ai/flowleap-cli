@@ -72,7 +72,14 @@ flowleap --json uspto search --query 'applicationMetaData.inventionTitle:earbuds
 flowleap ops abstract <application-or-publication-number>
 ```
 
-Done when both databases have returned ranked results.
+**If one office answers `provider_keys_required`**, its patent-data key is
+missing. Do not narrow the search to the office whose key happens to be set, and
+do not fill the gap with web-scraped results: run the live office in full,
+report the other as a missing-key gap (not "no prior art found" and not "limited
+coverage"), and ask for the free key at the end. See `flowleap-keys`.
+
+Done when both databases have returned ranked results, or one is reported as an
+open missing-key gap.
 
 ### Step 3: Search Academic Literature
 
