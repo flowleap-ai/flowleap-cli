@@ -145,6 +145,86 @@ async fn revoke_token(ctx: &Context, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Minimum remaining lifetime, in seconds, a session token must carry for
+/// [`store_session_token`] to persist it. Ten minutes comfortably covers the
+/// commands that follow a fresh login (`auth status`, a first real request)
+/// without the credential dying mid-session.
+const MIN_SESSION_TOKEN_LIFETIME_SECS: i64 = 600;
+
+/// A JWT's `exp` (and, when present, `iat`) claims, decoded without any
+/// signature verification — this guard only sanity-checks a lifetime the
+/// server itself asserts, it never authenticates anything.
+struct SessionTokenClaims {
+    exp: i64,
+    iat: Option<i64>,
+}
+
+/// Decode the middle segment of a `header.payload.signature` JWT and read
+/// its `exp`/`iat` claims. Returns `None` for anything that isn't a
+/// three-segment, base64url, JSON-payload token — most notably an opaque
+/// `fl_pat_…` personal API token — so callers fail open rather than blocking
+/// a credential this guard has no business judging.
+fn decode_session_token_claims(token: &str) -> Option<SessionTokenClaims> {
+    use base64::Engine as _;
+    let segments: Vec<&str> = token.split('.').collect();
+    if segments.len() != 3 {
+        return None;
+    }
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(segments[1])
+        .ok()?;
+    let claims: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let exp = claims.get("exp")?.as_i64()?;
+    let iat = claims.get("iat").and_then(|v| v.as_i64());
+    Some(SessionTokenClaims { exp, iat })
+}
+
+/// Store a freshly obtained OAuth session token as this machine's
+/// credential — the single choke point the human login flow, the
+/// structured `--json` login flow, and the setup wizard all route through.
+///
+/// Refuses, loudly, to persist a token whose `exp` claim shows fewer than
+/// [`MIN_SESSION_TOKEN_LIFETIME_SECS`] remaining: see
+/// flowleap-backend#254 — device-flow approval has, on occasion, echoed
+/// back a ~60s default Clerk session token instead of the long-lived
+/// `flowleap`-template token the server is supposed to mint. Storing that
+/// token would just shadow a still-good `api_key` (session tokens win in
+/// [`Credentials::auth_header`]'s precedence) with a credential dead before
+/// the next command runs.
+///
+/// A token that doesn't decode as a three-segment JWT with a readable `exp`
+/// — an opaque personal API token, for instance — is stored without
+/// complaint; the guard only fires when it can positively read a short
+/// lifetime.
+pub fn store_session_token(token: String) -> Result<()> {
+    if let Some(claims) = decode_session_token_claims(&token) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let remaining = claims.exp - now;
+        if remaining < MIN_SESSION_TOKEN_LIFETIME_SECS {
+            let lifetime_desc = match claims.iat {
+                Some(iat) => format!("{}s lifetime (iat to exp)", claims.exp - iat),
+                None => format!("{remaining}s remaining"),
+            };
+            return Err(crate::client::SessionTokenRefusedError::new(format!(
+                "Refusing to store this session token: it has only {lifetime_desc} — too \
+                 short to survive to the next command. This is a known backend/website bug \
+                 (flowleap-backend#254): device-flow approval can hand back a short-lived \
+                 default Clerk session token instead of the long-lived flowleap-template \
+                 token the server is supposed to mint. Run 'flowleap auth login' again; if \
+                 this keeps happening, the server needs to fix the mint path."
+            ))
+            .into());
+        }
+    }
+    let mut creds = Credentials::load()?;
+    creds.token = Some(token);
+    creds.save()?;
+    Ok(())
+}
+
 async fn login(ctx: &Context, api_key: Option<String>, token: Option<String>) -> Result<()> {
     // If credentials passed directly, store them
     if api_key.is_some() || token.is_some() {
@@ -176,9 +256,7 @@ async fn login(ctx: &Context, api_key: Option<String>, token: Option<String>) ->
 
     // OAuth 2.0 Device Authorization flow
     let access_token = device_flow_login(ctx).await?;
-    let mut creds = Credentials::load()?;
-    creds.token = Some(access_token);
-    creds.save()?;
+    store_session_token(access_token)?;
     println!("{} Successfully authenticated!", "✓".green());
     println!(
         "Credentials saved to {:?}",
@@ -404,9 +482,7 @@ async fn structured_device_login(ctx: &Context) -> Result<()> {
         }));
         let access_token = poll_device_token(ctx, &response, None, false).await?;
         // Store the session token exactly as the human flow does.
-        let mut creds = Credentials::load()?;
-        creds.token = Some(access_token);
-        creds.save()?;
+        store_session_token(access_token)?;
         anyhow::Ok(())
     }
     .await;

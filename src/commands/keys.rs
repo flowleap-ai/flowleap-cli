@@ -536,10 +536,8 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
         match choice {
             0 => {
                 let access_token = crate::commands::auth::device_flow_login(&ctx).await?;
-                ctx.credentials.token = Some(access_token.clone());
-                let mut creds = Credentials::load()?;
-                creds.token = Some(access_token);
-                creds.save()?;
+                crate::commands::auth::store_session_token(access_token.clone())?;
+                ctx.credentials.token = Some(access_token);
                 println!("{} Signed in", "✓".green());
                 // Session tokens expire; a personal token makes this machine durable.
                 if Confirm::with_theme(&theme)

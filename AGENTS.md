@@ -87,6 +87,18 @@ All `/v1/*` patent-data routes additionally require an active subscription
 60 requests/minute/user rate limit (429 + `Retry-After`, surfaced as
 `retryAfterSeconds` in JSON error envelopes).
 
+**Store-time TTL guard** — every path that persists an OAuth session token
+(`auth login`, `--json auth login`, `flowleap setup`) decodes its `exp` claim
+before writing to `credentials.toml` and refuses, loudly, to store one with
+under 10 minutes left. This guards against flowleap-backend#254: device-flow
+approval has, on occasion, echoed back a short-lived default Clerk session
+token instead of the long-lived `flowleap`-template token the server is
+supposed to mint — storing it would silently shadow a still-good `fl_pat_…`
+token with a credential dead before the next command runs. The refusal exits
+3 (auth required) and names the actual lifetime found; re-run `flowleap auth
+login`. Tokens that aren't a decodable JWT (an `fl_pat_…` token, for example)
+are stored as before — the guard only fires on a positively short `exp`.
+
 ## Patent-Data Keys (BYOK)
 
 Patent data may require the user's own provider credentials — EPO OPS
