@@ -162,6 +162,8 @@ pub fn error_exit_code(err: &anyhow::Error) -> i32 {
         exit_code_for_status(api.status)
     } else if err.downcast_ref::<NetworkError>().is_some() {
         EXIT_NETWORK
+    } else if err.downcast_ref::<SessionTokenRefusedError>().is_some() {
+        EXIT_AUTH_REQUIRED
     } else {
         1
     }
@@ -261,6 +263,30 @@ impl std::fmt::Display for NetworkError {
 }
 
 impl std::error::Error for NetworkError {}
+
+/// A session token whose own `exp` claim shows it's already dead, or nearly
+/// so, at the moment the CLI would otherwise persist it — the store-time TTL
+/// guard's refusal (flowleap-backend#254). Typed so the top-level handler
+/// exits with the documented auth-required code: the run genuinely ends
+/// unauthenticated, the same as if no token had come back at all.
+#[derive(Debug)]
+pub struct SessionTokenRefusedError {
+    message: String,
+}
+
+impl SessionTokenRefusedError {
+    pub fn new(message: String) -> Self {
+        Self { message }
+    }
+}
+
+impl std::fmt::Display for SessionTokenRefusedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for SessionTokenRefusedError {}
 
 /// Headers that must never appear in verbose or debug output.
 const SECRET_HEADERS: &[&str] = &[

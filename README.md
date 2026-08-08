@@ -270,6 +270,12 @@ the absence of a verdict is not evidence against the credential. `--json` emits
 the same verdict as `{ verification: { state, checked, reason? } }`, where
 `checked` says whether a live check actually reached a conclusion.
 
+Every device-flow login also runs a store-time TTL guard: it decodes the
+session token's `exp` claim and refuses to write it to `credentials.toml` if
+under 10 minutes remain, printing the actual lifetime and exiting 3 rather
+than silently persisting a credential that's already effectively dead
+(flowleap-backend#254). Non-JWT tokens (e.g. `fl_pat_…`) are unaffected.
+
 ### CI / Headless Use
 
 Mint a token once on your machine, then export it wherever the CLI runs:
