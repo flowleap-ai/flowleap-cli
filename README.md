@@ -142,9 +142,9 @@ To stay current:
 | `auth` | Login (OAuth device flow), logout, status, personal API tokens |
 | `api` | Profile, usage, and the raw authenticated API escape hatch |
 | `health` | Public backend health probes (api, cache, redis, …) |
-| `patent` | Search patents (EPO) and build CQL queries from natural language |
+| `patent` | Search patents (EPO) with CQL you write yourself |
 | `ops` | Direct EPO OPS data: search, biblio, claims, description, family, legal, abstract |
-| `uspto` | USPTO Open Data Portal: search, grants, applications, continuity, query builder |
+| `uspto` | USPTO Open Data Portal: search, grants, applications, continuity |
 | `academic` | Search academic literature (Semantic Scholar, arXiv) |
 | `npl` | Search non-patent literature (OpenAlex) |
 | `legal` | Search patent-law reference documents (EPC, EPO Guidelines, MPEP, …) |
@@ -152,7 +152,6 @@ To stay current:
 | `analytics` | Full-corpus patent analytics (filing trends, countries, assignees, CPC) |
 | `patstat` | PATSTAT analytics: portfolio aggregates for one applicant, guarded SQL, and `graph` — a named node and the relationships around it |
 | `ocr` | Extract text from a PDF, image, or document via OCR (file or URL) |
-| `analyze-claim` | Analyze a patent claim: keywords, IPC codes, search queries, elements |
 | `compare` | Compare 2–10 patents side by side (bibliography) |
 | `figures` | List a patent's drawings/figures; save image data with `--out` |
 | `summary` | One-call patent snapshot: bibliography, legal status, family, term |
@@ -169,7 +168,6 @@ A sampler:
 ```bash
 # Patents
 flowleap patent search --query "lithium battery recycling" --limit 5
-flowleap patent build-query "patents about lithium battery recycling filed by Tesla" --dry-run --dry-run-redacted
 flowleap uspto search --query "wireless charging" --limit 3
 flowleap uspto grant 11800000
 flowleap ops biblio EP1234567
@@ -196,9 +194,8 @@ flowleap patstat graph neighborhood EP3477840 --depth 2 --edge-types cites,cited
 flowleap patstat graph path EP3477840 US5960411
 flowleap patstat graph explain pat:56123456
 
-# Documents and claims
+# Documents
 flowleap ocr ./office-action.pdf > office-action.md
-flowleap analyze-claim --file claim1.txt --focus search
 
 # Agent-first tool facade (same registry the MCP server mirrors)
 flowleap tools list
@@ -329,18 +326,11 @@ Add `--dry-run-redacted` when the body contains an unpublished invention,
 claim, search query, document text, or URL. The output retains the JSON shape
 but replaces sensitive values with `[REDACTED]`.
 
-Natural-language query builders are cloud operations: the description goes to
-the FlowLeap backend and then to its configured Anthropic or OpenAI provider.
-Live `patent build-query` and `uspto build-query` calls therefore require
-explicit consent:
-
-```bash
-flowleap --json patent build-query "<description>" --focus broad --allow-external-processing
-flowleap --json uspto build-query "<description>" --focus broad --allow-external-processing
-```
-
-If the description must not leave the machine, write CQL or an ODP request
-body directly and use `patent search --query` or `uspto search --body-file`.
+Search queries are written by the caller (you or your agent), locally — there
+is no server-side query builder, so an unpublished invention description never
+has to leave the machine to become a query. The bundled `flowleap-patent` and
+`flowleap-uspto` skills carry the query-writing method (term extraction,
+discriminating terms, and the mandatory count probe).
 
 The full contract (hint schemas, endpoint list, agent protocol) lives in [AGENTS.md](AGENTS.md).
 

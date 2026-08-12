@@ -33,14 +33,17 @@ Done when both the academic and patent corpora have been searched for the topic.
 
 ### Technology Landscape
 
-```bash
-# EPO side: natural language to CQL
-flowleap patent build-query "machine learning methods for drug discovery" --allow-external-processing
-flowleap --json patent search --query "<CQL from build-query>" --limit 30
+Write the queries yourself — pick the discriminating terms (the specific
+subject matter, not the technology area) and probe the count before trusting
+results (method in `flowleap-patent`; ODP Lucene in `flowleap-uspto`):
 
-# US side: build an ODP query, then search with it (see flowleap-uspto)
-flowleap uspto build-query "machine learning methods for drug discovery" --allow-external-processing
-flowleap --json uspto search --query "<recommended_query from build-query>" --limit 30
+```bash
+# EPO side: self-written CQL — "drug discovery" discriminates, "machine learning" alone does not
+flowleap --json api request post /v1/patent-search --body '{"query":"ta=\"drug discovery\" AND ta=\"machine learning\"","range":"1-1"}'
+flowleap --json patent search --query 'ta="drug discovery" AND ta="machine learning"' --limit 30
+
+# US side: self-written ODP Lucene (title + metadata only)
+flowleap --json uspto search --query 'applicationMetaData.inventionTitle:"drug discovery"' --limit 30
 ```
 
 ### Deep Dive

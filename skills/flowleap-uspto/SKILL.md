@@ -1,6 +1,6 @@
 ---
 name: flowleap-uspto
-description: Search USPTO Open Data Portal records with Lucene queries, fetch granted patents, applications, continuity chains, and file-wrapper data (prosecution transactions, assignments, foreign priority, PTA, attorney of record), list IFW documents and read office actions as OCR-extracted text, and build ODP queries from natural language. Trigger when an agent needs US application/prosecution metadata, grant lookups, continuity (parent/child) chains, office-action text, chain of title, or USPTO-specific searches.
+description: Search USPTO Open Data Portal records with Lucene queries you write yourself, fetch granted patents, applications, continuity chains, and file-wrapper data (prosecution transactions, assignments, foreign priority, PTA, attorney of record), and list IFW documents and read office actions as OCR-extracted text. Trigger when an agent needs US application/prosecution metadata, grant lookups, continuity (parent/child) chains, office-action text, chain of title, or USPTO-specific searches.
 ---
 
 # FlowLeap USPTO (Open Data Portal)
@@ -46,36 +46,44 @@ missing-key gap, and ask for the free key at the end. See `flowleap-keys`.
 ## Search with a full request body
 
 `uspto search` accepts a complete ODP request body via `--body` (inline JSON,
-or `-` for stdin) or `--body-file` — this is how you submit the object that
-`uspto build-query` generates (see below). `--query` and `--body`/`--body-file`
-are mutually exclusive.
+or `-` for stdin) or `--body-file` — use this when you need `fields` or
+`enrich` alongside the query. `--query` and `--body`/`--body-file` are
+mutually exclusive.
 
 ```bash
 flowleap --json uspto search --body '{"q":"applicationMetaData.inventionTitle:\"machine learning\"","pagination":{"limit":5}}'
 flowleap --json uspto search --body-file query.json
 ```
 
-## Build a query from natural language
+## Writing the Lucene query — you write it yourself
+
+There is no server-side query builder. The method from `flowleap-patent`
+applies unchanged — ODP differs from CQL in syntax, not in strategy:
+
+1. **Extract the candidate terms first** (list every specific noun phrase;
+   justify every omission).
+2. **Write the query with at least one discriminating term** — the specific
+   subject matter, never just the technology area, and never a CPC class on
+   its own. Remember ODP is title + metadata only: the discrimination must be
+   a term that plausibly appears in an invention title.
+   - Fielded terms: `applicationMetaData.inventionTitle:"charging case"`
+   - Boolean `AND`/`OR`/`NOT`, parentheses for grouping, phrases in
+     `"double quotes"`
+   - The full field grammar comes from
+     `flowleap --json tools run get_search_syntax provider=uspto` — read
+     field names from it rather than recalling them
+3. **Probe the count before trusting any results.** `uspto search --json`
+   prints the record bag without a total, so probe through the raw
+   passthrough and read the count field from the body:
 
 ```bash
-flowleap --json uspto build-query "quantum error correction filed after 2022" --focus precise --allow-external-processing
+flowleap --json api request post /v1/patent-search-uspto/search --body '{"q":"applicationMetaData.inventionTitle:\"charging case\"","pagination":{"limit":1,"offset":0}}'
 ```
 
-Live query generation sends the description to FlowLeap and then to Anthropic
-or OpenAI. `--allow-external-processing` records explicit consent; use
-`--dry-run --dry-run-redacted` to inspect only the request shape locally.
-
-Returns `strategy.recommended_query` — a **complete ODP request body** (not a
-string). Submit it directly with `--body`:
-
-```bash
-flowleap --json uspto search --body '<recommended_query JSON>'
-```
-
-`--focus` is one of `broad` | `precise` | `comprehensive`. Note that the CPC
-class in a generated query is a heuristic guess and can be wrong; if a run
-returns 0, rely on the zero-recall fallback above or a title recall pass rather
-than trusting the guessed class.
+Over ~1,000 hits: add the next discriminating term from your extraction list.
+Under 10: broaden — synonyms, singular/plural title variants, drop a filter.
+To verify a CPC class before constraining on one, query the official scheme —
+`flowleap-patent` has the `flowleap patstat query` recipe; never guess codes.
 
 ## Lookups
 

@@ -182,8 +182,6 @@ executes one. Provider-specific routes remain for humans and compatibility.
 | `/v1/tools/openapi.json` | GET | Yes |
 | `/v1/tools/{tool_name}` | POST | Yes |
 | `/v1/patent-search` | POST | Yes |
-| `/v1/build-patent-query` | POST | Yes |
-| `/v1/build-uspto-query` | POST | Yes |
 | `/v1/academic-search` | POST | Yes |
 | `/v1/npl-search` | POST | Yes |
 | `/v1/legal-search` (+ `/stats`, `/jurisdictions`, `/docs`) | POST/GET | Yes |
@@ -224,9 +222,9 @@ Error `code` values: `MISSING_PARAM` (400), `NOT_FOUND` (404), `RATE_LIMITED` (4
 - Use `--dry-run` for safety when testing mutating operations
 - Use `--dry-run-redacted` when dry-run output itself may enter terminal, CI,
   or agent logs. It preserves request shape while replacing sensitive values.
-- `patent build-query` and `uspto build-query` transmit their descriptions to
-  FlowLeap and then to Anthropic or OpenAI. Live calls require
-  `--allow-external-processing`; dry-runs do not transmit and do not require it.
+- Search queries are written by the caller, locally — there is no server-side
+  query builder, so an unpublished invention description never has to leave
+  the machine to become a query (see the `flowleap-patent` skill).
 - Authorization header is stripped from verbose output
 - Base-URL credential guard: when the effective base URL's host is not
   `flowleap.co`/`*.flowleap.co`/`localhost`/`127.0.0.1`/`::1`, the CLI prints

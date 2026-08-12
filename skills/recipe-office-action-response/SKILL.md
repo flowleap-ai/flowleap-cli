@@ -71,11 +71,10 @@ flowleap --json uspto documents <application-number> --code CLM
 flowleap uspto document-text <application-number> <documentIdentifier> > claims-as-rejected.md
 ```
 
-Save each rejected independent claim to a file, then:
-
-```bash
-flowleap analyze-claim --file claim1.txt --focus elements
-```
+Decompose each rejected independent claim yourself: split on the
+`comprising` transition and the semicolon/`wherein` boundaries, keep the claim
+language verbatim per element (the method is in `recipe-claim-analysis`,
+Step 4).
 
 Build a mapping table per rejection: claim element → where the examiner says
 the reference discloses it → what the reference actually says (quote it).

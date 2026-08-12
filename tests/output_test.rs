@@ -65,25 +65,6 @@ fn test_patent_search_response_extraction() {
     assert_eq!(arr[0]["title"], "Test Patent");
 }
 
-/// Test build-query response parsing
-#[test]
-fn test_build_query_response() {
-    let response = json!({
-        "query": "ti=solar AND ti=panel AND pa=Tesla",
-        "explanation": "Searches for patents with 'solar' and 'panel' in the title filed by Tesla."
-    });
-
-    assert_eq!(
-        response.get("query").and_then(|q| q.as_str()),
-        Some("ti=solar AND ti=panel AND pa=Tesla")
-    );
-    assert!(response
-        .get("explanation")
-        .and_then(|e| e.as_str())
-        .unwrap()
-        .contains("Tesla"));
-}
-
 /// Test academic search response parsing
 #[test]
 fn test_academic_search_response() {

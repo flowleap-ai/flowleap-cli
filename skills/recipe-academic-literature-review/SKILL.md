@@ -32,9 +32,13 @@ flowleap --json npl "<research topic>" --from-year 2020 --limit 10
 
 ### Step 3: Patent Search for the Same Topic
 
+Write the CQL yourself from the topic's discriminating terms (the specific
+subject matter, not the field name — method in `flowleap-patent`), probe the
+count, then search:
+
 ```bash
-flowleap patent build-query "<research topic>" --allow-external-processing
-flowleap --json patent search --query "<CQL from build-query>" --limit 20
+flowleap --json api request post /v1/patent-search --body '{"query":"<self-written CQL>","range":"1-1"}'
+flowleap --json patent search --query "<self-written CQL>" --limit 20
 ```
 
 ### Step 4: Synthesize the Gap

@@ -19,16 +19,15 @@ enum UsptoCommand {
     /// Search USPTO Open Data Portal records with an ODP Lucene query
     ///
     /// Provide either a `--query` Lucene string (wrapped as `{"q": ...}`) or a
-    /// full request `--body` / `--body-file` — the JSON object that
-    /// `uspto build-query` emits under `strategy.recommended_query` is a
-    /// complete ODP request body and can be submitted directly.
+    /// full ODP request body via `--body` / `--body-file`. Write the Lucene
+    /// query yourself — the flowleap-uspto skill carries the method.
     Search {
         /// USPTO ODP Lucene query string (wrapped as `{"q": ...}`)
         #[arg(long, short, conflicts_with_all = ["body", "body_file"])]
         query: Option<String>,
 
-        /// Full ODP request body as inline JSON, e.g. the object emitted by
-        /// `uspto build-query`. Pass `-` to read the body from stdin.
+        /// Full ODP request body as inline JSON ({"q": "<lucene>", ...}).
+        /// Pass `-` to read the body from stdin.
         #[arg(long, conflicts_with = "body_file")]
         body: Option<String>,
 
@@ -111,19 +110,6 @@ enum UsptoCommand {
         /// IFW documentIdentifier from `uspto documents` (e.g. LAQYXZN3XBLUEX4)
         document_id: String,
     },
-    /// Build a USPTO ODP Lucene query from natural language
-    BuildQuery {
-        /// Natural language description
-        description: String,
-
-        /// Query strategy focus
-        #[arg(long, value_parser = ["broad", "precise", "comprehensive"], default_value = "comprehensive")]
-        focus: String,
-
-        /// Consent to send the description to FlowLeap and its configured LLM provider
-        #[arg(long)]
-        allow_external_processing: bool,
-    },
 }
 
 pub async fn run(ctx: &Context, args: UsptoArgs) -> Result<()> {
@@ -199,27 +185,16 @@ pub async fn run(ctx: &Context, args: UsptoArgs) -> Result<()> {
             app_number,
             document_id,
         } => document_text(ctx, &app_number, &document_id).await,
-        UsptoCommand::BuildQuery {
-            description,
-            focus,
-            allow_external_processing,
-        } => {
-            super::query_privacy::require_external_processing_consent(
-                ctx,
-                allow_external_processing,
-            )?;
-            build_query(ctx, &description, &focus).await
-        }
     }
 }
 
 const SEARCH_PATH: &str = "/v1/patent-search-uspto/search";
 
-/// The ODP field the backend's `build-uspto-query` guesses a CPC class into.
-/// USPTO ODP search only indexes `inventionTitle` plus a handful of metadata
-/// fields — there is no abstract/claims full-text — so a mis-guessed CPC class
-/// (the backend has picked H01M batteries for a UV-C sterilization case) drops
-/// recall to zero. The zero-recall fallback strips this constraint and retries.
+/// The ODP field a CPC-class constraint travels in. USPTO ODP search only
+/// indexes `inventionTitle` plus a handful of metadata fields — there is no
+/// abstract/claims full-text — so a mis-guessed CPC class (H01M batteries for
+/// a UV-C sterilization case, say) drops recall to zero. The zero-recall
+/// fallback strips this constraint and retries.
 const CPC_FIELD: &str = "applicationMetaData.cpcClassificationBag:";
 
 async fn search(
@@ -285,15 +260,14 @@ fn build_search_request(
             normalize_body(&raw, limit)
         }
         (None, None, None) => bail!(
-            "provide a query: --query \"<lucene>\", or a full request body via --body / --body-file \
-             (submit the object from 'uspto build-query')"
+            "provide a query: --query \"<lucene>\", or a full ODP request body via --body / --body-file"
         ),
         _ => bail!("--query, --body and --body-file are mutually exclusive"),
     }
 }
 
 /// Read a `--body` argument, treating a lone `-` as "read the body from stdin"
-/// so a build-query pipeline can stream the recommended query in.
+/// so a pipeline can stream a prepared request body in.
 fn read_body_arg(body: &str) -> Result<String> {
     if body == "-" {
         let mut buffer = String::new();
@@ -307,13 +281,13 @@ fn read_body_arg(body: &str) -> Result<String> {
 }
 
 /// Keys the `/v1/patent-search-uspto/search` endpoint accepts in a request
-/// body. `uspto build-query` (comprehensive/precise focus) also emits a
-/// `filters` field that this endpoint rejects with 400, so a build-query body
-/// has to be trimmed to this set before it can be submitted.
+/// body. Bodies written elsewhere sometimes carry extra fields (a `filters`
+/// key, for example) that this endpoint rejects with 400, so a body is
+/// trimmed to this set before it is submitted.
 const SUPPORTED_BODY_KEYS: &[&str] = &["q", "pagination", "fields", "enrich"];
 
 /// Parse a full ODP request body, drop keys the search endpoint does not accept
-/// (so a `uspto build-query` body submits without a 400), and default its
+/// (so an externally prepared body submits without a 400), and default its
 /// pagination limit when absent.
 fn normalize_body(raw: &str, limit: u32) -> Result<Value> {
     let mut value: Value = serde_json::from_str(raw).context("request body must be valid JSON")?;
@@ -335,7 +309,7 @@ fn normalize_body(raw: &str, limit: u32) -> Result<Value> {
     if !dropped.is_empty() {
         eprintln!(
             "note: dropped unsupported request-body field(s) [{}] — the USPTO search endpoint \
-             accepts only {:?}. (build-query emits these; they are not forwarded.)",
+             accepts only {:?}.",
             dropped.join(", "),
             SUPPORTED_BODY_KEYS
         );
@@ -678,45 +652,6 @@ fn document_columns() -> &'static [(&'static str, &'static str)] {
     ]
 }
 
-async fn build_query(ctx: &Context, description: &str, focus: &str) -> Result<()> {
-    let body = json!({
-        "description": description,
-        "focus": focus,
-    });
-
-    let result = ctx
-        .execute_json_body_or_error(ctx.post("/v1/build-uspto-query", &body))
-        .await?;
-
-    if ctx.output_format == "json" || result.get("dryRun").is_some() {
-        output::print_json(&result);
-        return Ok(());
-    }
-
-    // Response shape: { success, strategy: { recommended_query, explanation, ... } }.
-    // recommended_query is a full ODP search request body (JSON object), directly
-    // submittable to `flowleap uspto search` / POST /v1/patent-search-uspto/search.
-    let strategy = result.get("strategy").unwrap_or(&result);
-    if let Some(query) = strategy.get("recommended_query") {
-        println!("Generated USPTO search request body:\n");
-        println!("{}", serde_json::to_string_pretty(query)?);
-        if let Some(explanation) = strategy.get("explanation").and_then(|e| e.as_str()) {
-            println!("\n{}", explanation);
-        }
-        println!(
-            "\nSubmit the body above directly:\n  \
-             flowleap --json uspto search --body '<the JSON object above>'\n  \
-             # or save it to a file and: flowleap --json uspto search --body-file query.json\n  \
-             # or pipe with jq: flowleap --json uspto build-query \"…\" \\\n  \
-             #   | jq .strategy.recommended_query | flowleap --json uspto search --body -"
-        );
-    } else {
-        output::print_json(&result);
-    }
-
-    Ok(())
-}
-
 fn print_uspto_collection(ctx: &Context, result: &serde_json::Value) {
     let columns = search_columns();
     if let Some(results) = result.get("patentFileWrapperDataBag") {
@@ -771,21 +706,21 @@ mod tests {
     use super::*;
 
     /// Regression for issue #152: the evaluator's Phase-2 dead-end. For the UV-C
-    /// earbud sterilizing case, `uspto build-query --focus comprehensive`
+    /// earbud sterilizing case, the (since retired) server query builder
     /// emitted this exact body — a CPC guess of H01M (batteries) ANDed onto
     /// title-only ODP terms — and `uspto search` returned 0, dead-ending the
-    /// USPTO leg. The body must now be (a) accepted directly via --body, and
+    /// USPTO leg. Any full body must be (a) accepted directly via --body, and
     /// (b) recoverable: the zero-recall fallback strips the wrong CPC class so
     /// the search is retried on the recall terms instead of silently empty.
     #[test]
-    fn issue_152_uvc_earbud_build_query_body_is_accepted_and_recoverable() {
+    fn issue_152_uvc_earbud_full_body_is_accepted_and_recoverable() {
         let recommended_query = r#"{
             "q": "applicationMetaData.cpcClassificationBag:H01M* AND (\"UV-C\" OR \"ultraviolet\" OR \"steriliz*\" OR \"disinfect*\") AND \"earbud\"",
             "fields": ["applicationMetaData.inventionTitle"],
             "pagination": { "limit": 25, "offset": 0 }
         }"#;
 
-        // (a) build-query's body submits directly through --body.
+        // (a) the full body submits directly through --body.
         let request = build_search_request(None, Some(recommended_query), None, 10).unwrap();
         let q = request["q"].as_str().unwrap();
         assert_eq!(request["pagination"]["limit"], 25); // body pagination preserved
@@ -798,8 +733,8 @@ mod tests {
 
     #[test]
     fn strip_cpc_drops_the_class_clause_and_one_operator() {
-        // The evaluator's exact Phase-2 dead-end: build-query guessed H01M
-        // (batteries) for a UV-C sterilization case, so the CPC-constrained
+        // The evaluator's exact Phase-2 dead-end: a guessed H01M (batteries)
+        // class for a UV-C sterilization case, so the CPC-constrained
         // query returned 0. Stripping the CPC clause leaves the recall terms.
         let cases = [
             (
@@ -866,8 +801,8 @@ mod tests {
         .unwrap();
         assert_eq!(paged["pagination"]["limit"], 3);
 
-        // Unsupported keys the search endpoint 400s on (build-query emits
-        // `filters`) are dropped; supported keys survive.
+        // Unsupported keys the search endpoint 400s on (a stray `filters`
+        // field, say) are dropped; supported keys survive.
         let trimmed = build_search_request(
             None,
             Some(r#"{"q":"ti:x","fields":["a"],"enrich":["abstract"],"filters":"typeCode UTL"}"#),

@@ -1,6 +1,6 @@
 ---
 name: flowleap
-description: Start here — the umbrella skill for the FlowLeap Patent AI CLI. Maps every command family (patent/USPTO/OPS/academic/NPL/legal/citation reads, analytics, OCR, claim analysis, one-call patent verbs, the tools facade, and the raw API escape hatch) and routes to the specialist skills. Trigger when a user asks an agent to use FlowLeap, query the FlowLeap backend, verify local or deployed FlowLeap API health, run patent research commands, or debug FlowLeap CLI/API behavior.
+description: Start here — the umbrella skill for the FlowLeap Patent AI CLI. Maps every command family (patent/USPTO/OPS/academic/NPL/legal/citation reads, analytics, OCR, one-call patent verbs, the tools facade, and the raw API escape hatch) and routes to the specialist skills. Trigger when a user asks an agent to use FlowLeap, query the FlowLeap backend, verify local or deployed FlowLeap API health, run patent research commands, or debug FlowLeap CLI/API behavior.
 ---
 
 # FlowLeap CLI
@@ -74,8 +74,11 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
 - **Agent-first tool facade** (`flowleap tools list|describe|run …`) and the
   one-call verbs `summary`, `timeline`, `compare` → `flowleap-tools`.
 - **Document utilities** — `flowleap figures <doc>`, `flowleap convert-number
-  <doc> --to docdb`, `flowleap analytics --keyword …`, `flowleap ocr <file>`,
-  `flowleap analyze-claim --file claim1.txt --focus full`.
+  <doc> --to docdb`, `flowleap analytics --keyword …`, `flowleap ocr <file>`.
+- **Search queries and claim decomposition are yours to write** — there is no
+  server-side query builder or claim analyzer. `flowleap-patent` carries the
+  CQL method (term extraction, discriminating term, count probe);
+  `recipe-claim-analysis` carries the claim-decomposition method.
 - **Raw API escape hatch** — `flowleap --json api request get /v1/health`. Use
   high-level commands first; never run a live `post`/`put`/`patch`/`delete`
   unless the user asked for that specific write, and prefer `--dry-run`.
