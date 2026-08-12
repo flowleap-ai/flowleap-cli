@@ -1,6 +1,5 @@
 pub mod academic;
 pub mod analytics;
-pub mod analyze_claim;
 pub mod api;
 pub mod auth;
 pub mod citation;
@@ -16,7 +15,6 @@ pub mod ocr;
 pub mod ops;
 pub mod patent;
 pub mod patstat;
-mod query_privacy;
 pub mod skills;
 pub mod tools;
 pub mod upgrade;

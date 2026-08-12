@@ -93,11 +93,12 @@ flowleap ops abstract <doc>
 flowleap convert-number US5443036.A --to docdb
 ```
 
-#### flowleap-patent — Search EPO patents with CQL and build CQL queries from natural language through the FlowLeap backend.
+#### flowleap-patent — Search EPO patents with CQL you write yourself — field reference, the discriminating-term rule, and the mandatory count probe.
 
 ```bash
 flowleap patent search --query <query> [flags]
-flowleap patent build-query <description> [flags]
+flowleap --json api request post /v1/patent-search --body '{"query":"ta=\"foreign object\" AND ta=charging","range":"1-1"}'
+flowleap patstat query "SELECT symbol, title FROM flowleap.cpc_scheme WHERE title ILIKE '%photovoltaic%' ORDER BY symbol LIMIT 15" --question "candidate CPC codes for photovoltaics"
 ```
 
 #### flowleap-patstat — Portfolio Analytics AND guarded SQL over the PATSTAT snapshot — structured-criteria aggregation by named applicant, CPC/IPC class, office, year, family, and grant status, with harmonized entity resolution and Data Edition provenance; plus agent-written SELECTs against the flowleap.* semantic views for any aggregate the typed commands don't cover (landscapes, grant rates, citation impact, inventor analytics).
@@ -130,14 +131,13 @@ flowleap --json tools list
 flowleap --json tools describe get_bibliography
 flowleap --json tools openapi
 flowleap --json tools run get_bibliography patent_number=EP1000000
-flowleap --json patent build-query "solid state battery separators" --focus precise --allow-external-processing
 ```
 
-#### flowleap-uspto — Search USPTO Open Data Portal records with Lucene queries, fetch granted patents, applications, continuity chains, and file-wrapper data (prosecution transactions, assignments, foreign priority, PTA, attorney of record), list IFW documents and read office actions as OCR-extracted text, and build ODP queries from natural language.
+#### flowleap-uspto — Search USPTO Open Data Portal records with Lucene queries you write yourself, fetch granted patents, applications, continuity chains, and file-wrapper data (prosecution transactions, assignments, foreign priority, PTA, attorney of record), and list IFW documents and read office actions as OCR-extracted text.
 
 ```bash
 flowleap --json uspto search --query 'applicationMetaData.inventionTitle:"machine learning"' --limit 5
-flowleap --json uspto build-query "quantum error correction filed after 2022" --focus precise --allow-external-processing
+flowleap --json api request post /v1/patent-search-uspto/search --body '{"q":"applicationMetaData.inventionTitle:\"charging case\"","pagination":{"limit":1,"offset":0}}'
 flowleap --json uspto grant 11800000
 flowleap --json uspto application 16123456
 flowleap --json uspto continuity 16123456

@@ -11,54 +11,6 @@ use support::{run_cli, stdout_json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-#[tokio::test]
-async fn explicit_query_builder_consent_allows_both_live_request_paths() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/build-patent-query"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "success": true,
-            "strategy": { "recommended_cql": "ta=earbud", "explanation": "test" }
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/v1/build-uspto-query"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "success": true,
-            "strategy": {
-                "recommended_query": { "q": "applicationMetaData.inventionTitle:earbud" },
-                "explanation": "test"
-            }
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    for command in ["patent", "uspto"] {
-        let output = run_cli(
-            &server.uri(),
-            &[("FLOWLEAP_API_KEY", "fl_pat_test")],
-            &[
-                "--json",
-                command,
-                "build-query",
-                "public earbud example",
-                "--allow-external-processing",
-            ],
-        )
-        .await;
-
-        assert!(
-            output.status.success(),
-            "{command} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(String::from_utf8_lossy(&output.stderr).contains("sending the query description"));
-    }
-}
-
 /// A stalled backend must fail with a timeout error, not hang forever.
 #[tokio::test]
 async fn stalled_server_times_out_with_clear_error() {

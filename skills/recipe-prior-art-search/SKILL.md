@@ -13,21 +13,37 @@ its own query syntax — see `flowleap-uspto` for the USPTO Lucene grammar.
 
 ## Steps
 
-### Step 1: Generate Search Queries
+### Step 1: Write the Search Queries
+
+You write both queries yourself — the invention description never leaves the
+machine to become a query. The method (from `flowleap-patent`, where the CQL
+fields live):
+
+1. **Extract the terms.** List every specific noun phrase in the invention
+   description; for each one you leave out of the query, state why. Unsure of
+   a phrasing ("glass ceramic" vs "glass-ceramic")? OR both forms — never drop
+   the term.
+2. **Write the CQL around a discriminating term** — the specific subject
+   matter, never just the technology area, never a CPC class alone. Grouping
+   repeats the field: `(ta=X OR ta=Y)` is valid; `ta=(X OR Y)` is a hard OPS
+   404. Verify any CPC code against the official scheme
+   (`flowleap patstat query` on `flowleap.cpc_scheme`) — never guess codes.
+3. **Probe the count** — mandatory. `patent search` shows no total, so read
+   `total` from the raw passthrough:
 
 ```bash
-# --focus broad widens recall for a first novelty pass
-flowleap patent build-query "<describe the invention in natural language>" --focus broad --allow-external-processing
-flowleap uspto build-query "<describe the invention in natural language>" --focus broad --allow-external-processing
+flowleap --json api request post /v1/patent-search --body '{"query":"<self-written CQL>","range":"1-1"}'
 ```
 
-These live builders transmit the invention description to FlowLeap and its
-configured Anthropic or OpenAI provider. Obtain informed user consent before
-using `--allow-external-processing`. For a local preview, use
-`--dry-run --dry-run-redacted`; if external processing is not permitted, write
-the CQL/ODP query manually and skip the builder commands.
+Over ~1,000 hits: add the next discriminating term from your extraction list.
+Under 10: broaden — this is a novelty pass, so start broad (drop the
+classification, OR in synonyms) and narrow from the count, never the reverse.
 
-Done when you have one EPO CQL query and one USPTO ODP query for the invention.
+The USPTO leg uses ODP Lucene over title + metadata (see `flowleap-uspto`):
+same term extraction, same probe discipline, but the discrimination must be a
+term that plausibly appears in an invention title.
+
+Done when you have one probed EPO CQL query and one USPTO ODP query.
 
 ### Step 2: Search Patents (EPO + USPTO)
 
@@ -48,19 +64,17 @@ For US prior art the USPTO leg must go through USPTO ODP; do **not** substitute
 flowleap --json patent search --query "<CQL from step 1>" --limit 20
 ```
 
-**USPTO:** `uspto build-query` emits a **full ODP request body** (a JSON object
-under `strategy.recommended_query`), not a query string. Submit that body — do
-not paste it into `--query`:
+**USPTO:** the Lucene query from step 1 goes in `--query` (or wrap it in a
+full ODP request body via `--body` when you need `fields`/`enrich`):
 
 ```bash
-flowleap --json uspto search --body '<recommended_query JSON from step 1>'
-# or from a file: flowleap --json uspto search --body-file query.json
+flowleap --json uspto search --query '<ODP Lucene from step 1>' --limit 20
 ```
 
 **USPTO recall caveat — ODP is title-only.** ODP search indexes the invention
 title and a few metadata fields; there is **no abstract or claims full-text**.
 A distinguishing feature that only appears in the abstract (e.g. "UV-C
-sterilization") therefore cannot be matched, and a generated query that ANDs
+sterilization") therefore cannot be matched, and a query that ANDs
 such a term onto the search returns 0. When the USPTO leg comes back empty
 (the CLI prints a note and auto-retries once without the CPC filter), run a
 **title recall pass on the core device noun** and triage abstracts afterwards:

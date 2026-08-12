@@ -12,7 +12,7 @@ fn exposes_uspto_command() {
     let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
     assert!(stdout.contains("USPTO Open Data Portal commands"));
     assert!(stdout.contains("search"));
-    assert!(stdout.contains("build-query"));
+    assert!(stdout.contains("continuity"));
 }
 
 #[test]
@@ -57,56 +57,33 @@ fn dry_run_succeeds_without_credentials() {
 }
 
 #[test]
-fn query_builder_requires_explicit_external_processing_consent() {
-    let temp_home = tempfile::tempdir().expect("create temp home");
-    let description = "confidential UV-C earbud charging case invention";
-    for command in ["patent", "uspto"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
-            .env("HOME", temp_home.path())
-            .env("XDG_CONFIG_HOME", temp_home.path().join(".config"))
-            .env("FLOWLEAP_API_KEY", "fl_pat_test")
-            .env("FLOWLEAP_NO_UPDATE_CHECK", "1")
-            .args([command, "build-query", description, "--output", "json"])
-            .output()
-            .expect("run build-query without consent");
-
-        assert!(!output.status.success(), "{command} unexpectedly succeeded");
-        let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
-        assert!(stdout.contains("--allow-external-processing"));
-        assert!(stdout.contains("Anthropic or OpenAI"));
-    }
-}
-
-#[test]
 fn redacted_dry_run_preserves_shape_without_sensitive_values() {
     let temp_home = tempfile::tempdir().expect("create temp home");
-    let description = "confidential UV-C earbud charging case invention";
-    for command in ["patent", "uspto"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
-            .env("HOME", temp_home.path())
-            .env("XDG_CONFIG_HOME", temp_home.path().join(".config"))
-            .env_remove("FLOWLEAP_API_KEY")
-            .env_remove("FLOWLEAP_TOKEN")
-            .args([
-                "--json",
-                "--dry-run",
-                "--dry-run-redacted",
-                command,
-                "build-query",
-                description,
-            ])
-            .output()
-            .expect("run redacted build-query dry-run");
+    let query = "ta=\"confidential UV-C earbud charging case\"";
+    let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
+        .env("HOME", temp_home.path())
+        .env("XDG_CONFIG_HOME", temp_home.path().join(".config"))
+        .env_remove("FLOWLEAP_API_KEY")
+        .env_remove("FLOWLEAP_TOKEN")
+        .args([
+            "--json",
+            "--dry-run",
+            "--dry-run-redacted",
+            "patent",
+            "search",
+            "--query",
+            query,
+        ])
+        .output()
+        .expect("run redacted patent-search dry-run");
 
-        assert!(output.status.success(), "{command} dry-run failed");
-        let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
-        assert!(!stdout.contains(description));
-        let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is json");
-        assert_eq!(value["dryRun"], true);
-        assert_eq!(value["dryRunRedacted"], true);
-        assert_eq!(value["body"]["description"], "[REDACTED]");
-        assert_eq!(value["body"]["focus"], "comprehensive");
-    }
+    assert!(output.status.success(), "redacted dry-run failed");
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(!stdout.contains("earbud"));
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is json");
+    assert_eq!(value["dryRun"], true);
+    assert_eq!(value["dryRunRedacted"], true);
+    assert_eq!(value["body"]["query"], "[REDACTED]");
 }
 
 #[test]
@@ -170,7 +147,6 @@ fn exposes_agent_first_commands() {
         "citation",
         "analytics",
         "ocr",
-        "analyze-claim",
     ] {
         assert!(stdout.contains(command), "missing command {command}");
     }
@@ -719,149 +695,21 @@ fn ocr_rejects_oversized_file_locally() {
 }
 
 #[test]
-fn analyze_claim_argument_dry_run_request_shape() {
-    let temp_home = tempfile::tempdir().expect("create temp home");
+fn ocr_help_includes_examples() {
     let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
-        .env("HOME", temp_home.path())
-        .env("XDG_CONFIG_HOME", temp_home.path().join(".config"))
-        .env_remove("FLOWLEAP_BASE_URL")
-        .env_remove("FLOWLEAP_API_KEY")
-        .env_remove("FLOWLEAP_TOKEN")
-        .args([
-            "--json",
-            "analyze-claim",
-            "A method for wireless charging comprising a coil.",
-            "--dry-run",
-        ])
+        .args(["ocr", "--help"])
         .output()
-        .expect("run analyze-claim arg dry-run");
+        .expect("run --help");
 
     assert!(output.status.success());
 
     let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
-    let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is json");
-
-    assert_eq!(value["dryRun"], true);
-    assert_eq!(value["method"], "POST");
-    assert_eq!(value["url"], "https://api.flowleap.co/v1/analyze-claim");
-    assert_eq!(
-        value["body"]["claimText"],
-        "A method for wireless charging comprising a coil."
+    assert!(
+        stdout.contains("Examples:"),
+        "ocr --help is missing examples"
     );
-    assert!(value["body"].get("focus").is_none());
-}
-
-#[test]
-fn analyze_claim_forwards_focus_flag() {
-    let temp_home = tempfile::tempdir().expect("create temp home");
-    let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
-        .env("HOME", temp_home.path())
-        .env("XDG_CONFIG_HOME", temp_home.path().join(".config"))
-        .env_remove("FLOWLEAP_BASE_URL")
-        .args([
-            "--json",
-            "analyze-claim",
-            "A battery pack comprising lithium cells.",
-            "--focus",
-            "search",
-            "--dry-run",
-        ])
-        .output()
-        .expect("run analyze-claim focus dry-run");
-
-    assert!(output.status.success());
-
-    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
-    let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is json");
-
-    assert_eq!(value["dryRun"], true);
-    assert_eq!(value["body"]["focus"], "search");
-}
-
-#[test]
-fn analyze_claim_reads_file_input() {
-    let temp_home = tempfile::tempdir().expect("create temp home");
-    let file_path = temp_home.path().join("claim.txt");
-    std::fs::write(&file_path, "A device comprising a sensor.\n").expect("write claim file");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
-        .env("HOME", temp_home.path())
-        .env("XDG_CONFIG_HOME", temp_home.path().join(".config"))
-        .env_remove("FLOWLEAP_BASE_URL")
-        .args([
-            "--json",
-            "analyze-claim",
-            "--file",
-            file_path.to_str().expect("path is utf8"),
-            "--dry-run",
-        ])
-        .output()
-        .expect("run analyze-claim file dry-run");
-
-    assert!(output.status.success());
-
-    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
-    let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is json");
-
-    assert_eq!(value["dryRun"], true);
-    assert_eq!(value["body"]["claimText"], "A device comprising a sensor.");
-}
-
-#[test]
-fn analyze_claim_reads_stdin_when_no_arg_or_file() {
-    use std::io::Write;
-    use std::process::Stdio;
-
-    let temp_home = tempfile::tempdir().expect("create temp home");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flowleap"))
-        .env("HOME", temp_home.path())
-        .env("XDG_CONFIG_HOME", temp_home.path().join(".config"))
-        .env_remove("FLOWLEAP_BASE_URL")
-        .args(["--json", "analyze-claim", "--dry-run"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn analyze-claim stdin dry-run");
-
-    child
-        .stdin
-        .take()
-        .expect("stdin handle")
-        .write_all(b"A system comprising a processor.\n")
-        .expect("write claim to stdin");
-
-    let output = child.wait_with_output().expect("wait for analyze-claim");
-    assert!(output.status.success());
-
-    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
-    let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is json");
-
-    assert_eq!(value["dryRun"], true);
-    assert_eq!(
-        value["body"]["claimText"],
-        "A system comprising a processor."
+    assert!(
+        stdout.contains("flowleap ocr"),
+        "ocr --help examples don't show an invocation"
     );
-}
-
-#[test]
-fn ocr_and_analyze_claim_help_include_examples() {
-    for command in ["ocr", "analyze-claim"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
-            .args([command, "--help"])
-            .output()
-            .expect("run --help");
-
-        assert!(output.status.success());
-
-        let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
-        assert!(
-            stdout.contains("Examples:"),
-            "{command} --help is missing examples"
-        );
-        assert!(
-            stdout.contains(&format!("flowleap {command}")),
-            "{command} --help examples don't show an invocation"
-        );
-    }
 }

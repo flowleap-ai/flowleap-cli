@@ -19,14 +19,17 @@ skills for the full workflow. Shared conventions stay in their owner skills:
 
 ### Prior-Art Search
 
-```bash
-# EPO side: natural language to CQL, then search
-flowleap patent build-query "wireless charging for electric vehicles using inductive coupling" --allow-external-processing
-flowleap patent search --query "ti=wireless AND ti=charging AND ti=inductive" --limit 20
+Write the queries yourself — extract the discriminating terms from the
+invention first, then probe the count before trusting results (method and CQL
+fields in `flowleap-patent`; ODP Lucene in `flowleap-uspto`):
 
-# US side: build an ODP query, then search with it (see flowleap-uspto)
-flowleap uspto build-query "wireless charging for electric vehicles using inductive coupling" --allow-external-processing
-flowleap --json uspto search --query "<recommended_query from build-query>" --limit 20
+```bash
+# EPO side: self-written CQL — probe the count, then search
+flowleap --json api request post /v1/patent-search --body '{"query":"ta=\"inductive coupling\" AND ta=\"electric vehicle\" AND ta=charging","range":"1-1"}'
+flowleap patent search --query 'ta="inductive coupling" AND ta="electric vehicle" AND ta=charging' --limit 20
+
+# US side: self-written ODP Lucene (title + metadata only)
+flowleap --json uspto search --query 'applicationMetaData.inventionTitle:"wireless charging" AND applicationMetaData.inventionTitle:vehicle' --limit 20
 
 # Pull claims for the closest hits
 flowleap ops claims EP3456789
@@ -39,10 +42,12 @@ Done when every hit whose abstract maps to a claimed feature has its claims pull
 ```bash
 flowleap --json summary EP3456789         # biblio + legal + family + term
 flowleap ops description EP3456789        # full text for interpretation
-flowleap analyze-claim --file claim1.txt --focus elements   # decompose into elements
 ```
 
-Done when each independent claim is broken into its elements.
+Decompose each independent claim yourself: split on the `comprising`/`wherein`
+boundaries, keep the claim language verbatim per element, and read every term
+against the description (the specification is the dictionary). Done when each
+independent claim is broken into its elements.
 
 ### Freedom-to-Operate
 

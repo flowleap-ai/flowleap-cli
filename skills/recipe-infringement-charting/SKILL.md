@@ -32,11 +32,11 @@ Only chart in jurisdictions with a live family member.
 
 ## Step 3: Decompose the Asserted Claims
 
-Save each asserted independent claim to a file, then:
-
-```bash
-flowleap analyze-claim --file claim1.txt --focus elements
-```
+Decompose each asserted independent claim yourself: split on the
+`comprising` transition and the semicolon/`wherein` boundaries, and keep the
+claim language **verbatim** per element — the chart maps accused-product
+evidence against the claim words, not a paraphrase (the method is in
+`recipe-claim-analysis`, Step 4).
 
 The element list becomes the chart's rows. Every element must be met —
 one missing element defeats literal infringement of that claim.

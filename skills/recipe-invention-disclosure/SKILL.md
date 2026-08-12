@@ -27,10 +27,16 @@ Interview for these sections (push past marketing language to mechanisms):
 
 ## Step 2: Novelty Pre-Check
 
+Write the queries yourself from the Step 1 capture — the "key elements" list
+is your term extraction. Keep the phrases that discriminate (the mechanism,
+not the benefit), probe the count, then search both offices (method in
+`flowleap-patent`; the disclosure never has to leave the machine to become a
+query):
+
 ```bash
-flowleap patent build-query "<inventive concept in plain language>" --allow-external-processing
-flowleap --json patent search --query "<generated CQL>" --limit 20
-flowleap --json uspto search --query "<generated CQL>" --limit 20   # ODP Lucene syntax
+flowleap --json api request post /v1/patent-search --body '{"query":"<self-written CQL>","range":"1-1"}'
+flowleap --json patent search --query "<self-written CQL>" --limit 20
+flowleap --json uspto search --query "<self-written ODP Lucene>" --limit 20   # title + metadata only
 
 # Literature — inventors' own field publishes here first
 flowleap --json academic search "<concept keywords>" --limit 15

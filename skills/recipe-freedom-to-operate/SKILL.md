@@ -14,19 +14,21 @@ grammar.
 
 ## Steps
 
-### Step 1: Generate Targeted Searches
+### Step 1: Write Targeted Searches
 
-Build a query per key product feature, in each database's own syntax:
+Write a query per key product feature, in each database's own syntax, yourself
+(method in `flowleap-patent`; ODP Lucene in `flowleap-uspto`). For each
+feature: extract its specific noun phrases, build the CQL around the
+discriminating ones, and probe the count — FTO is a recall search, so refine
+toward broad (drop classifications, OR in synonyms) rather than precise:
 
 ```bash
-# EPO CQL
-flowleap patent build-query "<feature 1 description>" --allow-external-processing
-# USPTO ODP
-flowleap uspto build-query "<feature 1 description>" --allow-external-processing
-# Repeat for each feature
+# EPO CQL count probe for feature 1 (read `total` from the body)
+flowleap --json api request post /v1/patent-search --body '{"query":"<CQL for feature 1>","range":"1-1"}'
+# Repeat for each feature; USPTO Lucene queries are title + metadata only
 ```
 
-Done when every key feature has an EPO and a USPTO query.
+Done when every key feature has a probed EPO CQL query and a USPTO ODP query.
 
 ### Step 2: Search for Potentially Blocking Patents
 

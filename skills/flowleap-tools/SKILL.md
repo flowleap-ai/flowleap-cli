@@ -70,11 +70,11 @@ Portfolio triage:
 flowleap --json tools run search_uspto_portfolio_by_customer_number customer_number=23456 limit=50
 ```
 
-Query building still lives in the provider commands:
+Search queries are written by you — `flowleap-patent` carries the CQL method
+(term extraction, discriminating term, mandatory count probe):
 
 ```bash
-flowleap --json patent build-query "solid state battery separators" --focus precise --allow-external-processing
-flowleap --json tools run search_patents --input "{\"query\": \"<recommended_cql>\"}"
+flowleap --json tools run search_patents --input "{\"query\": \"ta=\\\"battery separator\\\" AND ta=\\\"solid state\\\"\"}"
 ```
 
 ## Auth

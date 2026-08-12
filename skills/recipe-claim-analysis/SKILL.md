@@ -34,15 +34,24 @@ flowleap --json ops description <patent-number>
 flowleap --json ops family <patent-number>
 ```
 
-### Step 4: Decompose Every Independent Claim
+### Step 4: Decompose Every Independent Claim — Yourself
 
-Take each independent claim from Step 1, save its text to a file, and let the
-backend break it into elements, keywords, and suggested search queries in one
-pass (`--focus full` = elements + search):
+There is no backend claim analyzer: you do the decomposition, one independent
+claim at a time.
 
-```bash
-flowleap analyze-claim --file claim1.txt --focus full
-```
+1. **Split the claim** into preamble, transition (`comprising` / `consisting
+   of`), and body. Element boundaries fall at the semicolons and at
+   `wherein` / `configured to` clauses.
+2. **Keep the claim language verbatim per element** — paraphrase in a second
+   column if useful, but the verbatim text is what later maps against prior
+   art. Tag each element structural or functional.
+3. **Derive keywords and synonyms per element** from the element's own nouns,
+   checking the description (Step 2) for the applicant's own alternative
+   wording — the specification is the claim's dictionary.
+4. **Write a search query per key element combination** with the self-written
+   query method in `flowleap-patent` (extract terms, discriminating term,
+   count probe). The element pairs, not single elements, usually carry the
+   discrimination.
 
 Repeat for every independent claim. For each dependent claim, note how it
 narrows its parent (the added element). Done when every independent claim has an
@@ -54,5 +63,6 @@ Complete claim data with supporting context:
 - Full claims text (independent and dependent)
 - Abstract, bibliographic data, and description for interpretation
 - Family members for jurisdiction coverage
-- Element breakdown and follow-up search queries per independent claim, plus the
+- Element breakdown (verbatim language, structural/functional tag, keywords)
+  and self-written follow-up search queries per independent claim, plus the
   narrowing limitation added by each dependent claim

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{error::ErrorKind, Parser, Subcommand};
 use flowleap_cli::commands::{
-    academic, analytics, analyze_claim, api, auth, citation, config_cmd, doctor, facade, health,
-    keys, legal, mcp, npl, ocr, ops, patent, patstat, skills, tools, upgrade, uspto,
+    academic, analytics, api, auth, citation, config_cmd, doctor, facade, health, keys, legal, mcp,
+    npl, ocr, ops, patent, patstat, skills, tools, upgrade, uspto,
 };
 use flowleap_cli::{client, config, update};
 use serde_json::json;
@@ -93,8 +93,6 @@ enum Commands {
     Patstat(patstat::PatstatArgs),
     /// Extract text from a PDF, image, or document via OCR (file or URL)
     Ocr(ocr::OcrArgs),
-    /// Analyze a patent claim: keywords, IPC codes, search queries, elements
-    AnalyzeClaim(analyze_claim::AnalyzeClaimArgs),
     /// Compare 2-10 patents side by side (bibliography)
     Compare(facade::CompareArgs),
     /// List a patent's drawings/figures; save image data with --out
@@ -351,7 +349,6 @@ async fn dispatch(command: Commands, ctx: &client::Context) -> Result<()> {
         Commands::Analytics(args) => analytics::run(ctx, args).await,
         Commands::Patstat(args) => patstat::run(ctx, args).await,
         Commands::Ocr(args) => ocr::run(ctx, args).await,
-        Commands::AnalyzeClaim(args) => analyze_claim::run(ctx, args).await,
         Commands::Compare(args) => facade::compare(ctx, args).await,
         Commands::Figures(args) => facade::figures(ctx, args).await,
         Commands::Summary(args) => facade::summary(ctx, args).await,
@@ -642,8 +639,8 @@ mod skill_validation_tests {
         .expect("tokenize");
         assert_eq!(argv.len(), 6);
 
-        let argv = normalize_command("flowleap analyze-claim \"$(cat claim.txt)\" | head")
-            .expect("tokenize");
-        assert_eq!(argv, ["flowleap", "analyze-claim", "X"]);
+        let argv =
+            normalize_command("flowleap ocr \"$(cat scan-path.txt)\" | head").expect("tokenize");
+        assert_eq!(argv, ["flowleap", "ocr", "X"]);
     }
 }

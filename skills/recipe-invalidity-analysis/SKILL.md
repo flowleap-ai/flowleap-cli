@@ -23,22 +23,24 @@ The earliest priority date is the critical date: prior art must predate it
 
 ## Step 2: Decompose the Asserted Claims
 
-Save each independent claim to a file, then:
-
-```bash
-flowleap analyze-claim --file claim1.txt --focus elements
-flowleap analyze-claim --file claim1.txt --focus search   # suggested queries
-```
+Decompose each asserted independent claim yourself: split on the
+`comprising` transition and the semicolon/`wherein` boundaries, keep the claim
+language verbatim per element, and derive keywords and synonyms per element
+(the method is in `recipe-claim-analysis`, Step 4).
 
 Every element in the list must be found in the art — track them as a checklist.
 
 ## Step 3: Hunt Prior Art Per Element Combination
 
+Write a query per element combination yourself, tuned broad — invalidity is
+a recall hunt, so drop classifications, OR in synonyms from Step 2, and probe
+every query's count before trusting it (method in `flowleap-patent`):
+
 ```bash
-# Patent art, both databases
-flowleap patent build-query "<element combination in plain language>" --focus broad --allow-external-processing
-flowleap --json patent search --query "<generated CQL>" --limit 30
-flowleap --json uspto search --query "<generated CQL>" --limit 30   # ODP Lucene syntax
+# Patent art, both databases — element pairs carry the discrimination
+flowleap --json api request post /v1/patent-search --body '{"query":"<CQL for the element combination>","range":"1-1"}'
+flowleap --json patent search --query "<CQL for the element combination>" --limit 30
+flowleap --json uspto search --query "<self-written ODP Lucene>" --limit 30   # title + metadata only
 
 # Non-patent art — bound by the critical date
 flowleap --json academic search "<element keywords>" --to-year <priority-year> --limit 20

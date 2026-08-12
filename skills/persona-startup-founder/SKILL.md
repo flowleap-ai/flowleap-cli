@@ -20,13 +20,18 @@ skills for the full workflow. Shared conventions stay in their owner skills:
 
 ### Is the Idea Novel?
 
-```bash
-# Describe the invention in plain English, then search each database in its own syntax
-flowleap patent build-query "AI-powered smart thermostat that learns occupant behavior and optimizes HVAC using reinforcement learning" --allow-external-processing
-flowleap --json patent search --query "<CQL from build-query>" --limit 20
+Turn the idea into queries yourself: list the specific noun phrases in the
+idea ("smart thermostat", "occupant behavior", "reinforcement learning"), keep
+the ones that discriminate, and probe the count before trusting results
+(method in `flowleap-patent`; ODP Lucene in `flowleap-uspto`):
 
-flowleap uspto build-query "AI smart thermostat that learns occupant behavior via reinforcement learning" --allow-external-processing
-flowleap --json uspto search --query "<recommended_query from build-query>" --limit 20
+```bash
+# EPO side: the thermostat + learning pair is the discrimination — keep both
+flowleap --json api request post /v1/patent-search --body '{"query":"ta=thermostat AND ta=\"reinforcement learning\"","range":"1-1"}'
+flowleap --json patent search --query 'ta=thermostat AND ta="reinforcement learning"' --limit 20
+
+# US side: ODP is title + metadata only — search the device noun in the title
+flowleap --json uspto search --query 'applicationMetaData.inventionTitle:thermostat' --limit 20
 ```
 
 Done when both databases have been searched and the closest hits noted.

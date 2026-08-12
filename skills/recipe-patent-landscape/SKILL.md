@@ -16,18 +16,30 @@ USPTO Lucene grammar.
 
 ### Step 1: Define Search Scope
 
+Write the scoping queries yourself (method in `flowleap-patent`): extract the
+area's specific noun phrases, keep at least one discriminating term (a CPC
+class alone maps a continent, not a landscape), and probe the count — a
+landscape query legitimately lands broader than a novelty query, but a count
+in the tens of thousands still means the scope is the technology area, not
+the landscape:
+
 ```bash
-flowleap patent build-query "<technology description>" --allow-external-processing
-flowleap uspto build-query "<technology description>" --allow-external-processing
+# Count probe (read `total` from the body), then adjust scope
+flowleap --json api request post /v1/patent-search --body '{"query":"<self-written CQL>","range":"1-1"}'
 ```
 
-Done when you have an EPO CQL query and a USPTO ODP query for the area.
+Verify any CPC code against the official scheme before scoping on it —
+`flowleap patstat query` on `flowleap.cpc_scheme` (see `flowleap-patent`);
+group titles carry the specific technology, the 4-char class only the
+headline.
+
+Done when you have a probed EPO CQL query and a USPTO ODP query for the area.
 
 ### Step 2: Broad Patent Search
 
 ```bash
 flowleap --json patent search --query "<CQL from step 1>" --limit 50
-flowleap --json uspto search --query "<recommended_query from step 1>" --limit 50
+flowleap --json uspto search --query "<ODP Lucene from step 1>" --limit 50
 ```
 
 If one office answers `provider_keys_required`, its patent-data key is missing:
@@ -50,12 +62,13 @@ flowleap --json analytics --cpc <cpc-prefix> --country US --date-from 2020-01-01
 
 ### Step 4: Identify Key Players
 
-Build applicant-scoped queries rather than hand-writing CQL — see `flowleap-patent`
-for the CQL fields (`pa=` applicant, `ti=` title):
+Scope the Step 1 query per applicant with `pa=` — wildcards catch name
+variants (`pa=GOOGLE*` catches "Google LLC" and "Google Inc"), and
+subsidiaries file separately (Google also files as Alphabet, DeepMind,
+Waymo):
 
 ```bash
-flowleap patent build-query "<top assignee> patents in <technology>" --allow-external-processing
-flowleap --json patent search --query "<CQL from build-query>" --limit 30
+flowleap --json patent search --query 'pa=<ASSIGNEE>* AND <discriminating terms from step 1>' --limit 30
 ```
 
 ### Step 5: Check Recent Activity
