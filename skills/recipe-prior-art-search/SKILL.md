@@ -124,11 +124,29 @@ Against the invention's features, tag every retained reference:
 
 Done when every retained reference carries an X/Y/A tag, X-tagged first.
 
+### Step 6: Map the X References Element by Element
+
+For each X-tagged reference, show the anticipation per element rather than
+asserting it per document. One table, one row per invention feature (or claim
+element, when the user supplied a claim), one column per X reference:
+
+```
+| Claim element | <Reference 1> | <Reference 2> |
+```
+
+Each cell quotes the disclosing passage from the retrieved claims — original
+language plus a translation where applicable. A feature no X reference
+discloses is the novelty candidate; say so under the table.
+
+Done when every element row is either quoted from at least one X reference or
+named as a potential point of novelty.
+
 ## Output
 
 A prior-art table with:
 - One row per patent **family** (the closest member represents the family; use
   `ops family` to collapse duplicates)
 - Each row tagged X / Y / A, X-tagged references surfaced first
+- The element-by-element mapping table for the X references (Step 6)
 - Academic papers on the same topic
 - Claims and abstracts from the closest prior art
