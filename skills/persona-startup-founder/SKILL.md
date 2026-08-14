@@ -27,7 +27,7 @@ the ones that discriminate, and probe the count before trusting results
 
 ```bash
 # EPO side: the thermostat + learning pair is the discrimination — keep both
-flowleap --json api request post /v1/patent-search --body '{"query":"ta=thermostat AND ta=\"reinforcement learning\"","range":"1-1"}'
+flowleap --json tools run search_patents query='ta=thermostat AND ta="reinforcement learning"' range=1-1 details=false
 flowleap --json patent search --query 'ta=thermostat AND ta="reinforcement learning"' --limit 20
 
 # US side: ODP is title + metadata only — search the device noun in the title

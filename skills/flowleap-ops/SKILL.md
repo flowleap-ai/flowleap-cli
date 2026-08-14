@@ -9,12 +9,15 @@ Auth and global flags: see `flowleap-shared`.
 
 Direct access to the European Patent Office (EPO) Open Patent Services API.
 
-OPS needs the user's own EPO patent-data key. If a command returns
-`provider_keys_required`, EP/WO is a **user-action stop** — decline that read
-and name the free key as the fix; never serve the claims, description, or
-bibliography from Google Patents, Espacenet, or a web search instead. Only that
-explicit code means gated: an empty payload, a truncated response, or a 5xx is
-an ordinary dead route with the usual fallbacks. See `flowleap-keys`.
+OPS needs the user's own EPO patent-data key. If a command returns the gate code
+— the CLI's `providerKeysHint.code` `provider_keys_required`, raised from the
+backend's `data_keys_required` or `patent_provider_key_invalid` (each carrying
+`provider: "epo"`) — EP/WO is a **user-action stop**: decline that read and name
+the free key as the fix; never serve the claims, description, or bibliography
+from Google Patents, Espacenet, or a web search instead. Only those explicit
+codes mean gated, and only the code — never the message wording — decides: an
+empty payload, a truncated response, or a 5xx is an ordinary dead route with the
+usual fallbacks. See `flowleap-keys`.
 
 ## Commands
 
@@ -58,10 +61,29 @@ retryable error — don't retry it; fall back to another source for that documen
 
 ### Response envelope
 
-OPS endpoints return data wrapped in a success/error envelope. The CLI unwraps
-`data` automatically so `--json` prints just the payload. Pass `--verbose`
-to see cache status and execution time. Errors use `code` values: `MISSING_PARAM`,
-`NOT_FOUND`, `RATE_LIMITED`, `INTERNAL_ERROR`.
+Every `ops` command runs a tool on the Tools facade — `search_patents` for
+`ops search`, then `get_bibliography`, `get_abstract`, `get_claims`,
+`get_description`, `get_legal_status`, and `get_family` for the document reads.
+The per-source provider route each used to call is a retired endpoint.
+
+The facade answers one envelope,
+`{ success, tool, data, executionTimeMs, cached? }`; the CLI unwraps it so
+`--json` prints just `data`. Pass `--verbose` to see the cache verdict and
+execution time on stderr.
+
+Failures carry `{ success: false, error: { code, message }, status }`. **Branch
+on `error.code`, never on `message`** — codes come from a closed registry and
+never change once shipped, while wording is freely editable. The codes you will
+see here: `INVALID_INPUT` (422, carries `issues[]`), `UNKNOWN_TOOL` (404),
+`NOT_FOUND` (404), `RATE_LIMITED` (429, carries `retryAfterSeconds`),
+`TOOL_EXECUTION_ERROR` (422), `INTERNAL_ERROR` (500), plus the key gate
+(`data_keys_required` / `patent_provider_key_invalid`, each carrying
+`provider`).
+
+`ops family` returns the **INPADOC extended family**. `get_patent_family` is the
+narrower simple-family tool — the same invention republished across offices,
+without the divisionals and continuations. They answer different questions; pick
+deliberately.
 
 ## Examples
 

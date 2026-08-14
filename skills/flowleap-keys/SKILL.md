@@ -9,8 +9,14 @@ Patent data flows through provider APIs that may need the USER's own
 credentials: EPO OPS (consumer key + secret — always a pair) and USPTO ODP
 (single API key). The concept is **patent-data keys**; `provider_keys_required`
 and `provider_keys_invalid` are the wire codes that name it in error envelopes.
-Keys live in `credentials.toml` (0600) and are forwarded per-request; the CLI
-never prints them (verbose/dry-run redact).
+Keys live in `credentials.toml` (0600) and are forwarded per-request as
+`x-epo-ops-key` / `x-epo-ops-secret` / `x-uspto-odp-key`; the CLI never prints
+them (verbose/dry-run redact).
+
+The gate applies wherever patent data is read — the commands and the Tools
+facade alike, since the commands run on the facade. Key validation
+(`keys test`, `keys set`) is a named non-facade exception and works before a
+subscription exists, so setup can always be diagnosed.
 
 ## Diagnose
 
@@ -34,12 +40,33 @@ the validation endpoint (unauthenticated/offline) it falls back to local key
 presence and says so in `keyValidation.note`. See `flowleap-shared` for the
 full `nextSteps`/`ready`/exit contract.
 
+## Which codes mean gated
+
+Exactly three backend codes, all from the closed error-code registry. They never
+change once shipped, so they are the only safe thing to match on:
+
+| Backend code | Status | Meaning |
+|--------------|--------|---------|
+| `data_keys_required` | 400 | The user pays, forwarded no patent-data key for this office, and the server fallback is denied. Carries `provider`. Never a 402 — this is not a billing problem |
+| `patent_provider_key_invalid` | 400 | The user's own key was rejected upstream. Carries `provider`. Never a passthrough 401/403, which clients map to re-sign-in |
+| `odp_api_key_missing` | 503 | No USPTO ODP key configured server-side and none forwarded |
+
+The CLI folds those three into one `providerKeysHint` on the JSON error
+envelope, with its own `code` (`provider_keys_required` or
+`provider_keys_invalid`) and the `provider`. Either layer is a valid match; both
+are codes.
+
+**Never match on message text.** Backend wording is freely editable by policy, so
+a reword must not be able to invent or erase a gate. An error whose *message*
+mentions `EPO_CLIENT_ID` but whose *code* is something else is not a gate — and
+a gate whose message changes tomorrow is still a gate. Read `error.code` (or
+`providerKeysHint.code`); ignore the prose.
+
 ## The key-gate doctrine
 
-**A key gate is a USER-ACTION STOP, never an exhausted route.** A
-`provider_keys_required` error means that office needs a key only the user can
-obtain — it is not a transient error, not a zero-result, and not a route you
-have exhausted. So for the gated office:
+**A key gate is a USER-ACTION STOP, never an exhausted route.** A gate means
+that office needs a key only the user can obtain — it is not a transient error,
+not a zero-result, and not a route you have exhausted. So for the gated office:
 
 - **Never substitute web-scraped data for it** — not for searches, and not for
   single-document reads. "Give me the claims of EP…" with no EPO OPS key is
@@ -50,12 +77,13 @@ have exhausted. So for the gated office:
   at no cost, browser signup). Never frame the ask as a paywall, an upsell, or a
   FlowLeap limitation.
 - **A gate is READ, never INFERRED.** An office is gated only when a command you
-  actually ran returned an explicit `provider_keys_required` (or
-  `provider_keys_invalid`) code. Never conclude a gate from an empty result set,
-  a truncated or partial payload, a 5xx, a timeout, or from `keys list` showing
-  nothing. Anything short of that code is an ordinary dead or empty route, and
-  normal persistence and fallbacks apply to it in full — reformulate, try the
-  alternate office or route, then the usual web fallback.
+  actually ran returned an explicit gate **code** (the exact set is in
+  "Which codes mean gated" below). Never conclude a gate from an empty result
+  set, a truncated or partial payload, a 5xx, a timeout, from an error message
+  that happens to name a credential, or from `keys list` showing nothing.
+  Anything short of those codes is an ordinary dead or empty route, and normal
+  persistence and fallbacks apply to it in full — reformulate, try the alternate
+  office or route, then the usual web fallback.
 - The forbid rule covers **only** an office gated on a missing patent-data key.
   Offices with no backend route at all (CN/JP/KR) and routes that are genuinely
   dead or empty *with a working key* keep their existing fallbacks unchanged.
@@ -97,7 +125,8 @@ the request headers on the next invocation: no restart, no new session.
 
 ## The agent protocol — when keys are missing or rejected
 
-Failed commands carry a `providerKeysHint` in the JSON error envelope:
+Failed commands carry a `providerKeysHint` in the JSON error envelope, raised
+from the three backend codes above and from nothing else:
 
 ```json
 "providerKeysHint": {

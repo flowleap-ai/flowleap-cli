@@ -29,7 +29,11 @@ Data Edition; these are live USPTO records.
 ```bash
 flowleap --json citation search 16123456 --size 20
 flowleap --json citation search 16123456 --category x --examiner-cited-only
+flowleap --json citation search 16123456 --from 2020-01-01 --to 2023-12-31
 ```
+
+`--from`/`--to` bound the **office-action date range** (`YYYY-MM-DD`) — when the
+examiner cited the reference, not when either document published.
 
 ## Forward citations (who cites this document)
 
@@ -45,6 +49,10 @@ flowleap --json citation novelty 16123456    # X-rated novelty-destroying citati
 ```
 
 Categories: `x` (novelty-destroying), `y` (inventive-step with combination),
-`a` (background), `all`. Also available as tools:
-`search_office_action_citations` (by application) and
-`search_enriched_citations` (forward, by cited document).
+`a` (background), `all`.
+
+Tools-facade equivalents: `search_office_action_citations` (by application),
+`search_enriched_citations` (forward, by cited document) and
+`get_citation_stats` (aggregate counts only). `citation novelty` has no tool of
+its own — it is a recipe over `search_office_action_citations` with
+`category: "X"` and `examiner_cited_only: true`.

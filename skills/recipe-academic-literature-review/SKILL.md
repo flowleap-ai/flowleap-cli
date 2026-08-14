@@ -37,7 +37,7 @@ subject matter, not the field name — method in `flowleap-patent`), probe the
 count, then search:
 
 ```bash
-flowleap --json api request post /v1/patent-search --body '{"query":"<self-written CQL>","range":"1-1"}'
+flowleap --json tools run search_patents query='<self-written CQL>' range=1-1 details=false
 flowleap --json patent search --query "<self-written CQL>" --limit 20
 ```
 

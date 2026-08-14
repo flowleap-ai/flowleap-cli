@@ -15,17 +15,24 @@ command, every command re-runnable.
 
 ```bash
 flowleap --version
+flowleap --json health api    # backend apiVersion (the server build)
 flowleap --json doctor        # backend, auth mode, provider-key status
 ```
 
-Record: CLI version, backend base URL, date/time of the session, and the
-auth *mode* (OAuth session vs. API token) — **never token values or key
-material**.
+Record: CLI version, backend `apiVersion`, backend base URL, date/time of the
+session, and the auth *mode* (OAuth session vs. API token) — **never token
+values or key material**.
+
+Both versions matter for re-runnability. The CLI sends its own build as the
+**Client version header** (`X-FlowLeap-Client: cli/<version>`), so a later
+reader can tell which client produced the log; `apiVersion` pins the server side
+of the same pair.
 
 ## Step 2: Provenance Discipline During Research
 
 For every substantive finding, log the exact command and keep the `--json`
-output. The tools facade makes provenance explicit:
+output. The Tools facade makes provenance explicit — one surface, one envelope,
+one named tool per capability, so "which system answered this" is never a guess:
 
 ```bash
 flowleap --json tools list                     # capabilities available that day

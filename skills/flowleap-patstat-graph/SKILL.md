@@ -6,7 +6,10 @@ description: Graph Analytics over the PATSTAT snapshot — a named node and the 
 # FlowLeap Patstat Graph (Graph Analytics)
 
 Auth and global flags: see `flowleap-shared`. Six native commands under
-`flowleap patstat graph` — no raw API passthrough needed.
+`flowleap patstat graph` — no raw `api request` escape hatch needed.
+
+Like the rest of PATSTAT, this is a **named non-facade exception**: its own
+surface, no patent-data key, untouched by the provider-route retirement.
 
 ## Routing: which engine answers this?
 

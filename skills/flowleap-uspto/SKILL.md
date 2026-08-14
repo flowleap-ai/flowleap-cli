@@ -9,7 +9,9 @@ Auth and global flags: see `flowleap-shared`.
 
 ## Search
 
-ODP uses Lucene syntax over application metadata (get the grammar via
+`uspto search` runs the `search_patents` tool (`provider: uspto`) on the Tools
+facade — the single agent surface for patent data. ODP uses Lucene syntax over
+application metadata (get the grammar via
 `flowleap --json tools run get_search_syntax provider=uspto`):
 
 ```bash
@@ -37,11 +39,16 @@ common cause of zero recall), then, if still empty, prints guidance to broaden
 to a title search. Watch stderr for these notes.
 
 **Zero recall is not a key gate.** An empty result set, a truncated payload, or
-a 5xx keeps the normal recovery path above. Only an explicit
-`provider_keys_required` means the US office is gated on the user's USPTO ODP
-patent-data key — and that is a user-action stop: do not substitute web-scraped
-US data for it, deliver the other office's results in full, name the gap as a
-missing-key gap, and ask for the free key at the end. See `flowleap-keys`.
+a 5xx keeps the normal recovery path above. The US office is gated only when a
+command you actually ran returned an explicit gate **code** — the CLI's
+`providerKeysHint.code` (`provider_keys_required` / `provider_keys_invalid`),
+raised from the backend codes `data_keys_required`,
+`patent_provider_key_invalid` (each carrying `provider: "uspto"`) or
+`odp_api_key_missing`. Match the code, never the message text: backend wording
+is freely editable, so a reword can neither invent nor erase a gate. A gate is a
+user-action stop: do not substitute web-scraped US data for it, deliver the
+other office's results in full, name the gap as a missing-key gap, and ask for
+the free key at the end. See `flowleap-keys`.
 
 ## Search with a full request body
 
@@ -49,6 +56,13 @@ missing-key gap, and ask for the free key at the end. See `flowleap-keys`.
 or `-` for stdin) or `--body-file` — use this when you need `fields` or
 `enrich` alongside the query. `--query` and `--body`/`--body-file` are
 mutually exclusive.
+
+The body is translated onto the tool's snake_case parameters (`q` → `query`,
+`rangeFilters` → `range_filters`, `pagination` flattened to `limit`/`offset`)
+and every other field is forwarded verbatim — the tool schema is the only
+validator, so a field a newer backend understands is never dropped by an older
+CLI. An unknown field comes back as `INVALID_INPUT` with an `issues[]` list,
+which tells you the name is wrong; it is not a CLI limitation.
 
 ```bash
 flowleap --json uspto search --body '{"q":"applicationMetaData.inventionTitle:\"machine learning\"","pagination":{"limit":5}}'
@@ -73,11 +87,11 @@ applies unchanged — ODP differs from CQL in syntax, not in strategy:
      `flowleap --json tools run get_search_syntax provider=uspto` — read
      field names from it rather than recalling them
 3. **Probe the count before trusting any results.** `uspto search --json`
-   prints the record bag without a total, so probe through the raw
-   passthrough and read the count field from the body:
+   prints the record bag without a total, so probe the same tool directly with
+   `limit=1` and read `count` from its payload:
 
 ```bash
-flowleap --json api request post /v1/patent-search-uspto/search --body '{"q":"applicationMetaData.inventionTitle:\"charging case\"","pagination":{"limit":1,"offset":0}}'
+flowleap --json tools run search_patents provider=uspto query='applicationMetaData.inventionTitle:"charging case"' limit=1
 ```
 
 Over ~1,000 hits: add the next discriminating term from your extraction list.
@@ -93,7 +107,10 @@ flowleap --json uspto application 16123456        # application by number
 flowleap --json uspto continuity 16123456         # parent/child chain
 ```
 
-Continuity is also available as `flowleap tools run get_continuity application_number=16123456`.
+Tools-facade equivalents: `get_us_grant` (`patent_number=`),
+`get_us_application` and `get_continuity` (both `application_number=`). A number
+ODP has never ingested answers `patent_not_found` or `application_not_found` —
+a real absence, not a transport failure, so do not retry it.
 
 ## File wrapper
 
@@ -134,9 +151,13 @@ Human/table output prints the markdown itself on stdout (metadata goes to
 stderr), so `document-text` pipes cleanly; `--json` wraps it in
 `{ pageCount, markdown, model, cached }`.
 
+The listing is filtered server-side and returned compacted —
+`{ applicationNumber, total, returned, documents }`, each record keeping its
+`downloadOptionBag` alongside a derived `pageCount`.
+
 First read of a long document can take tens of seconds (download + OCR);
-results are cached server-side for 7 days. Check `pages` in the listing before
-pulling very long documents.
+results are cached server-side for 7 days. Check `pageCount` in the listing
+before pulling very long documents.
 
 Tools-facade equivalents: `get_application_documents`
 (`application_number=`, optional `document_code=`/`direction=`) and

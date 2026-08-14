@@ -27,4 +27,18 @@ cite `section` + `source_url` in agent output.
 flowleap --json legal jurisdictions   # available jurisdictions and sources
 ```
 
-Also available as `flowleap tools run reference_search --input '{"query":"...","jurisdiction":"EPO"}'`.
+Tools-facade equivalents: `reference_search` (the search) and
+`get_legal_jurisdictions` (the discovery call).
+
+```bash
+flowleap --json tools run reference_search query='inventive step' jurisdiction=EPO
+```
+
+Patent-law reference needs no patent-data key, so it stays live while EPO or
+USPTO is key-gated. Offer it as *different* data — it gives the legal standard,
+never what has been published or filed — and never as a substitute for a gated
+office's search (see `flowleap-keys`).
+
+`legal stats` and `legal docs` no longer exist: their endpoints retired with no
+facade successor, so the subcommands were removed rather than left to answer
+`410`.

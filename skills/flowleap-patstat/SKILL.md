@@ -7,6 +7,10 @@ description: Portfolio Analytics AND guarded SQL over the PATSTAT snapshot — s
 
 Auth and global flags: see `flowleap-shared`.
 
+PATSTAT is a **named non-facade exception**: it keeps its own surface instead of
+running on the Tools facade, and needs no patent-data key. Nothing here was
+touched by the provider-route retirement.
+
 ## Which engine? — the three-way routing rule
 
 FlowLeap runs three analytics engines, split by *criteria shape*, not by

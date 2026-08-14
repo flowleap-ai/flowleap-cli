@@ -13,7 +13,10 @@ Auth and global flags: see `flowleap-shared`.
 flowleap academic search <query> [flags]
 ```
 
-Posts to `/v1/academic-search`. Returns academic papers with title, authors, year, and source.
+Runs the `search_academic` tool on the Tools facade. Returns academic papers
+with title, authors, year, and source. No patent-data key is needed, so this
+corpus stays live while EPO or USPTO is key-gated — offer it as *different*
+data (literature, not patents), never as a substitute (see `flowleap-keys`).
 
 ## Flags
 
@@ -43,14 +46,20 @@ flowleap academic search "solid state electrolyte" --source scholar --source arx
 flowleap academic search "neural network optimization" --json
 ```
 
+Tools-facade equivalent: `search_academic` (`query=`, `sources=`,
+`max_results=`, `filter=`). Its `sources` values are `semantic-scholar` and
+`arxiv`; papers still come back tagged `scholar` or `arxiv`.
+
 ## Response Format (JSON)
+
+The CLI prints the tool's `data` payload — `{ query, total, papers }`. The
+envelope fields (`success`, `executionTimeMs`, `cached`) sit outside it; add
+`--verbose` to see the cache verdict and timing on stderr.
 
 ```json
 {
-  "success": true,
   "query": "machine learning patent classification",
   "total": 1,
-  "cached": false,
   "papers": [
     {
       "title": "Machine Learning in Patent Analysis",
