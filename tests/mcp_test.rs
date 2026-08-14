@@ -227,11 +227,19 @@ async fn tools_call_round_trips_the_tool_envelope() {
 #[tokio::test]
 async fn tools_call_error_is_a_tool_result_carrying_the_hint() {
     let server = MockServer::start().await;
-    // Missing EPO keys: the client attaches a structured providerKeysHint.
+    // Missing EPO keys: the backend answers 400 data_keys_required naming the
+    // provider, and the client turns that code into a providerKeysHint. The
+    // message here is deliberately uninformative — nothing may depend on its
+    // wording, which backend policy makes freely editable.
     Mock::given(method("POST"))
         .and(path("/v1/tools/search_patents"))
-        .respond_with(ResponseTemplate::new(403).set_body_json(json!({
-            "error": "EPO OPS credentials missing: set EPO_CLIENT_ID / EPO_CLIENT_SECRET",
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": {
+                "message": "wording the backend is free to change at any time",
+                "type": "invalid_request_error",
+                "code": "data_keys_required",
+                "provider": "epo",
+            },
         })))
         .mount(&server)
         .await;
@@ -269,7 +277,7 @@ async fn tools_call_error_is_a_tool_result_carrying_the_hint() {
     let keys_envelope: Value =
         serde_json::from_str(keys_result["content"][0]["text"].as_str().expect("text"))
             .expect("error text is JSON");
-    assert_eq!(keys_envelope["status"], 403);
+    assert_eq!(keys_envelope["status"], 400);
     assert_eq!(
         keys_envelope["providerKeysHint"]["code"],
         "provider_keys_required"

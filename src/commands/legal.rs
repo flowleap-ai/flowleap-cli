@@ -2,7 +2,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 
-use crate::client::{encode_url_component, Context};
+use crate::client::Context;
+use crate::commands::tools;
 use crate::output;
 
 #[derive(Parser)]
@@ -38,16 +39,8 @@ enum LegalCommand {
         #[arg(long)]
         comprehensive: bool,
     },
-    /// Get legal search index statistics
-    Stats,
     /// List available legal jurisdictions and sources
     Jurisdictions,
-    /// Get legal-search route documentation
-    Docs {
-        /// Documentation format
-        #[arg(long, default_value = "compact")]
-        format: String,
-    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -78,7 +71,7 @@ pub async fn run(ctx: &Context, args: LegalArgs) -> Result<()> {
             include_context,
             comprehensive,
         } => {
-            let mut body = json!({
+            let mut input = json!({
                 "query": query,
                 "limit": limit,
                 "search_mode": search_mode.as_backend_value(),
@@ -86,34 +79,18 @@ pub async fn run(ctx: &Context, args: LegalArgs) -> Result<()> {
                 "comprehensive": comprehensive,
             });
             if let Some(jurisdiction) = jurisdiction {
-                body["jurisdiction"] = json!(jurisdiction.as_backend_value());
+                input["jurisdiction"] = json!(jurisdiction.as_backend_value());
             }
-            post(ctx, "/v1/legal-search", &body).await
+            call(ctx, "reference_search", &input).await
         }
-        LegalCommand::Stats => get(ctx, "/v1/legal-search/stats").await,
-        LegalCommand::Jurisdictions => get(ctx, "/v1/legal-search/jurisdictions").await,
-        LegalCommand::Docs { format } => {
-            get(
-                ctx,
-                &format!(
-                    "/v1/legal-search/docs?format={}",
-                    encode_url_component(&format)
-                ),
-            )
-            .await
-        }
+        LegalCommand::Jurisdictions => call(ctx, "get_legal_jurisdictions", &json!({})).await,
     }
 }
 
-async fn get(ctx: &Context, path: &str) -> Result<()> {
-    let result = ctx.execute_json_body_or_error(ctx.get(path)).await?;
-    output::print_value(&ctx.output_format, &result, &[]);
-    Ok(())
-}
-
-async fn post(ctx: &Context, path: &str, body: &serde_json::Value) -> Result<()> {
-    let result = ctx.execute_json_body_or_error(ctx.post(path, body)).await?;
-    output::print_value(&ctx.output_format, &result, &[]);
+async fn call(ctx: &Context, tool: &str, input: &serde_json::Value) -> Result<()> {
+    if let Some(result) = tools::call_tool_data(ctx, tool, input).await? {
+        output::print_value(&ctx.output_format, &result, &[]);
+    }
     Ok(())
 }
 

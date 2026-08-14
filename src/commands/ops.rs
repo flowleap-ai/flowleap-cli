@@ -1,8 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use serde_json::{json, Value};
+use serde_json::json;
 
-use crate::client::{encode_url_component, Context};
+use crate::client::Context;
+use crate::commands::{patent, tools};
 use crate::output;
 
 #[derive(Parser)]
@@ -48,7 +49,7 @@ enum OpsCommand {
         #[arg(long, default_value = "en")]
         lang: String,
     },
-    /// Get patent family members
+    /// Get patent family members (INPADOC extended family)
     Family {
         /// Patent document number
         doc: String,
@@ -70,121 +71,37 @@ pub async fn run(ctx: &Context, args: OpsArgs) -> Result<()> {
 
     match args.command {
         OpsCommand::Search { cql, start, end } => search(ctx, &cql, start, end).await,
-        OpsCommand::Biblio { doc } => fetch_doc(ctx, "biblio", &doc, None).await,
-        OpsCommand::Claims { doc, lang } => {
-            fetch_doc(ctx, "fulltext/claims", &doc, Some(&lang)).await
-        }
+        OpsCommand::Biblio { doc } => document(ctx, "get_bibliography", &doc, None).await,
+        OpsCommand::Claims { doc, lang } => document(ctx, "get_claims", &doc, Some(&lang)).await,
         OpsCommand::Description { doc, lang } => {
-            fetch_doc(ctx, "fulltext/description", &doc, Some(&lang)).await
+            document(ctx, "get_description", &doc, Some(&lang)).await
         }
-        OpsCommand::Family { doc } => fetch_doc(ctx, "family", &doc, None).await,
-        OpsCommand::Legal { doc } => fetch_doc(ctx, "legal", &doc, None).await,
-        OpsCommand::Abstract { doc } => fetch_doc(ctx, "abstract", &doc, None).await,
+        // The INPADOC family — every application and publication linked through
+        // common priorities. get_patent_family is the narrower simple-family
+        // equivalents tool and deliberately keeps that meaning.
+        OpsCommand::Family { doc } => document(ctx, "get_family", &doc, None).await,
+        OpsCommand::Legal { doc } => document(ctx, "get_legal_status", &doc, None).await,
+        OpsCommand::Abstract { doc } => document(ctx, "get_abstract", &doc, None).await,
     }
 }
 
 async fn search(ctx: &Context, cql: &str, start: u32, end: u32) -> Result<()> {
-    // The backend expects a "start-end" range string, not separate fields.
-    let body = json!({
-        "query": cql,
-        "range": format!("{}-{}", start, end),
-    });
-
-    let req = ctx.post("/v1/patent-search", &body);
-    let result = ctx.execute_json_body_or_error(req).await?;
-
-    let columns = &[
-        ("docId", "Patent ID"),
-        ("title", "Title"),
-        ("applicants", "Applicants"),
-        ("publicationDate", "Date"),
-    ];
-
-    if let Some(docs) = result.get("docs") {
-        output::print_value(&ctx.output_format, docs, columns);
-    } else {
-        output::print_value(&ctx.output_format, &result, columns);
+    let input = patent::epo_search_input(cql, format!("{}-{}", start, end), None);
+    if let Some(result) = tools::call_tool_data(ctx, "search_patents", &input).await? {
+        patent::print_search_result(ctx, &result);
     }
-
     Ok(())
 }
 
-async fn fetch_doc(ctx: &Context, endpoint: &str, doc: &str, lang: Option<&str>) -> Result<()> {
-    let mut path = format!("/v1/ops/{}?doc={}", endpoint, encode_url_component(doc));
-    if let Some(l) = lang {
-        path.push_str(&format!("&lang={}", encode_url_component(l)));
+/// Read one document projection through the facade. Every ops read is a
+/// single-document tool taking `patent_number`, optionally with a language.
+async fn document(ctx: &Context, tool: &str, doc: &str, lang: Option<&str>) -> Result<()> {
+    let mut input = json!({ "patent_number": doc });
+    if let Some(lang) = lang {
+        input["language"] = json!(lang);
     }
-
-    let req = ctx.get(&path);
-    let envelope = ctx.execute_json_envelope(req).await?;
-    if envelope.get("dryRun").and_then(|v| v.as_bool()) == Some(true) {
-        output::print_json(&envelope);
-        return Ok(());
+    if let Some(data) = tools::call_tool_data(ctx, tool, &input).await? {
+        output::print_json(&data);
     }
-
-    let http_ok = envelope.get("ok").and_then(|v| v.as_bool()) == Some(true);
-    let body = envelope.get("body").cloned().unwrap_or(Value::Null);
-
-    // Two error shapes reach this command:
-    //   ops routes:  4xx/5xx + { "success": false, "error": "...", "code": "NOT_FOUND", ... }
-    //   middleware:  4xx     + { "error": { "message", "type", "code" } }  (no "success" field!)
-    // HTTP status is authoritative — a body without success:false must not
-    // fall through to the data path.
-    if !http_ok || body.get("success") == Some(&Value::Bool(false)) {
-        let code = body
-            .get("code")
-            .and_then(|v| v.as_str())
-            .or_else(|| body.pointer("/error/code").and_then(|v| v.as_str()))
-            .unwrap_or("ERROR");
-        let message = body
-            .get("error")
-            .and_then(|v| v.as_str())
-            .or_else(|| body.pointer("/error/message").and_then(|v| v.as_str()))
-            .unwrap_or("unknown error");
-        let mut error = json!({
-            "ok": false,
-            "error": {
-                "code": code,
-                "message": message,
-            }
-        });
-        // execute_json_envelope already enriched the failure with structured
-        // hints (provider keys, subscription, rate limit) — carry them over.
-        for key in ["providerKeysHint", "subscriptionHint", "rateLimitHint"] {
-            if let Some(hint) = envelope.get(key) {
-                error[key] = hint.clone();
-            }
-        }
-        output::print_value(&ctx.output_format, &error, &[]);
-        if ctx.output_format != "json" {
-            if let Some(hint) = error.get("providerKeysHint") {
-                crate::client::print_keys_hint_box(hint);
-            }
-            if let Some(hint) = error.get("subscriptionHint") {
-                crate::client::print_subscription_hint_box(hint);
-            }
-            if let Some(hint) = error.get("rateLimitHint") {
-                crate::client::print_rate_limit_hint_box(hint);
-            }
-        }
-        return Err(match envelope.get("status").and_then(|v| v.as_u64()) {
-            Some(status) if !http_ok => crate::client::PrintedError::with_status(status as u16),
-            _ => crate::client::PrintedError::new(),
-        }
-        .into());
-    }
-
-    if ctx.verbose {
-        if let Some(cached) = body.get("cached").and_then(|v| v.as_bool()) {
-            eprintln!("  cached: {}", cached);
-        }
-        if let Some(ms) = body.get("executionTimeMs").and_then(|v| v.as_u64()) {
-            eprintln!("  executionTimeMs: {}", ms);
-        }
-    }
-
-    let data = body.get("data").unwrap_or(&body);
-    output::print_json(data);
-
     Ok(())
 }

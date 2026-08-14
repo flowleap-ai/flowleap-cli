@@ -25,8 +25,6 @@ cite `section` + `source_url` in agent output.
 
 ```bash
 flowleap --json legal jurisdictions   # available jurisdictions and sources
-flowleap --json legal stats           # index statistics
-flowleap --json legal docs            # route documentation
 ```
 
 Also available as `flowleap tools run reference_search --input '{"query":"...","jurisdiction":"EPO"}'`.

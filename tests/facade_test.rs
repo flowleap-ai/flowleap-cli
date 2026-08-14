@@ -114,8 +114,11 @@ fn figures_calls_get_patent_image() {
     assert_eq!(value["body"]["patent_number"], "EP1000000");
 }
 
+/// `--out` no longer straddles two surfaces: metadata and image bytes both
+/// come from get_patent_image, which returns the page as base64 (backend PRD
+/// 0013 — the /v1/ops/figures byte fetch is gone).
 #[test]
-fn figures_out_fetches_image_payload_from_figures_route() {
+fn figures_out_fetches_image_payload_from_the_same_tool() {
     let temp_home = tempfile::tempdir().expect("create temp home");
     let out_path = temp_home.path().join("fig.png");
     let out_arg = out_path.to_str().expect("utf8 path");
@@ -125,14 +128,17 @@ fn figures_out_fetches_image_payload_from_figures_route() {
     );
 
     assert_eq!(value["dryRun"], true);
-    assert_eq!(value["method"], "GET");
-    let url = value["url"].as_str().expect("url is a string");
-    assert!(url.contains("/v1/ops/figures?"), "unexpected url {url}");
-    assert!(url.contains("doc=EP1000000"), "unexpected url {url}");
-    assert!(url.contains("include_images=true"), "unexpected url {url}");
-    assert!(url.contains("pages=2"), "unexpected url {url}");
+    assert_eq!(value["method"], "POST");
+    assert_eq!(
+        value["url"],
+        "https://api.flowleap.co/v1/tools/get_patent_image"
+    );
+    assert_eq!(value["body"]["patent_number"], "EP1000000");
+    assert_eq!(value["body"]["include_images"], true);
+    assert_eq!(value["body"]["pages"], serde_json::json!([2]));
     // .png output is rasterized from the PDF source.
-    assert!(url.contains("render=png"), "unexpected url {url}");
+    assert_eq!(value["body"]["format"], "pdf");
+    assert_eq!(value["body"]["render"], "png");
     assert!(!out_path.exists(), "dry-run must not write files");
 }
 

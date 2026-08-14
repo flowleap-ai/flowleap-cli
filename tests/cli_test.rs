@@ -48,10 +48,16 @@ fn dry_run_succeeds_without_credentials() {
     assert_eq!(value["dryRun"], true);
     assert_eq!(value["method"], "POST");
     assert_eq!(value["authenticated"], false);
-    // The backend contract is { query (CQL), range: "start-end", countries? }.
+    assert_eq!(
+        value["url"],
+        "https://api.flowleap.co/v1/tools/search_patents"
+    );
+    // The search_patents contract for EPO: { query (CQL), provider, range:
+    // "start-end", countries?: [CC] }.
+    assert_eq!(value["body"]["provider"], "epo_ops");
     assert_eq!(value["body"]["query"], "ti=\"wireless charging\"");
     assert_eq!(value["body"]["range"], "1-5");
-    assert_eq!(value["body"]["countries"], "EP,WO");
+    assert_eq!(value["body"]["countries"], serde_json::json!(["EP", "WO"]));
     assert!(value["body"].get("source").is_none());
     assert!(value["body"].get("limit").is_none());
 }
@@ -118,13 +124,15 @@ fn uspto_search_dry_run_uses_odp_request_shape() {
     assert_eq!(value["authenticated"], true);
     assert_eq!(
         value["url"],
-        "https://api.flowleap.co/v1/patent-search-uspto/search"
+        "https://api.flowleap.co/v1/tools/search_patents"
     );
-    assert_eq!(value["body"]["q"], "wireless charging");
-    assert_eq!(value["body"]["pagination"]["limit"], 1);
-    assert_eq!(value["body"]["pagination"]["offset"], 0);
-    assert!(value["body"].get("query").is_none());
-    assert!(value["body"].get("limit").is_none());
+    assert_eq!(value["body"]["provider"], "uspto");
+    assert_eq!(value["body"]["query"], "wireless charging");
+    assert_eq!(value["body"]["limit"], 1);
+    assert_eq!(value["body"]["offset"], 0);
+    // The ODP wire spellings never leave the CLI — the tool takes flat params.
+    assert!(value["body"].get("q").is_none());
+    assert!(value["body"].get("pagination").is_none());
 }
 
 #[test]
@@ -303,7 +311,10 @@ fn analytics_dry_run_uses_structured_request_shape() {
 
     assert_eq!(value["dryRun"], true);
     assert_eq!(value["method"], "POST");
-    assert_eq!(value["url"], "https://api.flowleap.co/v1/patent-analytics");
+    assert_eq!(
+        value["url"],
+        "https://api.flowleap.co/v1/tools/patent_analytics"
+    );
     assert_eq!(
         value["body"]["keywords"],
         serde_json::json!(["AI", "battery"])
@@ -464,7 +475,7 @@ fn analytics_human_mode_renders_four_labeled_tables() {
         .expect("run analytics against stub");
 
     let request = stub.join().expect("stub thread");
-    assert!(request.starts_with("POST /v1/patent-analytics HTTP/1.1"));
+    assert!(request.starts_with("POST /v1/tools/patent_analytics HTTP/1.1"));
     assert!(request.contains(r#"{"keywords":["battery"]}"#));
 
     assert!(output.status.success());
@@ -567,7 +578,7 @@ fn ocr_url_dry_run_sends_url_field() {
 
     assert_eq!(value["dryRun"], true);
     assert_eq!(value["method"], "POST");
-    assert_eq!(value["url"], "https://api.flowleap.co/v1/ocr");
+    assert_eq!(value["url"], "https://api.flowleap.co/v1/tools/ocr");
     assert_eq!(value["body"]["url"], "https://example.com/spec.pdf");
     assert!(value["body"].get("file").is_none());
     assert!(value["body"].get("filename").is_none());
@@ -601,7 +612,7 @@ fn ocr_local_file_dry_run_sends_base64_and_filename() {
 
     assert_eq!(value["dryRun"], true);
     assert_eq!(value["method"], "POST");
-    assert_eq!(value["url"], "https://api.flowleap.co/v1/ocr");
+    assert_eq!(value["url"], "https://api.flowleap.co/v1/tools/ocr");
     // base64("fake png bytes")
     assert_eq!(value["body"]["file"], "ZmFrZSBwbmcgYnl0ZXM=");
     assert_eq!(value["body"]["filename"], "scan.png");

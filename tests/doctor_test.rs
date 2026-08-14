@@ -15,11 +15,18 @@ use support::{run_cli, stdout_json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-/// Mount a healthy GET /health.
+/// The apiVersion the mock readiness probe reports.
+const MOCK_API_VERSION: &str = "1.4.2+abc1234";
+
+/// Mount a healthy readiness probe (GET /v1/health) — the public probe doctor
+/// uses, carrying the server's apiVersion.
 async fn mount_health_ok(server: &MockServer) {
     Mock::given(method("GET"))
-        .and(path("/health"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "status": "ok" })))
+        .and(path("/v1/health"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "status": "ok", "apiVersion": MOCK_API_VERSION })),
+        )
         .mount(server)
         .await;
 }
@@ -93,6 +100,9 @@ async fn ready_machine_exits_0_with_empty_next_steps() {
     assert_eq!(report["nextSteps"], json!([]));
     assert_eq!(report["ok"], true);
     assert_eq!(report["backend"]["healthStatus"], 200);
+    // Readiness carries the server build, so doctor reports which backend it
+    // just talked to (backend ADR 0014 rule 6).
+    assert_eq!(report["backend"]["apiVersion"], MOCK_API_VERSION);
     assert_eq!(report["keyValidation"]["source"], "server");
     assert_existing_fields(&report);
 }

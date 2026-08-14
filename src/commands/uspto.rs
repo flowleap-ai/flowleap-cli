@@ -5,7 +5,8 @@ use anyhow::{bail, Context as AnyhowContext, Result};
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
-use crate::client::{encode_url_component, Context};
+use crate::client::Context;
+use crate::commands::tools;
 use crate::output;
 
 #[derive(Parser)]
@@ -79,11 +80,6 @@ enum UsptoCommand {
         /// Application number
         app_number: String,
     },
-    /// Grant/pgpub bulk-dataset XML pointers
-    AssociatedDocuments {
-        /// Application number
-        app_number: String,
-    },
     /// List Image File Wrapper (IFW) documents — office actions, responses, notices
     Documents {
         /// Application number
@@ -129,7 +125,7 @@ pub async fn run(ctx: &Context, args: UsptoArgs) -> Result<()> {
             wrapper_bag(
                 ctx,
                 &app_number,
-                "transactions",
+                "get_transactions",
                 "eventDataBag",
                 event_columns(),
             )
@@ -139,7 +135,7 @@ pub async fn run(ctx: &Context, args: UsptoArgs) -> Result<()> {
             wrapper_bag(
                 ctx,
                 &app_number,
-                "assignment",
+                "get_assignments",
                 "assignmentBag",
                 assignment_columns(),
             )
@@ -149,7 +145,7 @@ pub async fn run(ctx: &Context, args: UsptoArgs) -> Result<()> {
             wrapper_bag(
                 ctx,
                 &app_number,
-                "foreign-priority",
+                "get_foreign_priority",
                 "foreignPriorityBag",
                 foreign_priority_columns(),
             )
@@ -159,22 +155,14 @@ pub async fn run(ctx: &Context, args: UsptoArgs) -> Result<()> {
             wrapper_bag(
                 ctx,
                 &app_number,
-                "adjustment",
+                "get_patent_term_adjustment",
                 "patentTermAdjustmentData",
                 adjustment_columns(),
             )
             .await
         }
         UsptoCommand::Attorney { app_number } => {
-            wrapper_bag(ctx, &app_number, "attorney", "recordAttorney", &[]).await
-        }
-        UsptoCommand::AssociatedDocuments { app_number } => {
-            // The grant/pgpub metadata live as sibling keys, not one bag — print
-            // the record as-is.
-            let result =
-                fetch_wrapper_sub_resource(ctx, &app_number, "associated-documents").await?;
-            output::print_value(&ctx.output_format, &result, &[]);
-            Ok(())
+            wrapper_bag(ctx, &app_number, "get_attorney", "recordAttorney", &[]).await
         }
         UsptoCommand::Documents {
             app_number,
@@ -187,8 +175,6 @@ pub async fn run(ctx: &Context, args: UsptoArgs) -> Result<()> {
         } => document_text(ctx, &app_number, &document_id).await,
     }
 }
-
-const SEARCH_PATH: &str = "/v1/patent-search-uspto/search";
 
 /// The ODP field a CPC-class constraint travels in. USPTO ODP search only
 /// indexes `inventionTitle` plus a handful of metadata fields — there is no
@@ -206,9 +192,9 @@ async fn search(
 ) -> Result<()> {
     let request = build_search_request(query, body, body_file, limit)?;
 
-    let mut result = ctx
-        .execute_json_body_or_error(ctx.post(SEARCH_PATH, &request))
-        .await?;
+    let Some(mut result) = tools::call_tool_data(ctx, "search_patents", &request).await? else {
+        return Ok(());
+    };
 
     // Zero-recall fallback. The backend query generator guesses a CPC class and
     // ANDs it into a title-only search; when that guess is wrong the search
@@ -238,10 +224,11 @@ async fn search(
     Ok(())
 }
 
-/// Build the ODP request body from `--query` or `--body`/`--body-file`.
-/// A `--query` string is wrapped as `{q, pagination}`; a full body is submitted
-/// as-is, except that `limit` is injected as the pagination default when the
-/// body does not already carry one.
+/// Build the `search_patents` input for a USPTO search, from `--query` or
+/// `--body`/`--body-file`. A `--query` string becomes `{query, limit, offset}`;
+/// a full ODP request body is translated field-by-field onto the tool's
+/// snake_case parameters, with `limit` supplying the pagination default when
+/// the body does not already carry one.
 fn build_search_request(
     query: Option<&str>,
     body: Option<&str>,
@@ -250,8 +237,10 @@ fn build_search_request(
 ) -> Result<Value> {
     match (query, body, body_file) {
         (Some(query), None, None) => Ok(json!({
-            "q": query,
-            "pagination": { "limit": limit, "offset": 0 },
+            "provider": "uspto",
+            "query": query,
+            "limit": limit,
+            "offset": 0,
         })),
         (None, Some(body), None) => normalize_body(&read_body_arg(body)?, limit),
         (None, None, Some(path)) => {
@@ -280,45 +269,52 @@ fn read_body_arg(body: &str) -> Result<String> {
     }
 }
 
-/// Keys the `/v1/patent-search-uspto/search` endpoint accepts in a request
-/// body. Bodies written elsewhere sometimes carry extra fields (a `filters`
-/// key, for example) that this endpoint rejects with 400, so a body is
-/// trimmed to this set before it is submitted.
-const SUPPORTED_BODY_KEYS: &[&str] = &["q", "pagination", "fields", "enrich"];
+/// ODP request-body fields the tool takes under a different name. Everything
+/// else a caller writes is forwarded untouched — the tool's schema is the
+/// single validator, so no client-side allowlist can silently drop a parameter
+/// a newer backend understands (backend ADR 0013).
+/// (`sort`, `fields`, `facets` and `enrich` are spelled the same on both sides
+/// and need no entry.)
+const ODP_FIELD_ALIASES: &[(&str, &str)] = &[("q", "query"), ("rangeFilters", "range_filters")];
 
-/// Parse a full ODP request body, drop keys the search endpoint does not accept
-/// (so an externally prepared body submits without a 400), and default its
-/// pagination limit when absent.
+/// Translate a full ODP request body into `search_patents` input: rename the
+/// fields the tool spells differently, flatten `pagination` onto limit/offset,
+/// and default the page size from `--limit` when the body sets none.
 fn normalize_body(raw: &str, limit: u32) -> Result<Value> {
-    let mut value: Value = serde_json::from_str(raw).context("request body must be valid JSON")?;
+    let value: Value = serde_json::from_str(raw).context("request body must be valid JSON")?;
     let object = value
-        .as_object_mut()
+        .as_object()
         .ok_or_else(|| anyhow::anyhow!("request body must be a JSON object"))?;
-    if !object.contains_key("q") {
+    if !object.contains_key("q") && !object.contains_key("query") {
         bail!("request body must contain a \"q\" field (an ODP Lucene query)");
     }
 
-    let dropped: Vec<String> = object
-        .keys()
-        .filter(|key| !SUPPORTED_BODY_KEYS.contains(&key.as_str()))
-        .cloned()
-        .collect();
-    for key in &dropped {
-        object.remove(key);
-    }
-    if !dropped.is_empty() {
-        eprintln!(
-            "note: dropped unsupported request-body field(s) [{}] — the USPTO search endpoint \
-             accepts only {:?}.",
-            dropped.join(", "),
-            SUPPORTED_BODY_KEYS
-        );
+    let mut input = json!({ "provider": "uspto" });
+    for (key, value) in object {
+        // pagination is the one nested field: ODP nests it, the tool takes
+        // limit/offset flat.
+        if key == "pagination" {
+            if let Some(page_limit) = value.get("limit") {
+                input["limit"] = page_limit.clone();
+            }
+            if let Some(offset) = value.get("offset") {
+                input["offset"] = offset.clone();
+            }
+            continue;
+        }
+        let name = ODP_FIELD_ALIASES
+            .iter()
+            .find(|(from, _)| *from == key)
+            .map(|(_, to)| *to)
+            .unwrap_or(key.as_str());
+        input[name] = value.clone();
     }
 
-    object
-        .entry("pagination")
-        .or_insert_with(|| json!({ "limit": limit, "offset": 0 }));
-    Ok(value)
+    if input.get("limit").is_none() {
+        input["limit"] = json!(limit);
+        input["offset"] = json!(0);
+    }
+    Ok(input)
 }
 
 /// Retry a zero-recall search with the CPC-class constraint stripped. Returns
@@ -326,7 +322,7 @@ fn normalize_body(raw: &str, limit: u32) -> Result<Value> {
 /// retry itself is empty — the caller then falls through to the guidance note),
 /// or None when there was no CPC constraint to strip.
 async fn cpc_fallback(ctx: &Context, request: &Value) -> Result<Option<Value>> {
-    let Some(q) = request.get("q").and_then(Value::as_str) else {
+    let Some(q) = request.get("query").and_then(Value::as_str) else {
         return Ok(None);
     };
     let Some(stripped) = strip_cpc_constraint(q) else {
@@ -339,11 +335,8 @@ async fn cpc_fallback(ctx: &Context, request: &Value) -> Result<Option<Value>> {
     );
 
     let mut retry = request.clone();
-    retry["q"] = Value::String(stripped);
-    let result = ctx
-        .execute_json_body_or_error(ctx.post(SEARCH_PATH, &retry))
-        .await?;
-    Ok(Some(result))
+    retry["query"] = Value::String(stripped);
+    tools::call_tool_data(ctx, "search_patents", &retry).await
 }
 
 /// Remove the `cpcClassificationBag:` constraint from an ODP Lucene `q`,
@@ -419,62 +412,45 @@ fn count_results(result: &Value) -> usize {
 }
 
 async fn grant(ctx: &Context, patent_number: &str) -> Result<()> {
-    let path = format!(
-        "/v1/patent-search-uspto/grants/{}",
-        encode_url_component(patent_number)
-    );
-    let result = ctx.execute_json_body_or_error(ctx.get(&path)).await?;
-    output::print_value(&ctx.output_format, &result, detail_columns());
+    let input = json!({ "patent_number": patent_number });
+    if let Some(result) = tools::call_tool_data(ctx, "get_us_grant", &input).await? {
+        output::print_value(&ctx.output_format, &result, detail_columns());
+    }
     Ok(())
 }
 
 async fn application(ctx: &Context, app_number: &str) -> Result<()> {
-    let path = format!(
-        "/v1/patent-search-uspto/applications/{}",
-        encode_url_component(app_number)
-    );
-    let result = ctx.execute_json_body_or_error(ctx.get(&path)).await?;
-    output::print_value(&ctx.output_format, &result, detail_columns());
+    let input = json!({ "application_number": app_number });
+    if let Some(result) = tools::call_tool_data(ctx, "get_us_application", &input).await? {
+        output::print_value(&ctx.output_format, &result, detail_columns());
+    }
     Ok(())
 }
 
 async fn continuity(ctx: &Context, app_number: &str) -> Result<()> {
-    let path = format!(
-        "/v1/patent-search-uspto/applications/{}/continuity",
-        encode_url_component(app_number)
-    );
-    let result = ctx.execute_json_body_or_error(ctx.get(&path)).await?;
-    output::print_value(&ctx.output_format, &result, continuity_columns());
+    let input = json!({ "application_number": app_number });
+    if let Some(result) = tools::call_tool_data(ctx, "get_continuity", &input).await? {
+        output::print_value(&ctx.output_format, &result, continuity_columns());
+    }
     Ok(())
 }
 
-/// GET a file-wrapper sub-resource:
-/// `/v1/patent-search-uspto/applications/{app}/{segment}`.
-async fn fetch_wrapper_sub_resource(
-    ctx: &Context,
-    app_number: &str,
-    segment: &str,
-) -> Result<Value> {
-    let path = format!(
-        "/v1/patent-search-uspto/applications/{}/{segment}",
-        encode_url_component(app_number)
-    );
-    ctx.execute_json_body_or_error(ctx.get(&path)).await
-}
-
-/// Fetch a sub-resource and print the named inner value from the first file
-/// wrapper record (arrays get `columns`; objects fall back to JSON via the
-/// formatter). JSON output always prints the full envelope untouched so agents
-/// keep the verbatim backend shape.
+/// Run a file-wrapper projection tool and print the named inner value from the
+/// first file wrapper record (arrays get `columns`; objects fall back to JSON
+/// via the formatter). JSON output always prints the tool payload untouched so
+/// agents keep the verbatim backend shape.
 async fn wrapper_bag(
     ctx: &Context,
     app_number: &str,
-    segment: &str,
+    tool: &str,
     inner_key: &str,
     columns: &[(&str, &str)],
 ) -> Result<()> {
-    let result = fetch_wrapper_sub_resource(ctx, app_number, segment).await?;
-    if ctx.output_format == "json" || result.get("dryRun").is_some() {
+    let input = json!({ "application_number": app_number });
+    let Some(result) = tools::call_tool_data(ctx, tool, &input).await? else {
+        return Ok(());
+    };
+    if ctx.output_format == "json" {
         output::print_json(&result);
         return Ok(());
     }
@@ -489,98 +465,59 @@ async fn wrapper_bag(
     Ok(())
 }
 
+/// List IFW documents. Filtering happens server-side — the tool takes the
+/// document code and direction and returns the compacted listing
+/// (`{ applicationNumber, total, returned, documents }`), each record keeping
+/// its `downloadOptionBag` alongside the derived `pageCount`.
 async fn documents(
     ctx: &Context,
     app_number: &str,
     code: Option<&str>,
     direction: Option<&str>,
 ) -> Result<()> {
-    let result = fetch_wrapper_sub_resource(ctx, app_number, "documents").await?;
-    if result.get("dryRun").is_some() {
+    let mut input = json!({ "application_number": app_number });
+    if let Some(code) = code {
+        input["document_code"] = json!(code.to_uppercase());
+    }
+    if let Some(direction) = direction {
+        input["direction"] = json!(direction.to_uppercase());
+    }
+
+    let Some(result) = tools::call_tool_data(ctx, "get_application_documents", &input).await?
+    else {
+        return Ok(());
+    };
+    if ctx.output_format == "json" {
         output::print_json(&result);
         return Ok(());
     }
 
-    let docs = result
-        .get("documentBag")
-        .and_then(Value::as_array)
+    let total = result.get("total").and_then(Value::as_u64).unwrap_or(0);
+    let documents = result
+        .get("documents")
         .cloned()
-        .unwrap_or_default();
-    let total = docs.len();
-    let filtered: Vec<Value> = docs
-        .into_iter()
-        .filter(|doc| {
-            code.is_none_or(|wanted| {
-                doc.get("documentCode")
-                    .and_then(Value::as_str)
-                    .is_some_and(|c| c.eq_ignore_ascii_case(wanted))
-            })
-        })
-        .filter(|doc| {
-            direction.is_none_or(|wanted| {
-                doc.get("directionCategory")
-                    .and_then(Value::as_str)
-                    .is_some_and(|d| d.eq_ignore_ascii_case(wanted))
-            })
-        })
-        .map(flatten_document_record)
-        .collect();
-
-    if ctx.output_format == "json" {
-        output::print_json(&json!({
-            "applicationNumber": app_number,
-            "total": total,
-            "returned": filtered.len(),
-            "documents": filtered,
-        }));
-        return Ok(());
-    }
-    if filtered.is_empty() && total > 0 {
+        .unwrap_or_else(|| json!([]));
+    let returned = documents.as_array().map(Vec::len).unwrap_or(0);
+    if returned == 0 && total > 0 {
         eprintln!(
             "note: {total} document(s) exist but none match the filter. \
              Drop --code/--direction to list them all."
         );
     }
-    output::print_value(
-        &ctx.output_format,
-        &Value::Array(filtered),
-        document_columns(),
-    );
+    output::print_value(&ctx.output_format, &documents, document_columns());
     Ok(())
 }
 
-/// Compact one IFW document record for display: keep the identifying fields and
-/// surface the PDF page count from `downloadOptionBag` as a top-level `pages`.
-fn flatten_document_record(doc: Value) -> Value {
-    let pages = doc
-        .get("downloadOptionBag")
-        .and_then(Value::as_array)
-        .and_then(|options| {
-            options.iter().find_map(|option| {
-                (option.get("mimeTypeIdentifier").and_then(Value::as_str) == Some("PDF"))
-                    .then(|| option.get("pageTotalQuantity").cloned())
-                    .flatten()
-            })
-        })
-        .unwrap_or(Value::Null);
-    json!({
-        "documentIdentifier": doc.get("documentIdentifier").cloned().unwrap_or(Value::Null),
-        "documentCode": doc.get("documentCode").cloned().unwrap_or(Value::Null),
-        "description": doc.get("documentCodeDescriptionText").cloned().unwrap_or(Value::Null),
-        "officialDate": doc.get("officialDate").cloned().unwrap_or(Value::Null),
-        "direction": doc.get("directionCategory").cloned().unwrap_or(Value::Null),
-        "pages": pages,
-    })
-}
-
 async fn document_text(ctx: &Context, app_number: &str, document_id: &str) -> Result<()> {
-    let path = format!(
-        "/v1/patent-search-uspto/applications/{}/documents/{}/text",
-        encode_url_component(app_number),
-        encode_url_component(document_id)
-    );
-    let result = ctx.execute_json_body_or_error(ctx.get(&path)).await?;
-    if ctx.output_format == "json" || result.get("dryRun").is_some() {
+    let input = json!({
+        "application_number": app_number,
+        "document_id": document_id,
+    });
+    let Some(result) = tools::call_tool_data(ctx, "read_application_document", &input).await?
+    else {
+        return Ok(());
+    };
+    if ctx.output_format == "json" {
         output::print_json(&result);
         return Ok(());
     }
@@ -648,7 +585,7 @@ fn document_columns() -> &'static [(&'static str, &'static str)] {
         ("documentCode", "Code"),
         ("description", "Description"),
         ("direction", "Direction"),
-        ("pages", "Pages"),
+        ("pageCount", "Pages"),
     ]
 }
 
@@ -722,8 +659,8 @@ mod tests {
 
         // (a) the full body submits directly through --body.
         let request = build_search_request(None, Some(recommended_query), None, 10).unwrap();
-        let q = request["q"].as_str().unwrap();
-        assert_eq!(request["pagination"]["limit"], 25); // body pagination preserved
+        let q = request["query"].as_str().unwrap();
+        assert_eq!(request["limit"], 25); // body pagination preserved
 
         // (b) the H01M guess is stripped so the search can be retried.
         let recovered = strip_cpc_constraint(q).expect("CPC clause must be strippable");
@@ -780,70 +717,72 @@ mod tests {
     }
 
     #[test]
-    fn build_request_wraps_query_and_normalizes_body() {
-        // --query wraps into {q, pagination}.
+    fn build_request_wraps_query_and_translates_odp_body() {
+        // --query becomes the tool's flat {query, limit, offset}.
         let wrapped = build_search_request(Some("ti:battery"), None, None, 7).unwrap();
-        assert_eq!(wrapped["q"], "ti:battery");
-        assert_eq!(wrapped["pagination"]["limit"], 7);
+        assert_eq!(wrapped["provider"], "uspto");
+        assert_eq!(wrapped["query"], "ti:battery");
+        assert_eq!(wrapped["limit"], 7);
+        assert_eq!(wrapped["offset"], 0);
 
-        // --body is submitted as-is; pagination defaults to --limit when absent.
+        // --body: `q` becomes `query`; the page size defaults to --limit.
         let body = build_search_request(None, Some(r#"{"q":"ti:x"}"#), None, 25).unwrap();
-        assert_eq!(body["q"], "ti:x");
-        assert_eq!(body["pagination"]["limit"], 25);
+        assert_eq!(body["query"], "ti:x");
+        assert_eq!(body["limit"], 25);
 
-        // A body that already sets pagination is left untouched.
+        // A body that already paginates keeps its own window, flattened.
         let paged = build_search_request(
             None,
-            Some(r#"{"q":"ti:x","pagination":{"limit":3}}"#),
+            Some(r#"{"q":"ti:x","pagination":{"limit":3,"offset":9}}"#),
             None,
             25,
         )
         .unwrap();
-        assert_eq!(paged["pagination"]["limit"], 3);
+        assert_eq!(paged["limit"], 3);
+        assert_eq!(paged["offset"], 9);
+    }
 
-        // Unsupported keys the search endpoint 400s on (a stray `filters`
-        // field, say) are dropped; supported keys survive.
-        let trimmed = build_search_request(
+    /// No client-side allowlist: every field a caller writes reaches the tool,
+    /// under the tool's own name where ODP spells it differently. An older CLI
+    /// must never be what stops a newer backend parameter from arriving.
+    #[test]
+    fn odp_body_fields_are_forwarded_not_filtered() {
+        let request = build_search_request(
             None,
-            Some(r#"{"q":"ti:x","fields":["a"],"enrich":["abstract"],"filters":"typeCode UTL"}"#),
+            Some(
+                r#"{"q":"ti:x","fields":["a"],"enrich":["abstract"],
+                    "rangeFilters":"filingDate 2020-01-01->2024-12-31",
+                    "sort":"applicationMetaData.filingDate desc",
+                    "facets":"applicationMetaData.applicationTypeLabelName",
+                    "someFutureField":"typeCode UTL"}"#,
+            ),
             None,
             10,
         )
         .unwrap();
-        assert!(trimmed.get("filters").is_none());
-        assert_eq!(trimmed["fields"], json!(["a"]));
-        assert_eq!(trimmed["enrich"], json!(["abstract"]));
 
-        // A body without a q field is rejected.
-        assert!(build_search_request(None, Some(r#"{"fields":[]}"#), None, 10).is_err());
-        // Nothing provided is a usage error.
-        assert!(build_search_request(None, None, None, 10).is_err());
+        assert_eq!(request["fields"], json!(["a"]));
+        assert_eq!(request["enrich"], json!(["abstract"]));
+        assert_eq!(
+            request["range_filters"],
+            "filingDate 2020-01-01->2024-12-31"
+        );
+        assert_eq!(request["sort"], "applicationMetaData.filingDate desc");
+        assert_eq!(
+            request["facets"],
+            "applicationMetaData.applicationTypeLabelName"
+        );
+        // A field this CLI has never heard of still travels — the tool schema
+        // is the only validator.
+        assert_eq!(request["someFutureField"], "typeCode UTL");
     }
 
     #[test]
-    fn flatten_document_record_extracts_pdf_page_count() {
-        let record = json!({
-            "applicationNumberText": "14412875",
-            "officialDate": "2020-01-17T08:33:20.000-0500",
-            "documentIdentifier": "K5FCIIKNRXEAPX5",
-            "documentCode": "CTFR",
-            "documentCodeDescriptionText": "Final Rejection",
-            "directionCategory": "OUTGOING",
-            "downloadOptionBag": [
-                { "mimeTypeIdentifier": "XML", "downloadUrl": "https://x/doc.xml" },
-                { "mimeTypeIdentifier": "PDF", "downloadUrl": "https://x/doc.pdf", "pageTotalQuantity": 12 },
-            ],
-        });
-        let flat = flatten_document_record(record);
-        assert_eq!(flat["documentIdentifier"], "K5FCIIKNRXEAPX5");
-        assert_eq!(flat["description"], "Final Rejection");
-        assert_eq!(flat["direction"], "OUTGOING");
-        assert_eq!(flat["pages"], 12);
-
-        // Records without a PDF option (or any downloadOptionBag) stay printable.
-        let bare = flatten_document_record(json!({ "documentIdentifier": "X1" }));
-        assert_eq!(bare["documentIdentifier"], "X1");
-        assert_eq!(bare["pages"], Value::Null);
+    fn build_request_rejects_unusable_input() {
+        // A body without a query field is rejected.
+        assert!(build_search_request(None, Some(r#"{"fields":[]}"#), None, 10).is_err());
+        // Nothing provided is a usage error.
+        assert!(build_search_request(None, None, None, 10).is_err());
     }
 
     #[test]

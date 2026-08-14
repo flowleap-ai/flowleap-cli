@@ -3,6 +3,7 @@ use clap::{Parser, ValueEnum};
 use serde_json::json;
 
 use crate::client::Context;
+use crate::commands::tools;
 use crate::output;
 
 #[derive(Parser)]
@@ -48,19 +49,19 @@ pub async fn run(ctx: &Context, args: NplArgs) -> Result<()> {
 
     let mut filter = json!({});
     if let Some(year) = args.from_year {
-        filter["fromYear"] = json!(year);
+        filter["from_year"] = json!(year);
     }
     if let Some(year) = args.to_year {
-        filter["toYear"] = json!(year);
+        filter["to_year"] = json!(year);
     }
     if args.open_access {
-        filter["openAccess"] = json!(true);
+        filter["open_access"] = json!(true);
     }
     if let Some(kind) = args.r#type {
         filter["type"] = json!(kind.as_backend_value());
     }
 
-    let mut body = json!({
+    let mut input = json!({
         "query": args.query,
         "limit": args.limit,
         "page": args.page,
@@ -70,13 +71,12 @@ pub async fn run(ctx: &Context, args: NplArgs) -> Result<()> {
         .map(|obj| !obj.is_empty())
         .unwrap_or(false)
     {
-        body["filter"] = filter;
+        input["filter"] = filter;
     }
 
-    let result = ctx
-        .execute_json_body_or_error(ctx.post("/v1/npl-search", &body))
-        .await?;
-    output::print_value(&ctx.output_format, &result, &[]);
+    if let Some(result) = tools::call_tool_data(ctx, "search_npl", &input).await? {
+        output::print_value(&ctx.output_format, &result, &[]);
+    }
     Ok(())
 }
 

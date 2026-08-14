@@ -68,8 +68,6 @@ flowleap --json keys set epo --key <consumer-key> --secret <consumer-secret>
 ```bash
 flowleap --json legal search "inventive step problem solution approach" --jurisdiction epo --limit 5
 flowleap --json legal jurisdictions
-flowleap --json legal stats
-flowleap --json legal docs
 ```
 
 #### flowleap-npl — Search non-patent literature (scholarly works via OpenAlex) with year, open-access and publication-type filters.

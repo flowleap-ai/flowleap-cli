@@ -301,7 +301,7 @@ Add `--json` (or `--output json`) for stable machine-readable output — recomme
 { "ok": false, "error": { "message": "…" } }
 ```
 
-Envelopes may carry additive structured hints: `subscriptionHint` (402 — upgrade URL, needs a human), `providerKeysHint` (missing/rejected patent-data keys — needs a human, do not retry, and do not substitute web-scraped data for the gated office; see [Access & Pricing](#access--pricing)), and `rateLimitHint` (429 — wait `retryAfterSeconds`, then retry). Human/table output renders the same hints as info boxes on stderr.
+Envelopes may carry additive structured hints: `subscriptionHint` (402 — upgrade URL, needs a human), `providerKeysHint` (missing/rejected patent-data keys — needs a human, do not retry, and do not substitute web-scraped data for the gated office; see [Access & Pricing](#access--pricing)), `rateLimitHint` (429 — wait `retryAfterSeconds`, then retry), and `endpointGoneHint` (410 — the build is stale; upgrade rather than retry, and the hint names the successor endpoint). Human/table output renders the same hints as info boxes on stderr.
 
 Every run exits with a documented code, so scripts can branch on `$?` without parsing JSON:
 
@@ -315,6 +315,7 @@ Every run exits with a documented code, so scripts can branch on `$?` without pa
 | 5 | Not found (HTTP 404) |
 | 6 | Rate limited (HTTP 429) — back off, see `rateLimitHint` |
 | 7 | Network failure reaching the backend |
+| 8 | Endpoint gone (HTTP 410) — this build calls a retired endpoint; run `flowleap upgrade`, see `endpointGoneHint` |
 
 Use `--dry-run` to see the exact method, URL, auth status, and JSON body the CLI would send — the safest way to debug request shape:
 

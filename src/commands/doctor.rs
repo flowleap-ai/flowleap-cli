@@ -10,25 +10,32 @@ pub async fn run(ctx: &Context) -> Result<()> {
     let credentials_path = Credentials::credentials_path()?;
     let auth_source = auth_source(ctx);
 
+    // Readiness (/v1/health), not liveness: it is equally public and carries
+    // the server's apiVersion, so one probe answers "is it up" and "which
+    // build" together (backend ADR 0014 rule 6).
     let health = ctx
-        .execute_json_envelope(ctx.request(reqwest::Method::GET, "/health", None))
+        .execute_json_envelope(ctx.request(reqwest::Method::GET, "/v1/health", None))
         .await;
 
-    let (reachable, status, error, error_kind, hint) = match health {
+    let (reachable, status, api_version, error, error_kind, hint) = match health {
         Ok(value) => {
             let reachable = value.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
             let status = value.get("status").and_then(|v| v.as_u64());
+            let api_version = value
+                .pointer("/body/apiVersion")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
             let hint = if reachable {
                 None
             } else {
                 Some("Backend responded but not with a successful status.")
             };
-            (reachable, status, None, None, hint)
+            (reachable, status, api_version, None, None, hint)
         }
         Err(err) => {
             let message = err.to_string();
             let (kind, hint) = classify_error(&message);
-            (false, None, Some(message), Some(kind), Some(hint))
+            (false, None, None, Some(message), Some(kind), Some(hint))
         }
     };
 
@@ -93,6 +100,7 @@ pub async fn run(ctx: &Context) -> Result<()> {
         "backend": {
             "reachable": reachable,
             "healthStatus": status,
+            "apiVersion": api_version,
             "error": error,
             "errorKind": error_kind,
             "hint": hint,
@@ -134,7 +142,13 @@ fn render_human(report: &Value) {
     // Backend
     let base_url = report["baseUrl"].as_str().unwrap_or_default();
     if report["backend"]["reachable"] == Value::Bool(true) {
-        println!("  {} Backend reachable ({base_url})", "✓".green());
+        match report["backend"]["apiVersion"].as_str() {
+            Some(version) => println!(
+                "  {} Backend reachable ({base_url}, API {version})",
+                "✓".green()
+            ),
+            None => println!("  {} Backend reachable ({base_url})", "✓".green()),
+        }
     } else {
         println!("  {} Backend unreachable ({base_url})", "✗".red());
         if let Some(hint) = report["backend"]["hint"].as_str() {
