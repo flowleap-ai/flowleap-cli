@@ -1,6 +1,6 @@
 [package]
 name = "flowleap-cli"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 description = "One CLI for FlowLeap Patent AI — built for humans and AI agents"
 authors = ["FlowLeap"]
