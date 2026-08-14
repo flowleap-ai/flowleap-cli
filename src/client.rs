@@ -150,6 +150,15 @@ pub const EXIT_NETWORK: i32 = 7;
 /// generic failure so a stale CLI fails loudly with a migration path instead of
 /// looking like any other error (backend ADR 0014 rule 3).
 pub const EXIT_ENDPOINT_GONE: i32 = 8;
+/// The patent-data-key gate (`provider_keys_required` / `provider_keys_invalid`).
+/// It is the most likely first-run failure and the only one whose fix is a
+/// browser signup by a human, so it gets its own code instead of riding the
+/// generic 1 an agent cannot distinguish from a bad query.
+pub const EXIT_PROVIDER_KEYS: i32 = 9;
+
+/// Machine-readable code for the JSON error envelope when a run ends with no
+/// usable credential. Agents branch on `error.code`, never on message text.
+pub const CODE_UNAUTHENTICATED: &str = "unauthenticated";
 
 /// Map an HTTP status to its documented exit code; anything without a
 /// dedicated code is a generic failure (1).
@@ -173,10 +182,25 @@ pub fn error_exit_code(err: &anyhow::Error) -> i32 {
         exit_code_for_status(api.status)
     } else if err.downcast_ref::<NetworkError>().is_some() {
         EXIT_NETWORK
-    } else if err.downcast_ref::<SessionTokenRefusedError>().is_some() {
+    } else if err.downcast_ref::<SessionTokenRefusedError>().is_some()
+        || err.downcast_ref::<AuthRequiredError>().is_some()
+    {
         EXIT_AUTH_REQUIRED
     } else {
         1
+    }
+}
+
+/// Machine-readable `error.code` for a failed run's JSON envelope, or None when
+/// the failure has no code in the closed registry. Only typed errors answer
+/// here — a code is never inferred from message text.
+pub fn error_envelope_code(err: &anyhow::Error) -> Option<&'static str> {
+    if err.downcast_ref::<AuthRequiredError>().is_some()
+        || err.downcast_ref::<SessionTokenRefusedError>().is_some()
+    {
+        Some(CODE_UNAUTHENTICATED)
+    } else {
+        None
     }
 }
 
@@ -298,6 +322,33 @@ impl std::fmt::Display for SessionTokenRefusedError {
 }
 
 impl std::error::Error for SessionTokenRefusedError {}
+
+/// A command that needs a credential ran without one — the local `require_auth`
+/// guard, which fails before any request leaves the process. Typed so the run
+/// exits with the documented auth-required code (3) and the JSON envelope
+/// carries `code: "unauthenticated"`: an agent that never reaches the backend
+/// must still be able to tell "sign in" apart from every other failure without
+/// reading the message.
+#[derive(Debug)]
+pub struct AuthRequiredError {
+    message: String,
+}
+
+impl AuthRequiredError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for AuthRequiredError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for AuthRequiredError {}
 
 /// Headers that must never appear in verbose or debug output.
 const SECRET_HEADERS: &[&str] = &[
@@ -423,8 +474,13 @@ pub fn print_keys_hint_box(hint: &Value) {
 }
 
 /// The [`PrintedError`] for an already-rendered error envelope, carrying its
-/// HTTP status (when present) for the exit-code mapping.
+/// HTTP status (when present) for the exit-code mapping. A patent-data-key
+/// gate takes precedence over the status class: the backend answers it with a
+/// 400, which would otherwise land on the generic failure code.
 fn printed_error_for(envelope: &Value) -> PrintedError {
+    if envelope.get("providerKeysHint").is_some() {
+        return PrintedError::with_exit_code(EXIT_PROVIDER_KEYS);
+    }
     match envelope.get("status").and_then(|value| value.as_u64()) {
         Some(status) => PrintedError::with_status(status as u16),
         None => PrintedError::new(),
@@ -479,16 +535,35 @@ pub fn rate_limit_hint(retry_after_seconds: Option<&Value>) -> Value {
 /// backend's own `successor` and `reason` fields are relayed verbatim so the
 /// caller learns exactly what to call instead (backend ADR 0014 rule 3).
 pub fn endpoint_gone_hint(body: &Value) -> Option<Value> {
+    endpoint_gone_hint_for(body, cli_is_latest())
+}
+
+/// [`endpoint_gone_hint`] with the "is this build the latest release" verdict
+/// injected, so the closed-loop wording is testable without a cached update
+/// check on disk.
+fn endpoint_gone_hint_for(body: &Value, is_latest: Option<bool>) -> Option<Value> {
     if error_code(body)? != "endpoint_gone" {
         return None;
     }
+    // An upgrade only helps while a newer build exists. When the daily check
+    // already knows this is the latest release, saying "upgrade" sends the
+    // caller round a closed loop — the command itself needs migrating.
     let mut hint = json!({
         "code": "endpoint_gone",
         "requiresUpgrade": true,
-        "message": "This FlowLeap build called a backend endpoint that has been retired. \
-                    Upgrade the CLI ('flowleap upgrade'); if the failure persists, the \
-                    command needs migrating to the successor named below.",
+        "message": if is_latest == Some(true) {
+            "This FlowLeap build called a backend endpoint that has been retired, and it is \
+             already the latest published release — upgrading will not fix it. The command \
+             needs migrating to the successor named below; please report it."
+        } else {
+            "This FlowLeap build called a backend endpoint that has been retired. \
+             Upgrade the CLI ('flowleap upgrade'); if the failure persists, the \
+             command needs migrating to the successor named below."
+        },
     });
+    if let Some(latest) = is_latest {
+        hint["cliIsLatest"] = json!(latest);
+    }
     for field in ["successor", "reason"] {
         if let Some(value) = body.pointer(&format!("/error/{field}")) {
             hint[field] = value.clone();
@@ -498,6 +573,15 @@ pub fn endpoint_gone_hint(body: &Value) -> Option<Value> {
         hint["serverMessage"] = message.clone();
     }
     Some(hint)
+}
+
+/// Whether the running build is already the newest published release, as far
+/// as the cached daily update check knows. None when no check has run yet (or
+/// its answer is unusable) — the honest "we don't know", which keeps the
+/// generic upgrade advice.
+fn cli_is_latest() -> Option<bool> {
+    let latest = crate::update::cached_latest()?;
+    Some(!crate::update::is_newer(&latest, env!("CARGO_PKG_VERSION")))
 }
 
 /// Human-readable info box for a retired endpoint, printed to stderr so it
@@ -521,7 +605,19 @@ pub fn print_endpoint_gone_box(hint: &Value) {
         None => eprintln!("│ No successor was named — the capability was withdrawn."),
     }
     eprintln!("│");
-    eprintln!("│ Update this CLI: {}", "flowleap upgrade".cyan().bold());
+    if hint["cliIsLatest"].as_bool() == Some(true) {
+        eprintln!(
+            "│ This build (v{}) is already the latest release, so upgrading",
+            env!("CARGO_PKG_VERSION")
+        );
+        eprintln!("│ will not help — the command itself needs migrating.");
+        eprintln!(
+            "│ Please report it: {}",
+            "https://github.com/flowleap-ai/flowleap-cli/issues".cyan()
+        );
+    } else {
+        eprintln!("│ Update this CLI: {}", "flowleap upgrade".cyan().bold());
+    }
     eprintln!("└{}", "─".repeat(64));
 }
 
@@ -1016,9 +1112,10 @@ impl Context {
             return Ok(());
         }
         if self.credentials.auth_header().is_none() {
-            bail!(
-                "Not authenticated. Run 'flowleap auth login' or set FLOWLEAP_API_KEY / FLOWLEAP_TOKEN."
-            );
+            return Err(AuthRequiredError::new(
+                "Not authenticated. Run 'flowleap auth login' or set FLOWLEAP_API_KEY / FLOWLEAP_TOKEN.",
+            )
+            .into());
         }
         Ok(())
     }
@@ -1117,10 +1214,70 @@ mod tests {
                 NetworkError::new("connection refused".to_string()).into(),
                 7,
             ),
+            (AuthRequiredError::new("not authenticated").into(), 3),
+            (PrintedError::with_exit_code(EXIT_PROVIDER_KEYS).into(), 9),
             (anyhow::anyhow!("anything untyped"), 1),
         ];
         for (err, expected) in cases {
             assert_eq!(error_exit_code(&err), expected, "error: {err}");
         }
+    }
+
+    /// The local auth guard is the one failure that never reaches the backend,
+    /// so its envelope code is the only signal an agent gets.
+    #[test]
+    fn only_auth_failures_carry_an_envelope_code() {
+        assert_eq!(
+            error_envelope_code(&AuthRequiredError::new("nope").into()),
+            Some(CODE_UNAUTHENTICATED)
+        );
+        assert_eq!(
+            error_envelope_code(&SessionTokenRefusedError::new("too short".to_string()).into()),
+            Some(CODE_UNAUTHENTICATED)
+        );
+        assert_eq!(error_envelope_code(&anyhow::anyhow!("untyped")), None);
+    }
+
+    /// A key gate answers 400, which would otherwise be the generic failure
+    /// code; the hint's presence is what promotes it to the dedicated code.
+    #[test]
+    fn a_key_gate_envelope_exits_with_the_provider_keys_code() {
+        let gated = json!({
+            "status": 400,
+            "providerKeysHint": { "code": "provider_keys_required", "provider": "epo" },
+        });
+        assert_eq!(printed_error_for(&gated).exit_code(), EXIT_PROVIDER_KEYS);
+
+        let plain = json!({ "status": 400 });
+        assert_eq!(printed_error_for(&plain).exit_code(), 1);
+    }
+
+    /// "Run flowleap upgrade" is only advice while a newer build exists. On
+    /// the latest release it is a closed loop — the exact trap the published
+    /// 0.7.1 clients fell into, where `upgrade --check` also said "up to date".
+    #[test]
+    fn the_410_hint_stops_recommending_an_upgrade_on_the_latest_build() {
+        let body = json!({ "error": { "code": "endpoint_gone", "successor": "POST /v1/tools/x" }});
+
+        let latest = endpoint_gone_hint_for(&body, Some(true)).expect("hint");
+        assert_eq!(latest["cliIsLatest"], true);
+        let message = latest["message"].as_str().expect("message");
+        assert!(message.contains("already the latest"), "{message}");
+        assert!(!message.contains("flowleap upgrade"), "{message}");
+
+        let stale = endpoint_gone_hint_for(&body, Some(false)).expect("hint");
+        assert_eq!(stale["cliIsLatest"], false);
+        assert!(stale["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("flowleap upgrade")));
+
+        // No cached check yet: say nothing about latest-ness, keep the
+        // generic advice. The successor is relayed either way.
+        let unknown = endpoint_gone_hint_for(&body, None).expect("hint");
+        assert!(unknown.get("cliIsLatest").is_none());
+        assert!(unknown["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("flowleap upgrade")));
+        assert_eq!(unknown["successor"], "POST /v1/tools/x");
     }
 }

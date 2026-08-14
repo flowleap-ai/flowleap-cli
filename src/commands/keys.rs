@@ -42,6 +42,7 @@ enum KeysCommand {
         no_verify: bool,
     },
     /// Show configured providers (secrets masked)
+    #[command(alias = "status")]
     List,
     /// Validate configured keys against the live providers
     Test,
@@ -71,11 +72,18 @@ fn mask(value: &str) -> String {
 
 fn require_tty() -> Result<()> {
     if !std::io::stdin().is_terminal() {
+        // The wizard does auth first, then keys. Listing only the key commands
+        // left the headless reader with no way to complete the step the wizard
+        // would have started with.
         bail!(
             "Interactive setup needs a terminal (a human). Non-interactive alternatives:\n  \
-             flowleap keys set epo --key <consumer-key> --secret <consumer-secret>\n  \
-             flowleap keys set uspto --key <api-key>\n  \
-             env: FLOWLEAP_EPO_KEY, FLOWLEAP_EPO_SECRET, FLOWLEAP_USPTO_KEY"
+             1. Authenticate:\n     \
+                env: FLOWLEAP_API_KEY=<fl_pat_… token>  (mint one with 'flowleap auth create-token --name <n>')\n     \
+                or run 'flowleap auth login' in a terminal\n  \
+             2. Add patent-data keys:\n     \
+                flowleap keys set epo --key <consumer-key> --secret <consumer-secret>\n     \
+                flowleap keys set uspto --key <api-key>\n     \
+                env: FLOWLEAP_EPO_KEY, FLOWLEAP_EPO_SECRET, FLOWLEAP_USPTO_KEY"
         );
     }
     Ok(())
@@ -145,9 +153,13 @@ pub(crate) async fn validate(ctx: &Context, creds: Credentials) -> Result<Value>
             .as_str()
             .unwrap_or("Provider rejected the supplied keys.")
             .to_string();
+        // `source` is a closed union (user|server|none) answering "where does
+        // the key that served this request come from". USPTO was never
+        // reached, so no member of that union is true — say so structurally
+        // (`checked: false`, null source) instead of inventing a value.
         return Ok(json!({
-            "epo": { "source": "user", "valid": false, "message": message },
-            "uspto": { "source": "unknown", "valid": null, "message": "Not checked (EPO validation failed first)." },
+            "epo": { "source": "user", "valid": false, "checked": true, "message": message },
+            "uspto": { "source": null, "valid": null, "checked": false, "message": "Not checked (EPO validation failed first)." },
         }));
     }
     bail!(
@@ -158,7 +170,9 @@ pub(crate) async fn validate(ctx: &Context, creds: Credentials) -> Result<Value>
 }
 
 fn verdict_line(name: &str, verdict: &Value) -> String {
-    let source = verdict["source"].as_str().unwrap_or("unknown");
+    // No source means the provider was never reached — "not checked" is the
+    // honest label; `unknown` used to read like a fourth source.
+    let source = verdict["source"].as_str().unwrap_or("not checked");
     let message = verdict["message"].as_str().unwrap_or("");
     let symbol = match verdict["valid"] {
         Value::Bool(true) => "✓".green(),
@@ -242,7 +256,10 @@ async fn set(
                 eprintln!("{}", verdict_line(provider_name, &verdict));
                 eprintln!("Keys NOT saved. Fix them and retry, or use --no-verify to save anyway.");
             }
-            return Err(crate::client::PrintedError::new().into());
+            return Err(crate::client::PrintedError::with_exit_code(
+                crate::client::EXIT_PROVIDER_KEYS,
+            )
+            .into());
         }
     }
 
@@ -347,8 +364,9 @@ async fn test(ctx: &Context) -> Result<()> {
         return Ok(());
     }
     let verdicts = validate(ctx, ctx.credentials.clone()).await?;
-    // Exit nonzero when any provider is invalid/missing so scripts and agents
-    // can gate on `flowleap keys test`.
+    // Exit with the patent-data-key code when any provider is invalid/missing,
+    // so scripts and agents gate on `flowleap keys test` the same way they gate
+    // on a key-gated data command.
     let healthy = verdicts["epo"]["valid"] != Value::Bool(false)
         && verdicts["uspto"]["valid"] != Value::Bool(false);
     if ctx.output_format == "json" {
@@ -358,7 +376,9 @@ async fn test(ctx: &Context) -> Result<()> {
         println!("{}", verdict_line("uspto", &verdicts["uspto"]));
     }
     if !healthy {
-        return Err(crate::client::PrintedError::new().into());
+        return Err(
+            crate::client::PrintedError::with_exit_code(crate::client::EXIT_PROVIDER_KEYS).into(),
+        );
     }
     Ok(())
 }

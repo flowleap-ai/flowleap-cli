@@ -53,9 +53,12 @@ pub async fn run(ctx: &Context) -> Result<()> {
         None
     };
 
-    let next_steps = next_steps(ctx, authenticated, verdicts.as_ref());
-    // Ready means nothing blocks work — stricter than `ok` (reachability).
-    let ready = reachable && authenticated && next_steps.is_empty();
+    let skills = crate::commands::skills::doctor_skills_status(env!("CARGO_PKG_VERSION"));
+    let next_steps = next_steps(ctx, authenticated, verdicts.as_ref(), &skills);
+    // Ready means nothing BLOCKS work — stricter than `ok` (reachability), but
+    // advisory steps (durability, not capability) are not a blockage: a machine
+    // that can run every command must exit 0 even with one pending.
+    let ready = reachable && authenticated && !next_steps.iter().any(is_blocking);
 
     let key_validation = match &verdicts {
         Some(_) => json!({ "source": "server", "note": Value::Null }),
@@ -106,7 +109,7 @@ pub async fn run(ctx: &Context) -> Result<()> {
             "hint": hint,
         },
         "cli": cli_status(),
-        "skills": crate::commands::skills::doctor_skills_status(env!("CARGO_PKG_VERSION")),
+        "skills": skills,
         "nextSteps": next_steps,
     });
 
@@ -188,16 +191,17 @@ fn render_human(report: &Value) {
         _ => println!("  {} CLI {version}", "✓".green()),
     }
 
-    // Skills — stale installs are informational (•), never blocking.
+    // Skills — a stale install is a wrong-answer source, so it reads ✗ and
+    // names the consequence rather than looking like an optional refresh.
     let stale = report["skills"]["stale"].as_array().map_or(0, Vec::len);
     if stale == 0 {
         println!("  {} Skills up to date", "✓".green());
     } else {
         println!(
-            "  {} {stale} stale skill install(s) — refresh: {}",
-            "•".yellow(),
-            "flowleap skills update".cyan(),
+            "  {} {stale} stale skill install(s) — agents will call retired commands",
+            "✗".red(),
         );
+        println!("    refresh: {}", "flowleap skills update".cyan());
     }
 
     // Next steps — same pending-only, actor-tagged data as the JSON contract.
@@ -210,17 +214,28 @@ fn render_human(report: &Value) {
         println!();
         println!("{}", "Next steps:".bold());
         for (index, step) in steps.iter().enumerate() {
-            let tag = format!("[{}]", step["actor"].as_str().unwrap_or("agent"));
             let title = step["title"].as_str().unwrap_or_default();
+            let suffix = if is_blocking(step) { "" } else { " (optional)" };
             match step["run"].as_str() {
-                Some(run) => println!("  {}. {} {title}: {}", index + 1, tag.bold(), run.cyan()),
-                None => println!("  {}. {} {title}", index + 1, tag.bold()),
+                Some(run) => println!(
+                    "  {}. {title}{suffix}: {}",
+                    index + 1,
+                    human_command(run).cyan()
+                ),
+                None => println!("  {}. {title}{suffix}", index + 1),
             }
             if let Some(url) = step["url"].as_str() {
                 println!("     {}", url.cyan());
             }
         }
     }
+}
+
+/// A suggested command as a human should type it. The `nextSteps` commands are
+/// written for agents and carry `--json`; a person reading the terminal wants
+/// the readable output, and the `--json` in the JSON contract stays untouched.
+fn human_command(run: &str) -> String {
+    run.replace("--json ", "")
 }
 
 /// One provider checklist line, derived from the report alone. Blocking is
@@ -253,13 +268,35 @@ fn provider_line(report: &Value, provider: &str, label: &str, store_step_id: &st
     }
 }
 
-/// The pending, blocking onboarding steps in dependency order. Step ids are a
-/// public contract (see docs/adr/0001): `auth-login`, `mint-personal-token`,
+/// Step ids that are advisory: worth doing, but nothing they guard is
+/// unavailable right now. They stay in `nextSteps` (an agent should still act
+/// on them) and carry `advisory: true`, but readiness ignores them — a machine
+/// that can run every command exits 0.
+///
+/// `mint-personal-token` is the case: a session token works today and only
+/// expires later, so counting it against readiness made an all-green machine
+/// exit 1 with nothing actually broken.
+const ADVISORY_STEPS: &[&str] = &["mint-personal-token"];
+
+/// Whether a step blocks work (the readiness contract) rather than merely
+/// improving the setup.
+fn is_blocking(step: &Value) -> bool {
+    step["advisory"] != Value::Bool(true)
+}
+
+/// The pending onboarding steps in dependency order. Step ids are a public
+/// contract (see docs/adr/0001): `auth-login`, `mint-personal-token`,
 /// `obtain-epo-keys`, `store-epo-keys`, `obtain-uspto-key`, `store-uspto-key`,
-/// `verify-keys`. Steps whose need is already covered (e.g. a provider the
-/// server has its own keys for) are omitted — the list means "what blocks
-/// you", not "what could be configured".
-fn next_steps(ctx: &Context, authenticated: bool, verdicts: Option<&Value>) -> Vec<Value> {
+/// `verify-keys`, `refresh-skills`. Steps whose need is already covered (e.g. a
+/// provider the server has its own keys for) are omitted — the list means "what
+/// is pending", not "what could be configured". Every step is blocking unless
+/// it carries `advisory: true` (see [`ADVISORY_STEPS`]).
+fn next_steps(
+    ctx: &Context,
+    authenticated: bool,
+    verdicts: Option<&Value>,
+    skills: &Value,
+) -> Vec<Value> {
     let mut steps = Vec::new();
 
     if !authenticated {
@@ -325,6 +362,24 @@ fn next_steps(ctx: &Context, authenticated: bool, verdicts: Option<&Value>) -> V
         ));
     }
 
+    // Stale skill files are a live wrong-answer source, not an upgrade nag:
+    // they document commands and endpoints this CLI no longer calls, so an
+    // agent reading them walks into retired routes.
+    if skills["stale"].as_array().is_some_and(|s| !s.is_empty()) {
+        steps.push(step(
+            "refresh-skills",
+            "agent",
+            "Refresh the installed agent skills — they were written by an older CLI and still teach retired commands",
+            Some("flowleap skills update"),
+            None,
+        ));
+    }
+
+    for step in steps.iter_mut() {
+        if ADVISORY_STEPS.contains(&step["id"].as_str().unwrap_or_default()) {
+            step["advisory"] = json!(true);
+        }
+    }
     steps
 }
 
@@ -343,13 +398,14 @@ fn session_only(creds: &Credentials) -> bool {
 /// user|server|none, valid true|false|null): server-covered providers never
 /// block, and — mirroring `keys test` — a provider blocks only when provably
 /// absent everywhere (`source: "none"`) or provably invalid (`valid: false`).
-/// Without verdicts (unauthenticated / call failed), fall back to local key
-/// presence.
+/// A null source means the provider was never reached, which proves nothing and
+/// so blocks nothing. Without verdicts (unauthenticated / call failed), fall
+/// back to local key presence.
 fn provider_pending(verdicts: Option<&Value>, provider: &str, local_present: bool) -> bool {
     match verdicts {
         Some(verdicts) => {
             let verdict = &verdicts[provider];
-            let source = verdict["source"].as_str().unwrap_or("unknown");
+            let source = verdict["source"].as_str().unwrap_or_default();
             source != "server" && (verdict["valid"] == Value::Bool(false) || source == "none")
         }
         None => !local_present,

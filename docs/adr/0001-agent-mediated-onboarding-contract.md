@@ -25,16 +25,32 @@ the human — needed a first-class contract.
    `--json` and tolerates nonzero exits. *Rejected: a new dedicated exit
    code* — the documented code table stays closed.
 
-2. **`nextSteps` lists pending, blocking steps only, each with exactly one
+2. **`nextSteps` lists pending steps only, each with exactly one
    `actor` (`"human"` | `"agent"`)**, a stable kebab-case `id` (public
    contract: `auth-login`, `mint-personal-token`, `obtain-epo-keys`,
-   `store-epo-keys`, `obtain-uspto-key`, `store-uspto-key`, `verify-keys`), a
-   `title`, and optional `run` / `url`. Always present; empty when complete.
+   `store-epo-keys`, `obtain-uspto-key`, `store-uspto-key`, `verify-keys`,
+   `refresh-skills`), a `title`, and optional `run` / `url`. Always present;
+   empty when complete.
    *Rejected: a full checklist with per-step `status`* — agents would re-derive
    "pending" from every entry, and completed steps invite re-running them.
    *Rejected: plain strings* — unactionable without stable ids, actors, and
    runnable commands. Obtaining keys (human, browser signup) and storing them
    (agent) are separate steps because a task needing both actors is two steps.
+
+   **Amended (cold-start walkthrough, 2026-08-14):** a step may carry
+   `advisory: true`, and readiness counts only the steps without it.
+   `mint-personal-token` is the sole advisory step: a session token works
+   today and merely expires later, so counting it against readiness made a
+   machine that can run every command exit 1 with nothing broken — the
+   `flowleap doctor && <work>` gate then fails for a durability suggestion.
+   The step still appears (agents should act on it); it just does not claim
+   the machine is unready. *Rejected: dropping the step when only advisory* —
+   the durability gap is real and an agent that never sees it never closes it.
+
+   `refresh-skills` (added by the same amendment) is blocking, not advisory:
+   skill files written by an older CLI document commands and endpoints this
+   build no longer calls, so an agent reading them walks into retired routes.
+   It is a wrong-answer source, not an upgrade nag.
 
 3. **Server-covered provider steps are omitted.** Doctor makes a best-effort
    authenticated `POST /v1/keys/validate`; providers with `source: "server"`

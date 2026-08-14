@@ -11,6 +11,13 @@ use serde_json::json;
 #[derive(Parser)]
 #[command(name = "flowleap", version, about, long_about = None)]
 #[command(propagate_version = true)]
+// Bare `flowleap` prints this list of ~30 commands, which answers "what exists"
+// but not "where do I start". The footer names the two commands that get a
+// cold machine working.
+#[command(
+    after_help = "First time? Run `flowleap setup` to sign in and add patent-data keys,
+then `flowleap doctor` to confirm the machine is ready."
+)]
 struct Cli {
     /// API base URL
     #[arg(long, env = "FLOWLEAP_BASE_URL", global = true)]
@@ -111,7 +118,7 @@ enum Commands {
     Skills(skills::SkillsArgs),
     /// Manage CLI configuration
     Config(config_cmd::ConfigArgs),
-    /// Upgrade the CLI itself (channel-aware: npm/brew/binary/cargo)
+    /// Upgrade the CLI itself (channel-aware: npm/binary/cargo)
     #[command(alias = "update")]
     Upgrade(upgrade::UpgradeArgs),
 }
@@ -154,15 +161,17 @@ async fn main() {
             std::process::exit(code);
         }
         if wants_json {
+            // Additive: failures with a code in the closed registry name it, so
+            // an agent can branch without reading the message. Failures without
+            // one keep the historical message-only envelope.
+            let mut error = json!({ "message": err.to_string() });
+            if let Some(code) = client::error_envelope_code(&err) {
+                error["code"] = json!(code);
+            }
             println!(
                 "{}",
-                serde_json::to_string_pretty(&json!({
-                    "ok": false,
-                    "error": {
-                        "message": err.to_string(),
-                    }
-                }))
-                .unwrap_or_default()
+                serde_json::to_string_pretty(&json!({ "ok": false, "error": error }))
+                    .unwrap_or_default()
             );
         } else {
             eprintln!("Error: {err}");
