@@ -13,9 +13,16 @@
 //!   packument cache for minutes after a release and would silently reinstall
 //!   the previous version (#38). This is its final act (the running wrapper
 //!   may be replaced mid-update, so nothing after it depends on self).
-//! - **Homebrew**: runs `brew upgrade flowleap` when brew is present.
 //! - **cargo**: prints `cargo install --git … --force` (never silently kicks
 //!   off a full from-source recompile).
+//! - **Homebrew**: detected for completeness, but **no tap is published**, so
+//!   nothing installs through this channel today. Do not advertise it.
+//!
+//! Installed skill files are separate content and must be refreshed by the
+//! *new* binary — refreshing them from the running (old) process would write
+//! the old content back. Only the raw-binary channel can do that in-band,
+//! because it is the one channel where the upgraded binary is at a path this
+//! process already knows; the others print the follow-up command.
 //!
 //! `--check` (and `--json`/`--dry-run`) report `{ channel, currentVersion,
 //! latestVersion, updateAvailable, command }` with no side effects, so agents
@@ -339,8 +346,27 @@ async fn self_update_raw(ctx: &Context, current: &str, latest: &str) -> Result<(
 
     println!("Upgraded flowleap {current} -> {latest}.");
     verify_reexec(&exe);
-    print_skills_reminder();
+    refresh_skills_with(&exe);
     Ok(())
+}
+
+/// Refresh recorded skill installs by running `skills update` on the binary at
+/// `exe` — which, after the swap, is the NEW build. Doing this in-process would
+/// write the old bundled content back over the files it just upgraded past.
+/// Best-effort: a failure here never fails the upgrade, it only falls back to
+/// telling the user to run the command.
+fn refresh_skills_with(exe: &Path) {
+    match Command::new(exe).args(["skills", "update"]).output() {
+        Ok(out) if out.status.success() => {
+            println!("Refreshed installed agent skills to the new version.")
+        }
+        _ => {
+            eprintln!(
+                "note: could not refresh installed skills automatically — run \
+                 `flowleap skills update`. Stale skill files teach retired commands."
+            );
+        }
+    }
 }
 
 /// Write `bytes` to `tmp`, copying the executable bits from `exe` (or 0o755
@@ -520,8 +546,15 @@ fn which(program: &str) -> Option<PathBuf> {
     None
 }
 
+/// Skill files ship inside the binary but are installed as copies, so an
+/// upgrade leaves them behind. On these channels the new binary is not at a
+/// path this process can name, so the refresh has to be the user's next step —
+/// stated with its consequence, not as a housekeeping note.
 fn print_skills_reminder() {
-    println!("Reminder: `flowleap skills update` refreshes installed skill content separately.");
+    println!(
+        "Next: run `flowleap skills update` — installed skill files still carry the old \
+         version and teach retired commands until they are refreshed."
+    );
 }
 
 fn print_skills_reminder_with_delta(current: &str, latest: &str) {

@@ -21,13 +21,20 @@ subscription exists, so setup can always be diagnosed.
 ## Diagnose
 
 ```bash
-flowleap --json keys list    # what's configured locally (masked)
+flowleap --json keys list    # what's configured locally (masked); alias: keys status
 flowleap --json keys test    # live verdicts: source user|server|none, valid true|false|null
 flowleap --json doctor       # providerKeys section + pending steps in nextSteps
 ```
 
 `keys test` needing nothing locally is fine when `source` is `server` — the
 backend has its own keys and commands work without BYOK.
+
+`source` is that closed union and nothing else. When a provider was never
+reached — an EPO failure short-circuits the USPTO check — its verdict carries
+`source: null` with `checked: false` and `valid: null`, meaning "no verdict",
+not "no key". Read `checked` before concluding anything about a provider. A
+provider that is invalid or missing everywhere makes `keys test` exit **9**,
+the same patent-data-key code a gated data command returns.
 
 Doctor's `nextSteps` lists patent-data keys only when they actually **block**
 work: server-covered providers produce no steps. A blocking provider appears

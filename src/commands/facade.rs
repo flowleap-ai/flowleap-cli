@@ -47,8 +47,9 @@ pub struct CompareArgs {
   flowleap figures EP1000000 --out fig1.png
   flowleap figures EP1000000 --out drawings.pdf --page 3
 
---out infers the format from the file extension: .png (default, rasterized
-from the PDF source), .pdf, or .tiff.")]
+--out names a FILE, not a directory, and infers the format from its extension:
+.png (default, rasterized from the PDF source), .pdf, or .tiff.
+Without --page it saves the page the drawings start on, not the cover sheet.")]
 pub struct FiguresArgs {
     /// Patent/publication number, e.g. EP1000000
     document: String,
@@ -57,9 +58,9 @@ pub struct FiguresArgs {
     #[arg(long, value_name = "PATH")]
     out: Option<PathBuf>,
 
-    /// Page to save with --out (1-based)
-    #[arg(long, default_value_t = 1, requires = "out")]
-    page: u32,
+    /// Page to save with --out (1-based; default: the drawings-start page)
+    #[arg(long, requires = "out")]
+    page: Option<u32>,
 }
 
 /// One-call patent snapshot: bibliography, legal status, family and term.
@@ -237,13 +238,94 @@ fn figure_format_for(out: &Path) -> &'static str {
     }
 }
 
+/// Reject an `--out` value that cannot name an image file before anything is
+/// fetched. Both cases used to fail late, at the write, as a bare
+/// "write <path>" with an OS error that never said what was expected.
+fn check_out_path(out: &Path) -> Result<()> {
+    if out.is_dir() {
+        bail!(
+            "--out must name a file, not a directory ({}). Expected a path ending in \
+             .png, .pdf or .tiff — for example --out {}",
+            out.display(),
+            out.join("figure.png").display()
+        );
+    }
+    if out.extension().is_none() {
+        bail!(
+            "--out needs a file extension so the image format is unambiguous ({}). \
+             Expected .png (the default, rasterized from the PDF source), .pdf or .tiff — \
+             for example --out {}.png",
+            out.display(),
+            out.display()
+        );
+    }
+    Ok(())
+}
+
+/// The page the drawings begin on for `source_format`, as the figure metadata
+/// reports it. None when the backend named no start page — patents whose
+/// drawings genuinely start at page 1 included, which costs nothing.
+fn drawings_start_page(data: &Value, source_format: &str) -> Option<u32> {
+    let formats = data.get("formats")?.as_array()?;
+    formats
+        .iter()
+        .find(|entry| {
+            entry
+                .get("format")
+                .and_then(Value::as_str)
+                .is_some_and(|f| f.eq_ignore_ascii_case(source_format))
+        })
+        .or_else(|| formats.first())?
+        .get("drawingStartPage")?
+        .as_u64()
+        .filter(|page| *page >= 1)
+        .map(|page| page as u32)
+}
+
+/// The page `--out` saves when `--page` was omitted. Page 1 of a patent PDF is
+/// the cover sheet, so defaulting to it hands back a page with no drawing on it
+/// whenever the metadata already knows where the drawings start. Any failure
+/// falls back to page 1 — a missing default is never worth failing the save
+/// for. Uses the non-printing envelope seam so a metadata probe can never
+/// write to stdout.
+async fn default_figure_page(ctx: &Context, doc: &str, source_format: &str) -> u32 {
+    if ctx.dry_run {
+        return 1;
+    }
+    let input = json!({ "patent_number": doc });
+    let Ok(envelope) = tools::call_tool_envelope(ctx, "get_patent_image", &input).await else {
+        return 1;
+    };
+    if envelope["ok"].as_bool() != Some(true) {
+        return 1;
+    }
+    drawings_start_page(&envelope["body"]["data"], source_format).unwrap_or(1)
+}
+
 /// Fetch one figure page as binary image data and write it to `out`.
 ///
 /// Metadata and image bytes both come from `get_patent_image`: with
 /// `include_images` the tool returns the page as base64 inside the JSON result,
 /// so there is no second byte-fetching surface to straddle.
-async fn save_figure(ctx: &Context, doc: &str, page: u32, out: &Path) -> Result<()> {
+async fn save_figure(ctx: &Context, doc: &str, page: Option<u32>, out: &Path) -> Result<()> {
+    check_out_path(out)?;
     let format = figure_format_for(out);
+    // .png is rasterized from the PDF source, so the metadata to consult is
+    // the PDF entry's.
+    let source_format = if format == "png" { "pdf" } else { format };
+    let page = match page {
+        Some(page) => page,
+        None => {
+            let page = default_figure_page(ctx, doc, source_format).await;
+            if page > 1 {
+                eprintln!(
+                    "note: --page not given; saving page {page}, where the drawings start \
+                     (page 1 is the cover sheet)."
+                );
+            }
+            page
+        }
+    };
     let input = figure_page_input(doc, page, format);
     let Some(data) = tools::call_tool_data(ctx, "get_patent_image", &input).await? else {
         return Ok(());
@@ -555,11 +637,50 @@ fn render_convert(data: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        figure_page_input, render_compare, render_convert, render_figures, render_summary,
-        render_timeline,
+        check_out_path, drawings_start_page, figure_page_input, render_compare, render_convert,
+        render_figures, render_summary, render_timeline,
     };
     use serde_json::json;
     use std::path::Path;
+
+    /// An `--out` that cannot name an image file is rejected up front, and the
+    /// message states the form that would work.
+    #[test]
+    fn out_path_must_name_a_file_with_an_extension() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let err = check_out_path(dir.path()).expect_err("a directory is not an output file");
+        let message = err.to_string();
+        assert!(message.contains("not a directory"), "{message}");
+        assert!(
+            message.contains(".png"),
+            "names the expected form: {message}"
+        );
+
+        let err = check_out_path(Path::new("figure")).expect_err("no extension");
+        assert!(err.to_string().contains("file extension"), "{err}");
+
+        for good in ["figure.png", "drawings.pdf", "scan.tiff"] {
+            check_out_path(Path::new(good)).unwrap_or_else(|e| panic!("{good}: {e}"));
+        }
+    }
+
+    /// The drawings-start page comes from the entry matching the format being
+    /// fetched; a patent whose metadata names none leaves the caller on page 1.
+    #[test]
+    fn drawings_start_reads_the_matching_format_entry() {
+        let data = json!({ "formats": [
+            { "format": "pdf", "pages": 12, "drawingStartPage": 5 },
+            { "format": "tiff", "pages": 12, "drawingStartPage": 4 },
+        ]});
+        assert_eq!(drawings_start_page(&data, "pdf"), Some(5));
+        assert_eq!(drawings_start_page(&data, "tiff"), Some(4));
+        // Unknown format falls back to the first entry rather than guessing.
+        assert_eq!(drawings_start_page(&data, "jp2"), Some(5));
+
+        let no_start = json!({ "formats": [{ "format": "pdf", "pages": 3 }] });
+        assert_eq!(drawings_start_page(&no_start, "pdf"), None);
+        assert_eq!(drawings_start_page(&json!({}), "pdf"), None);
+    }
 
     /// A `.png` output rasterizes from the PDF source (EPO serves most patents
     /// PDF-only); the other formats are fetched as-is with no render step.

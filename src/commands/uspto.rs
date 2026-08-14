@@ -414,7 +414,7 @@ fn count_results(result: &Value) -> usize {
 async fn grant(ctx: &Context, patent_number: &str) -> Result<()> {
     let input = json!({ "patent_number": patent_number });
     if let Some(result) = tools::call_tool_data(ctx, "get_us_grant", &input).await? {
-        output::print_value(&ctx.output_format, &result, detail_columns());
+        print_uspto_record(ctx, &result);
     }
     Ok(())
 }
@@ -422,9 +422,25 @@ async fn grant(ctx: &Context, patent_number: &str) -> Result<()> {
 async fn application(ctx: &Context, app_number: &str) -> Result<()> {
     let input = json!({ "application_number": app_number });
     if let Some(result) = tools::call_tool_data(ctx, "get_us_application", &input).await? {
-        output::print_value(&ctx.output_format, &result, detail_columns());
+        print_uspto_record(ctx, &result);
     }
     Ok(())
+}
+
+/// Render one ODP file-wrapper record. JSON output keeps the verbatim backend
+/// payload; human/table output reads the single record out of
+/// `patentFileWrapperDataBag` so the detail columns have a record to resolve
+/// against instead of the envelope wrapping it.
+fn print_uspto_record(ctx: &Context, result: &Value) {
+    if ctx.output_format == "json" {
+        output::print_json(result);
+        return;
+    }
+    let record = result
+        .get("patentFileWrapperDataBag")
+        .and_then(|bag| bag.get(0))
+        .unwrap_or(result);
+    output::print_value(&ctx.output_format, record, detail_columns());
 }
 
 async fn continuity(ctx: &Context, app_number: &str) -> Result<()> {
@@ -604,26 +620,45 @@ fn print_uspto_collection(ctx: &Context, result: &serde_json::Value) {
     }
 }
 
+/// USPTO ODP records carry their identity at the top level
+/// (`applicationNumberText`) and everything else under `applicationMetaData`.
+/// The columns spell those paths out; the formatter falls back to the last
+/// segment as a flat key, so a flattened payload still renders.
 fn search_columns() -> &'static [(&'static str, &'static str)] {
     &[
-        ("patentNumber", "Patent #"),
-        ("publicationNumber", "Publication #"),
-        ("applicationNumber", "Application #"),
-        ("title", "Title"),
-        ("applicants", "Applicants"),
-        ("publicationDate", "Published"),
+        ("applicationNumberText", "Application #"),
+        ("applicationMetaData.patentNumber", "Patent #"),
+        (
+            "applicationMetaData.earliestPublicationNumber",
+            "Publication #",
+        ),
+        ("applicationMetaData.inventionTitle", "Title"),
+        ("applicationMetaData.firstApplicantName", "Applicant"),
+        ("applicationMetaData.filingDate", "Filed"),
+        (
+            "applicationMetaData.applicationStatusDescriptionText",
+            "Status",
+        ),
     ]
 }
 
 fn detail_columns() -> &'static [(&'static str, &'static str)] {
     &[
-        ("patentNumber", "Patent #"),
-        ("applicationNumber", "Application #"),
-        ("title", "Title"),
-        ("applicants", "Applicants"),
-        ("filingDate", "Filed"),
-        ("grantDate", "Granted"),
-        ("publicationDate", "Published"),
+        ("applicationNumberText", "Application #"),
+        ("applicationMetaData.patentNumber", "Patent #"),
+        ("applicationMetaData.inventionTitle", "Title"),
+        ("applicationMetaData.firstApplicantName", "Applicant"),
+        ("applicationMetaData.firstInventorName", "Inventor"),
+        ("applicationMetaData.filingDate", "Filed"),
+        ("applicationMetaData.grantDate", "Granted"),
+        (
+            "applicationMetaData.earliestPublicationDate",
+            "First published",
+        ),
+        (
+            "applicationMetaData.applicationStatusDescriptionText",
+            "Status",
+        ),
     ]
 }
 

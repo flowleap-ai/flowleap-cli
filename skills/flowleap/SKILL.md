@@ -124,17 +124,22 @@ flowleap skills install --dir <path> # any other agent
 
 ## Keep FlowLeap Updated
 
-One command upgrades the CLI on any install channel (npm, Homebrew, install.sh
-binary, cargo) — no need to know which one you're on:
+One command upgrades the CLI on any install channel (npm, install.sh binary,
+cargo) — no need to know which one you're on:
 
 ```bash
 flowleap upgrade --check   # channel + versions, no changes (add --json to branch on it)
-flowleap upgrade           # upgrade in place; skill content refreshes separately
-flowleap skills update     # refresh installed skill files after upgrading
+flowleap upgrade           # upgrade in place
+flowleap skills update     # refresh installed skill files (automatic on a raw-binary upgrade)
 ```
 
 `upgrade --check --json` returns `{ channel, currentVersion, latestVersion,
 updateAvailable, command }` so an agent can decide whether to act.
+
+Skill files are copies, so an upgrade leaves them behind on every channel
+except the raw binary, which refreshes them with the new build. Stale skill
+files teach retired commands, so `flowleap doctor` reports them as a ✗ carrying
+a `refresh-skills` next step.
 
 ## Skill Map
 

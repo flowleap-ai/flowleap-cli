@@ -409,10 +409,10 @@ async fn poll_device_token(
 }
 
 /// Run the OAuth 2.0 Device Authorization flow and return the access token.
-/// Prints the code/URL (copying the URL to the clipboard when possible),
-/// polls with slow_down handling, and shows a manual-fallback hint if
-/// approval takes a while. Browser auto-open and the spinner run only when
-/// stdout is a TTY — a headless run must never pop UI. Does NOT persist
+/// Prints the code/URL, polls with slow_down handling, and shows a
+/// manual-fallback hint if approval takes a while. Browser auto-open, the
+/// clipboard copy, and the spinner run only when stdout is a TTY — a headless
+/// run must never pop UI or touch the user's clipboard. Does NOT persist
 /// anything.
 pub async fn device_flow_login(ctx: &Context) -> Result<String> {
     let interactive = std::io::stdout().is_terminal();
@@ -421,7 +421,9 @@ pub async fn device_flow_login(ctx: &Context) -> Result<String> {
 
     let response = request_device_authorization(ctx).await?;
 
-    let copied = copy_to_clipboard(&response.verification_uri_complete);
+    // Only a human at a terminal can use the clipboard, and a headless run
+    // would silently overwrite whatever the user had on it.
+    let copied = interactive && copy_to_clipboard(&response.verification_uri_complete);
     println!(
         "\n  {} {}\n  {} {}{}\n",
         "▸ Visit:".bold(),

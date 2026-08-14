@@ -203,3 +203,39 @@ fn convert_number_rejects_unknown_format() {
         assert!(stderr.contains(format), "missing format {format}: {stderr}");
     }
 }
+
+/// `--out` must name an image file. Both failures used to surface only at the
+/// write, as a bare "write <path>" plus an OS error that never said what the
+/// flag expected — so the message has to state the form that works.
+#[test]
+fn figures_out_rejects_a_directory_and_an_extensionless_path() {
+    let temp_home = tempfile::tempdir().expect("create temp home");
+    let out_dir = tempfile::tempdir().expect("create out dir");
+
+    let cases: Vec<(String, &str)> = vec![
+        (out_dir.path().display().to_string(), "not a directory"),
+        (
+            out_dir.path().join("figure").display().to_string(),
+            "file extension",
+        ),
+    ];
+
+    for (out, expected) in cases {
+        let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
+            .env("HOME", temp_home.path())
+            .env("XDG_CONFIG_HOME", temp_home.path().join(".config"))
+            .env_remove("FLOWLEAP_BASE_URL")
+            .env("FLOWLEAP_API_KEY", "fl_pat_test")
+            .args(["figures", "EP1000000", "--out", &out])
+            .output()
+            .expect("run flowleap figures");
+
+        assert!(!output.status.success(), "{out} must be rejected");
+        let stderr = String::from_utf8(output.stderr).expect("stderr is utf8");
+        assert!(stderr.contains(expected), "{out}: {stderr}");
+        assert!(
+            stderr.contains(".png"),
+            "{out}: message must name the expected form: {stderr}"
+        );
+    }
+}

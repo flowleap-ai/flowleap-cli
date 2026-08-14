@@ -31,10 +31,17 @@ pub async fn run(ctx: &Context, args: HealthArgs) -> Result<()> {
     output::print_value(&ctx.output_format, &result, &[]);
 
     // The server build, spelled out for humans; JSON callers read it from the
-    // body they already have.
+    // body they already have. Liveness carries no apiVersion at all, so say
+    // where it lives instead of leaving the reader to guess it is missing.
     if ctx.output_format != "json" {
-        if let Some(version) = result.pointer("/body/apiVersion").and_then(Value::as_str) {
-            println!("apiVersion: {version}");
+        match result.pointer("/body/apiVersion").and_then(Value::as_str) {
+            Some(version) => println!("apiVersion: {version}"),
+            None if path == "/health" => {
+                println!(
+                    "apiVersion: not reported by the liveness probe — run `flowleap health api`"
+                )
+            }
+            None => {}
         }
     }
     Ok(())

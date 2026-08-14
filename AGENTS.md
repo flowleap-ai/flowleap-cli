@@ -42,7 +42,7 @@ before trusting `skills install` output or regenerating goldens.
 | `src/commands/api.rs` | Profile/usage + raw API escape hatch |
 | `src/commands/health.rs` / `doctor.rs` | Health probes and environment diagnosis |
 | `src/commands/config_cmd.rs` | CLI configuration management |
-| `src/commands/upgrade.rs` | Channel-aware self-update (`upgrade`/`update`): detects npm/Homebrew/raw-binary/cargo from the running binary's canonical path; raw binaries self-update with sha256-verified atomic swap; `--check` reports `{channel, currentVersion, latestVersion, updateAvailable, command}` with no side effects |
+| `src/commands/upgrade.rs` | Channel-aware self-update (`upgrade`/`update`): detects npm/raw-binary/cargo from the running binary's canonical path (a Homebrew branch exists but **no tap is published** — never advertise it); raw binaries self-update with sha256-verified atomic swap and then refresh installed skills by invoking the NEW binary (refreshing in-process would rewrite the old content); `--check` reports `{channel, currentVersion, latestVersion, updateAvailable, command}` with no side effects |
 | `src/update.rs` | Once-a-day update notice (recommends `flowleap upgrade`) + `cached_latest()` seam consumed by `doctor` |
 
 ## Command Structure
@@ -113,8 +113,9 @@ logged (verbose/dry-run output redacts them).
   keys come from browser signups; refuses to run without a TTY)
 - `flowleap keys set epo --key <k> --secret <s>` / `keys set uspto --key <k>` —
   non-interactive; validates live before saving (`--no-verify` to skip)
-- `flowleap keys list` (masked) / `keys test` (live verdicts via
-  `POST /v1/keys/validate`) / `keys rm <provider>`
+- `flowleap keys list` (masked; alias `keys status`) / `keys test` (live
+  verdicts via `POST /v1/keys/validate`, exit 9 when a provider is invalid or
+  missing) / `keys rm <provider>`
 - Env overrides: `FLOWLEAP_EPO_KEY`, `FLOWLEAP_EPO_SECRET`, `FLOWLEAP_USPTO_KEY`
 
 **Agent protocol:** when a command fails because keys are missing or rejected,
@@ -155,12 +156,13 @@ parsing JSON:
 | 0 | Success | |
 | 1 | Generic failure | Any error without a dedicated code (config, response parsing, other 4xx/5xx) |
 | 2 | Usage error | clap argument/flag parse failure |
-| 3 | Auth required | HTTP 401 — run `flowleap auth login` or set `FLOWLEAP_API_KEY` / `FLOWLEAP_TOKEN` |
+| 3 | Auth required | HTTP 401, or the local `require_auth` guard finding no credential at all (typed `AuthRequiredError`; the `--json` envelope carries `error.code: "unauthenticated"`) |
 | 4 | Subscription required | HTTP 402 — a human must subscribe; see `subscriptionHint` |
 | 5 | Not found | HTTP 404 |
 | 6 | Rate limited | HTTP 429 — back off, then retry; see `rateLimitHint` |
 | 7 | Network failure | Connection failure or request timeout reaching the backend |
 | 8 | Endpoint gone | HTTP 410 `endpoint_gone` — this CLI build calls a retired endpoint. Run `flowleap upgrade`; see `endpointGoneHint` for the successor |
+| 9 | Patent-data keys | `provider_keys_required` / `provider_keys_invalid`. Raised wherever a `providerKeysHint` lands on the envelope (the backend answers 400, which would otherwise be a generic 1), and by `keys test` / `keys set` on a rejected or missing key. A human must add keys; never retry |
 
 On failure the JSON error envelope may carry structured hints — **additive**
 fields only, so existing envelope consumers are unaffected. Human/table output

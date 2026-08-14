@@ -161,7 +161,7 @@ To stay current:
 | `mcp` | Serve backend tools over the Model Context Protocol (stdio) |
 | `skills` | List, install, and update bundled agent skills (multi-harness) |
 | `config` | Manage CLI configuration |
-| `upgrade` | Upgrade the CLI itself (channel-aware: npm/brew/binary/cargo); alias `update` |
+| `upgrade` | Upgrade the CLI itself (channel-aware: npm/binary/cargo); alias `update` |
 
 A sampler:
 
@@ -233,7 +233,18 @@ cargo install --git https://github.com/flowleap-ai/flowleap-cli.git
 
 Prebuilt release binaries cover macOS (x86_64, arm64), Linux (x86_64 and arm64 glibc, plus a static `flowleap-linux-x86_64-musl` build for Alpine/containers — download it directly from the [releases page](https://github.com/flowleap-ai/flowleap-cli/releases)), and Windows (x86_64).
 
-**Updating:** `flowleap upgrade` updates the CLI on whichever channel installed it — no need to remember which. It runs `npm i -g flowleap@latest` for npm installs, `brew upgrade flowleap` for Homebrew, self-updates the raw binary in place (downloading the platform release asset and verifying its sha256 against `checksums.txt` before an atomic swap, exactly like first-run), and prints the `cargo install … --force` command for source installs. Use `flowleap upgrade --check` (add `--json` for agents) to see the channel and available version without changing anything. Upgrading the CLI doesn't touch already-installed skill files — run `flowleap skills update` for those.
+**Downloading a binary from the releases page on macOS:** the release binaries are not notarized, so Gatekeeper quarantines anything the browser downloaded and refuses to run it ("cannot be opened because the developer cannot be verified"). Clear the quarantine attribute after downloading:
+
+```bash
+xattr -d com.apple.quarantine ./flowleap-darwin-arm64
+chmod +x ./flowleap-darwin-arm64
+```
+
+The shell installer and npm paths above are unaffected — neither marks the binary as browser-downloaded.
+
+**Updating:** `flowleap upgrade` updates the CLI on whichever channel installed it — no need to remember which. It runs `npm i -g flowleap@latest` for npm installs, self-updates the raw binary in place (downloading the platform release asset and verifying its sha256 against `checksums.txt` before an atomic swap, exactly like first-run), and prints the `cargo install … --force` command for source installs. Use `flowleap upgrade --check` (add `--json` for agents) to see the channel and available version without changing anything.
+
+Installed skill files are copies, so an upgrade leaves them behind. A raw-binary self-update refreshes them with the new build automatically; on the other channels run `flowleap skills update` yourself once the upgrade finishes — until you do, agents read skill files that document retired commands.
 
 ## Authentication
 
@@ -310,12 +321,23 @@ Every run exits with a documented code, so scripts can branch on `$?` without pa
 | 0 | Success |
 | 1 | Generic failure |
 | 2 | Usage error (bad flags/arguments) |
-| 3 | Auth required (HTTP 401) — `flowleap auth login` or set `FLOWLEAP_API_KEY` |
+| 3 | Auth required (HTTP 401, or no credential configured at all) — `flowleap auth login` or set `FLOWLEAP_API_KEY` |
 | 4 | Subscription required (HTTP 402) — see `subscriptionHint` |
 | 5 | Not found (HTTP 404) |
 | 6 | Rate limited (HTTP 429) — back off, see `rateLimitHint` |
 | 7 | Network failure reaching the backend |
 | 8 | Endpoint gone (HTTP 410) — this build calls a retired endpoint; run `flowleap upgrade`, see `endpointGoneHint` |
+| 9 | Patent-data keys required or rejected — a human must add EPO/USPTO keys; see `providerKeysHint`, do not retry |
+
+Two details worth knowing:
+
+- **The local auth guard.** A command that needs a credential and finds none
+  fails before anything is sent. It exits 3 like a rejected 401, and its
+  `--json` envelope carries `error.code: "unauthenticated"` — the one failure
+  that never reaches the backend still names itself in the closed code registry.
+- **Exit 9 covers `keys` too.** `flowleap keys test` and `flowleap keys set`
+  exit 9 on a rejected or missing provider key, the same code a key-gated data
+  command returns.
 
 Use `--dry-run` to see the exact method, URL, auth status, and JSON body the CLI would send — the safest way to debug request shape:
 

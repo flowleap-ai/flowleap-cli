@@ -259,3 +259,96 @@ async fn hint_fields_are_additive_to_the_envelope() {
     assert_eq!(value["body"]["error"], "subscription_required");
     assert!(value["contentType"].is_string());
 }
+
+/// The patent-data-key gate gets its own code (9), not the generic 1 the
+/// backend's 400 status would otherwise map to. It is the most likely
+/// first-run failure and the only one whose fix is a human doing a browser
+/// signup, so an agent has to be able to tell it from a bad query on `$?`
+/// alone.
+#[tokio::test]
+async fn a_patent_data_key_gate_exits_9_with_its_hint() {
+    for (code, provider) in [
+        ("data_keys_required", "epo"),
+        ("patent_provider_key_invalid", "uspto"),
+    ] {
+        let server = MockServer::start().await;
+        mount_thing(
+            &server,
+            ResponseTemplate::new(400).set_body_json(json!({
+                "error": { "message": "…", "code": code, "provider": provider },
+            })),
+        )
+        .await;
+
+        let output = request_thing_json(&server).await;
+
+        assert_eq!(output.status.code(), Some(9), "code {code}");
+        let value = stdout_json(&output);
+        assert_eq!(value["status"], 400);
+        assert_eq!(value["providerKeysHint"]["provider"], provider);
+        assert_eq!(value["providerKeysHint"]["requiresHumanIntervention"], true);
+    }
+}
+
+/// A 400 that is NOT a key gate keeps the generic failure code — exit 9 means
+/// the key gate and nothing else.
+#[tokio::test]
+async fn a_plain_400_still_exits_1() {
+    let server = MockServer::start().await;
+    mount_thing(
+        &server,
+        ResponseTemplate::new(400).set_body_json(json!({
+            "error": { "message": "bad query", "code": "INVALID_INPUT" },
+        })),
+    )
+    .await;
+
+    let output = request_thing_json(&server).await;
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout_json(&output).get("providerKeysHint").is_none());
+}
+
+/// The local auth guard is the one failure that never reaches the backend, so
+/// nothing else can name it: it exits 3 like a rejected 401 and its envelope
+/// carries the machine-readable code.
+#[tokio::test]
+async fn missing_credentials_exit_3_with_an_unauthenticated_code() {
+    let output = run_cli(
+        "http://127.0.0.1:9",
+        &[],
+        &["--json", "patent", "search", "--query", "ti=battery"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(3));
+    let value = stdout_json(&output);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "unauthenticated");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("flowleap auth login")),
+        "message names the fix: {value}"
+    );
+}
+
+/// Only failures with a code in the closed registry carry one; everything
+/// else keeps the historical message-only envelope, so `error.code` is never
+/// something an agent has to second-guess.
+#[tokio::test]
+async fn failures_without_a_registry_code_carry_none() {
+    let output = run_cli(
+        "http://127.0.0.1:9",
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "patent", "search", "--query", "ti=battery"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(7), "network failure");
+    let value = stdout_json(&output);
+    assert!(
+        value["error"]["code"].is_null(),
+        "no invented code: {value}"
+    );
+}

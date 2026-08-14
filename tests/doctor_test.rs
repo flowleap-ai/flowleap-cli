@@ -148,7 +148,10 @@ async fn unauthenticated_lists_auth_login_first_and_exits_1() {
 }
 
 /// Session-only auth (Clerk token, no fl_pat_ personal token) pends exactly
-/// the mint-personal-token agent step.
+/// the mint-personal-token agent step — and, because that step is advisory,
+/// the machine is still ready and the run still exits 0. A session token works
+/// today; only its later expiry is at stake, and a durability suggestion must
+/// not fail a `flowleap doctor && <work>` gate.
 #[tokio::test]
 async fn session_only_auth_pends_mint_personal_token() {
     let server = MockServer::start().await;
@@ -169,16 +172,59 @@ async fn session_only_auth_pends_mint_personal_token() {
     )
     .await;
 
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(0));
     let report = stdout_json(&output);
-    assert_eq!(report["ready"], false);
+    assert_eq!(report["ready"], true, "an advisory step is not a blockage");
     assert_eq!(step_ids(&report), ["mint-personal-token"]);
     let mint = &report["nextSteps"][0];
     assert_eq!(mint["actor"], "agent");
+    assert_eq!(mint["advisory"], true);
     assert_eq!(
         mint["run"],
         "flowleap --json auth create-token --name <n> --store"
     );
+}
+
+/// Advisory only excuses the advisory step: the same session-token machine
+/// with a genuinely blocking provider gap is not ready and exits 1, so the
+/// exemption cannot be mistaken for "session tokens make doctor pass".
+#[tokio::test]
+async fn an_advisory_step_alongside_a_blocking_one_is_still_not_ready() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "server", "valid": true },
+            "uspto": { "source": "none", "valid": null },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_TOKEN", "clerk-session-jwt")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(1));
+    let report = stdout_json(&output);
+    assert_eq!(report["ready"], false);
+    assert_eq!(
+        step_ids(&report),
+        [
+            "mint-personal-token",
+            "obtain-uspto-key",
+            "store-uspto-key",
+            "verify-keys"
+        ]
+    );
+    // Only the durability step is exempt; every key step still blocks.
+    assert_eq!(report["nextSteps"][0]["advisory"], true);
+    for step in report["nextSteps"].as_array().unwrap().iter().skip(1) {
+        assert!(step["advisory"].is_null(), "must block: {step}");
+    }
 }
 
 /// Server-covered providers produce no next steps; only the genuinely
@@ -446,10 +492,14 @@ async fn human_ready_machine_renders_all_check_marks_and_no_next_steps() {
 }
 
 /// Unauthenticated: the auth line is ✗ and the numbered next-steps list opens
-/// with the [human]-tagged sign-in step carrying its runnable command; the
+/// with the sign-in step carrying a command a person can actually type; the
 /// run exits 1.
+///
+/// The human view carries no agent-protocol artifacts: the `[human]`/`[agent]`
+/// actor tags and the `--json` flag are contract fields for `--json` consumers,
+/// and a person reading the terminal wants readable output, not NDJSON.
 #[tokio::test]
-async fn human_unauthenticated_renders_cross_and_actor_tagged_steps() {
+async fn human_next_steps_drop_agent_protocol_artifacts() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
 
@@ -459,16 +509,40 @@ async fn human_unauthenticated_renders_cross_and_actor_tagged_steps() {
     let stdout = stdout_human(&output);
     assert!(stdout.contains("✗ Not signed in"), "auth line: {stdout}");
     assert!(stdout.contains("Next steps:"), "section: {stdout}");
-    assert!(stdout.contains("1. [human]"), "numbered tag: {stdout}");
     assert!(
-        stdout.contains("flowleap --json auth login"),
+        stdout.contains("1. Sign in to FlowLeap"),
+        "numbered: {stdout}"
+    );
+    assert!(
+        stdout.contains("flowleap auth login"),
         "login command: {stdout}"
     );
-    assert!(stdout.contains("[agent]"), "agent-tagged steps: {stdout}");
     assert!(
         stdout.contains("https://data.uspto.gov/apis/getting-started"),
         "human step URL on its own line: {stdout}"
     );
+    assert!(!stdout.contains("[human]"), "no actor tags: {stdout}");
+    assert!(!stdout.contains("[agent]"), "no actor tags: {stdout}");
+    assert!(
+        !stdout.contains("--json"),
+        "no --json in commands: {stdout}"
+    );
+}
+
+/// The same steps in `--json` keep every contract field the human view drops:
+/// actors and the `--json` commands an agent runs verbatim.
+#[tokio::test]
+async fn json_next_steps_keep_actors_and_json_commands() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+
+    let output = run_cli(&server.uri(), &[], &["--json", "doctor"]).await;
+
+    let report = stdout_json(&output);
+    let login = &report["nextSteps"][0];
+    assert_eq!(login["id"], "auth-login");
+    assert_eq!(login["actor"], "human");
+    assert_eq!(login["run"], "flowleap --json auth login");
 }
 
 /// A provider the server covers renders as an informational • line and gets

@@ -724,3 +724,50 @@ fn ocr_help_includes_examples() {
         "ocr --help examples don't show an invocation"
     );
 }
+
+/// Bare `flowleap` lists ~30 commands, which answers "what exists" but not
+/// "where do I start". The footer names the two commands that get a cold
+/// machine working, on both help surfaces: the bare invocation (a missing
+/// subcommand, so clap renders help on stderr) and explicit `--help`.
+#[test]
+fn help_points_a_first_time_user_at_setup_and_doctor() {
+    let cases: [(&[&str], bool); 2] = [(&[], false), (&["--help"], true)];
+    for (args, on_stdout) in cases {
+        let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
+            .args(args)
+            .output()
+            .expect("run flowleap help");
+
+        let stream = if on_stdout {
+            output.stdout
+        } else {
+            output.stderr
+        };
+        let help = String::from_utf8(stream).expect("help is utf8");
+        assert!(help.contains("First time?"), "{args:?} footer: {help}");
+        assert!(help.contains("flowleap setup"), "{args:?} footer: {help}");
+        assert!(help.contains("flowleap doctor"), "{args:?} footer: {help}");
+    }
+}
+
+/// `keys status` is an alias for `keys list` — "status" is what people reach
+/// for, and it already means "verify" elsewhere in the CLI (`auth status`).
+#[test]
+fn keys_status_is_an_alias_for_keys_list() {
+    let temp_home = tempfile::tempdir().expect("create temp home");
+    let run = |subcommand: &str| {
+        let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
+            .env("HOME", temp_home.path())
+            .env("XDG_CONFIG_HOME", temp_home.path().join(".config"))
+            .env_remove("FLOWLEAP_EPO_KEY")
+            .env_remove("FLOWLEAP_EPO_SECRET")
+            .env_remove("FLOWLEAP_USPTO_KEY")
+            .args(["--json", "keys", subcommand])
+            .output()
+            .expect("run flowleap keys");
+        assert!(output.status.success(), "keys {subcommand} must succeed");
+        String::from_utf8(output.stdout).expect("stdout is utf8")
+    };
+
+    assert_eq!(run("status"), run("list"));
+}

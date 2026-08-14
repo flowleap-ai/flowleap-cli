@@ -9,6 +9,24 @@ pub fn print_json(value: &Value) {
     );
 }
 
+/// Resolve a column key against one record. A dotted key walks nested objects
+/// (`applicationMetaData.inventionTitle`, the shape USPTO ODP actually
+/// returns); when that path is absent, the last segment is tried as a flat key
+/// so the same column list still renders a payload the backend has flattened.
+fn field<'a>(record: &'a Value, key: &str) -> Option<&'a Value> {
+    let walked = key
+        .split('.')
+        .try_fold(record, |cursor, segment| cursor.get(segment));
+    match walked {
+        Some(value) => Some(value),
+        None => key
+            .rsplit('.')
+            .next()
+            .filter(|last| *last != key)
+            .and_then(|last| record.get(last)),
+    }
+}
+
 /// Print a JSON array as a table (for --output table)
 pub fn print_table(rows: &[Value], columns: &[(&str, &str)]) {
     let mut table = Table::new();
@@ -18,7 +36,7 @@ pub fn print_table(rows: &[Value], columns: &[(&str, &str)]) {
         let cells: Vec<Cell> = columns
             .iter()
             .map(|(key, _)| {
-                let val = row.get(key).cloned().unwrap_or(Value::Null);
+                let val = field(row, key).cloned().unwrap_or(Value::Null);
                 match val {
                     Value::String(s) => Cell::new(truncate(&s, 50)),
                     Value::Array(arr) => {
@@ -76,7 +94,7 @@ fn print_object_human(obj: &Value, columns: &[(&str, &str)]) {
     let mut printed = false;
 
     for (key, label) in columns {
-        if let Some(val) = obj.get(key) {
+        if let Some(val) = field(obj, key) {
             match val {
                 Value::String(s) => {
                     println!("  {}: {}", label, s);
@@ -124,7 +142,39 @@ pub fn truncate(s: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::truncate;
+    use super::{field, truncate};
+    use serde_json::json;
+
+    #[test]
+    fn dotted_column_keys_walk_nested_records() {
+        // The USPTO ODP search shape: identity at the top, everything else
+        // under applicationMetaData.
+        let record = json!({
+            "applicationNumberText": "16123456",
+            "applicationMetaData": { "inventionTitle": "Battery cooling" },
+        });
+        assert_eq!(
+            field(&record, "applicationMetaData.inventionTitle"),
+            Some(&json!("Battery cooling"))
+        );
+        assert_eq!(
+            field(&record, "applicationNumberText"),
+            Some(&json!("16123456"))
+        );
+        assert_eq!(field(&record, "applicationMetaData.grantDate"), None);
+    }
+
+    #[test]
+    fn a_dotted_key_falls_back_to_the_flat_last_segment() {
+        // Same column list against a payload the backend flattened.
+        let flat = json!({ "inventionTitle": "Battery cooling" });
+        assert_eq!(
+            field(&flat, "applicationMetaData.inventionTitle"),
+            Some(&json!("Battery cooling"))
+        );
+        // A plain key never falls back to anything.
+        assert_eq!(field(&flat, "title"), None);
+    }
 
     #[test]
     fn truncate_under_max() {
