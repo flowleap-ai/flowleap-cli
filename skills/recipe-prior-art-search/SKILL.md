@@ -28,11 +28,12 @@ fields live):
    repeats the field: `(ta=X OR ta=Y)` is valid; `ta=(X OR Y)` is a hard OPS
    404. Verify any CPC code against the official scheme
    (`flowleap patstat query` on `flowleap.cpc_scheme`) — never guess codes.
-3. **Probe the count** — mandatory. `patent search` shows no total, so read
-   `total` from the raw passthrough:
+3. **Probe the count** — mandatory. `patent search` shows no total, so run the
+   same tool directly and read `total` from its payload. `details=false`
+   skips the per-document bibliography fan-out, so the probe stays cheap:
 
 ```bash
-flowleap --json api request post /v1/patent-search --body '{"query":"<self-written CQL>","range":"1-1"}'
+flowleap --json tools run search_patents query='<self-written CQL>' range=1-1 details=false
 ```
 
 Over ~1,000 hits: add the next discriminating term from your extraction list.

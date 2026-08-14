@@ -20,7 +20,10 @@ search is not a gate — reformulate and persist as normal. See `flowleap-keys`.
 flowleap patent search --query <query> [flags]
 ```
 
-Posts to `/v1/patent-search`. Returns patent results with publication number, title, applicant, and date.
+Runs the `search_patents` tool (`provider: epo_ops`) on the Tools facade — the
+single agent surface for patent data. Returns results with publication number,
+title, applicant, and date; the per-source provider route this used to call is
+a retired endpoint. You never name the surface yourself: the command carries it.
 
 | Flag | Description | Default |
 |------|-------------|---------|
@@ -122,11 +125,13 @@ dropping the category word loses the invention.
 
 ### Step 3 — probe the count (mandatory, before trusting any results)
 
-`patent search` output does not surface a result total, so probe through the
-raw passthrough and read `total` from the body:
+`patent search` output does not surface a result total, so probe the same tool
+directly and read `total` from its payload. `details=false` skips the
+per-document bibliography fan-out, which makes the probe cheap — a count is all
+you want here:
 
 ```bash
-flowleap --json api request post /v1/patent-search --body '{"query":"ta=\"foreign object\" AND ta=charging","range":"1-1"}'
+flowleap --json tools run search_patents query='ta="foreign object" AND ta=charging' range=1-1 details=false
 ```
 
 - **Over ~1,000 hits:** too broad — add the next discriminating term from your

@@ -38,7 +38,7 @@ every query's count before trusting it (method in `flowleap-patent`):
 
 ```bash
 # Patent art, both databases — element pairs carry the discrimination
-flowleap --json api request post /v1/patent-search --body '{"query":"<CQL for the element combination>","range":"1-1"}'
+flowleap --json tools run search_patents query='<CQL for the element combination>' range=1-1 details=false
 flowleap --json patent search --query "<CQL for the element combination>" --limit 30
 flowleap --json uspto search --query "<self-written ODP Lucene>" --limit 30   # title + metadata only
 

@@ -61,21 +61,29 @@ When using FlowLeap as an AI agent, always pass `--json` for reliable parsing.
 
 ## Subscription, Rate Limits & Exit Codes
 
-All `/v1` data routes require an active subscription and share a limit of
-60 requests/minute/user. `doctor`, `health`, `auth`, and `keys test` work
-without a subscription, so setup can always be diagnosed. Error envelopes carry
-additive hints — `subscriptionHint` (402, has `upgradeUrl`, needs a human),
-`providerKeysHint` (missing/rejected EPO/USPTO patent-data keys, needs a human),
-and `rateLimitHint` (429, has `retryAfterSeconds`).
+Patent data runs on the **Tools facade** — the single agent surface, reached as
+`/v1/tools`. Every data command POSTs to a named tool there; the per-source
+**provider routes** they used to call are **retired endpoints** (see the
+`endpoint_gone` row below). All of it requires an active subscription and shares
+a limit of 60 requests/minute/user. `doctor`, `health`, `auth`, and `keys test`
+work without a subscription, so setup can always be diagnosed.
 
-A `providerKeysHint` with code `provider_keys_required` is a **user-action stop
-for that office, never an exhausted route**: do not retry, do not invent keys,
-and do not substitute web-scraped patent data for the gated office — searches
-and single-document reads alike. The keys are free from each office. Read the
-gate, never infer it: only that explicit code means gated, so an empty result, a
-truncated payload, or a 5xx stays an ordinary dead route with the normal
-fallbacks. Full doctrine (proceed-then-ask, keyless pivot, resume):
-`flowleap-keys`.
+Error envelopes carry additive hints — `subscriptionHint` (402, has
+`upgradeUrl`, needs a human), `providerKeysHint` (missing/rejected EPO/USPTO
+patent-data keys, needs a human), `rateLimitHint` (429, has
+`retryAfterSeconds`), and `endpointGoneHint` (410, `{ requiresUpgrade: true,
+successor?, reason?, message }`).
+
+**Branch on codes, never on message text.** Backend codes come from a closed
+registry and never change once shipped; wording is freely editable by policy, so
+matching text can invent a verdict that is not there. A `providerKeysHint` with
+code `provider_keys_required` is a **user-action stop for that office, never an
+exhausted route**: do not retry, do not invent keys, and do not substitute
+web-scraped patent data for the gated office — searches and single-document
+reads alike. The keys are free from each office. Read the gate, never infer it:
+only the explicit gate codes mean gated, so an empty result, a truncated
+payload, or a 5xx stays an ordinary dead route with the normal fallbacks. Full
+doctrine (proceed-then-ask, keyless pivot, resume): `flowleap-keys`.
 
 | Exit code | Meaning |
 |-----------|---------|
@@ -87,6 +95,32 @@ fallbacks. Full doctrine (proceed-then-ask, keyless pivot, resume):
 | 5 | Not found (HTTP 404) |
 | 6 | Rate limited (HTTP 429) — back off per `rateLimitHint.retryAfterSeconds` |
 | 7 | Network failure reaching the backend |
+| 8 | Endpoint gone (HTTP 410 `endpoint_gone`) — this build calls a retired endpoint |
+
+**Exit 8 is not a retry.** A retired endpoint is permanently removed and a
+retired path is never reused, so the same call will never succeed again. Read
+`endpointGoneHint.successor` for where the capability moved, run
+`flowleap upgrade`, then `flowleap skills update` — an upgraded CLI with stale
+skill files walks straight back into the same 410.
+
+Every request also sends the **Client version header**
+(`X-FlowLeap-Client: cli/<version>`). It is observational only — logged as
+stale-client and route-usage evidence, never used to reject a request — so it is
+nothing to configure or work around.
+
+## Reachability — `flowleap health`
+
+```bash
+flowleap --json health        # liveness
+flowleap --json health api    # readiness; carries the backend's apiVersion
+```
+
+Both are public: no subscription, no patent-data key, no provider call. Use one
+of these (or `flowleap --json doctor` for the full checklist) to test whether the
+backend is up. **Never probe reachability with a search command** — a search
+costs a provider call and can fail for reasons that have nothing to do with
+reachability (no subscription, a key gate, a bad query), so it answers a
+different question than the one you asked.
 
 ## Readiness — `flowleap --json doctor`
 

@@ -68,6 +68,7 @@ flowleap --json keys set epo --key <consumer-key> --secret <consumer-secret>
 ```bash
 flowleap --json legal search "inventive step problem solution approach" --jurisdiction epo --limit 5
 flowleap --json legal jurisdictions
+flowleap --json tools run reference_search query='inventive step' jurisdiction=EPO
 ```
 
 #### flowleap-npl — Search non-patent literature (scholarly works via OpenAlex) with year, open-access and publication-type filters.
@@ -95,7 +96,7 @@ flowleap convert-number US5443036.A --to docdb
 
 ```bash
 flowleap patent search --query <query> [flags]
-flowleap --json api request post /v1/patent-search --body '{"query":"ta=\"foreign object\" AND ta=charging","range":"1-1"}'
+flowleap --json tools run search_patents query='ta="foreign object" AND ta=charging' range=1-1 details=false
 flowleap patstat query "SELECT symbol, title FROM flowleap.cpc_scheme WHERE title ILIKE '%photovoltaic%' ORDER BY symbol LIMIT 15" --question "candidate CPC codes for photovoltaics"
 ```
 
@@ -119,6 +120,8 @@ flowleap patstat graph resolve EP3477840
 ```bash
 flowleap config set base-url https://api.flowleap.co
 flowleap config get base-url
+flowleap --json health
+flowleap --json health api
 flowleap upgrade --check --json
 ```
 
@@ -129,13 +132,14 @@ flowleap --json tools list
 flowleap --json tools describe get_bibliography
 flowleap --json tools openapi
 flowleap --json tools run get_bibliography patent_number=EP1000000
+flowleap --json health api
 ```
 
 #### flowleap-uspto — Search USPTO Open Data Portal records with Lucene queries you write yourself, fetch granted patents, applications, continuity chains, and file-wrapper data (prosecution transactions, assignments, foreign priority, PTA, attorney of record), and list IFW documents and read office actions as OCR-extracted text.
 
 ```bash
 flowleap --json uspto search --query 'applicationMetaData.inventionTitle:"machine learning"' --limit 5
-flowleap --json api request post /v1/patent-search-uspto/search --body '{"q":"applicationMetaData.inventionTitle:\"charging case\"","pagination":{"limit":1,"offset":0}}'
+flowleap --json tools run search_patents provider=uspto query='applicationMetaData.inventionTitle:"charging case"' limit=1
 flowleap --json uspto grant 11800000
 flowleap --json uspto application 16123456
 flowleap --json uspto continuity 16123456

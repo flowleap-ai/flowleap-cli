@@ -34,7 +34,7 @@ not the benefit), probe the count, then search both offices (method in
 query):
 
 ```bash
-flowleap --json api request post /v1/patent-search --body '{"query":"<self-written CQL>","range":"1-1"}'
+flowleap --json tools run search_patents query='<self-written CQL>' range=1-1 details=false
 flowleap --json patent search --query "<self-written CQL>" --limit 20
 flowleap --json uspto search --query "<self-written ODP Lucene>" --limit 20   # title + metadata only
 

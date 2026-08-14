@@ -23,8 +23,8 @@ discriminating ones, and probe the count — FTO is a recall search, so refine
 toward broad (drop classifications, OR in synonyms) rather than precise:
 
 ```bash
-# EPO CQL count probe for feature 1 (read `total` from the body)
-flowleap --json api request post /v1/patent-search --body '{"query":"<CQL for feature 1>","range":"1-1"}'
+# EPO CQL count probe for feature 1 (read `total` from the payload)
+flowleap --json tools run search_patents query='<CQL for feature 1>' range=1-1 details=false
 # Repeat for each feature; USPTO Lucene queries are title + metadata only
 ```
 

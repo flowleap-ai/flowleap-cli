@@ -24,8 +24,8 @@ in the tens of thousands still means the scope is the technology area, not
 the landscape:
 
 ```bash
-# Count probe (read `total` from the body), then adjust scope
-flowleap --json api request post /v1/patent-search --body '{"query":"<self-written CQL>","range":"1-1"}'
+# Count probe (read `total` from the payload), then adjust scope
+flowleap --json tools run search_patents query='<self-written CQL>' range=1-1 details=false
 ```
 
 Verify any CPC code against the official scheme before scoping on it —
