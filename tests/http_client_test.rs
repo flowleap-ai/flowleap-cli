@@ -140,6 +140,39 @@ async fn requests_carry_versioned_user_agent() {
     );
 }
 
+/// Every request identifies the client build to the backend, which logs it as
+/// the evidence behind retirement decisions (backend ADR 0014 rule 6).
+#[tokio::test]
+async fn requests_carry_the_client_version_header() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/thing"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "ok": true })))
+        .mount(&server)
+        .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[],
+        &["api", "request", "get", "/v1/thing", "--output", "json"],
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let requests = server.received_requests().await.unwrap();
+    let client = requests[0]
+        .headers
+        .get("x-flowleap-client")
+        .expect("X-FlowLeap-Client header present")
+        .to_str()
+        .unwrap();
+    assert_eq!(client, format!("cli/{}", env!("CARGO_PKG_VERSION")));
+}
+
 /// A 429 with a long Retry-After passes through unchanged: the error envelope
 /// keeps its shape and surfaces `retryAfterSeconds`, and it is not retried.
 #[tokio::test]

@@ -1,9 +1,14 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use serde_json::Value;
 
 use crate::client::Context;
 use crate::output;
 
+/// Backend health probes. The backend exposes exactly two (both public):
+/// liveness at `/health` and readiness at `/v1/health`, the latter carrying the
+/// server's `apiVersion`. The per-route and cache/Redis probes were retired
+/// with the provider routes (backend ADR 0014).
 #[derive(Parser)]
 pub struct HealthArgs {
     #[command(subcommand)]
@@ -12,23 +17,25 @@ pub struct HealthArgs {
 
 #[derive(Subcommand)]
 enum HealthCommand {
-    /// Detailed API health endpoint
+    /// Readiness probe — reports the backend's apiVersion
     Api,
-    /// Combined local and distributed cache health
-    Cache,
-    /// Redis cache health
-    Redis,
 }
 
 pub async fn run(ctx: &Context, args: HealthArgs) -> Result<()> {
     let path = match args.command {
         None => "/health",
         Some(HealthCommand::Api) => "/v1/health",
-        Some(HealthCommand::Cache) => "/health/cache",
-        Some(HealthCommand::Redis) => "/health/redis",
     };
 
     let result = ctx.execute_json_envelope_or_error(ctx.get(path)).await?;
     output::print_value(&ctx.output_format, &result, &[]);
+
+    // The server build, spelled out for humans; JSON callers read it from the
+    // body they already have.
+    if ctx.output_format != "json" {
+        if let Some(version) = result.pointer("/body/apiVersion").and_then(Value::as_str) {
+            println!("apiVersion: {version}");
+        }
+    }
     Ok(())
 }

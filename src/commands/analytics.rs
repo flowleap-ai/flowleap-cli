@@ -3,10 +3,11 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::client::Context;
+use crate::commands::tools;
 use crate::output;
 
 /// Full-corpus patent analytics: filing trends by year, country and CPC
-/// breakdowns, and top assignees (POST /v1/patent-analytics).
+/// breakdowns, and top assignees (the `patent_analytics` tool).
 ///
 /// At least one criterion is required. The backend's old free-form `query`
 /// parameter is deprecated and rejected server-side, so this command only
@@ -109,14 +110,13 @@ pub async fn run(ctx: &Context, args: AnalyticsArgs) -> Result<()> {
     }
     ctx.require_auth()?;
 
-    let body = args.request_body();
-    let result = ctx
-        .execute_json_body_or_error(ctx.post("/v1/patent-analytics", &body))
-        .await?;
+    let input = args.request_body();
+    let Some(result) = tools::call_tool_data(ctx, "patent_analytics", &input).await? else {
+        return Ok(());
+    };
 
-    // JSON mode emits the endpoint envelope untouched; dry-run emits the
-    // standard dry-run envelope regardless of format.
-    if ctx.output_format == "json" || result.get("dryRun").and_then(Value::as_bool) == Some(true) {
+    // JSON mode emits the tool payload untouched.
+    if ctx.output_format == "json" {
         output::print_value(&ctx.output_format, &result, &[]);
         return Ok(());
     }

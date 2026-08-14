@@ -106,7 +106,6 @@ flowleap --json uspto assignments 14412875        # chain of title (reel/frame, 
 flowleap --json uspto foreign-priority 14412875   # foreign priority claims
 flowleap --json uspto adjustment 14412875         # official PTA day counts
 flowleap --json uspto attorney 14412875           # attorney/agent of record, customer number
-flowleap --json uspto associated-documents 14412875  # grant/pgpub bulk XML pointers
 ```
 
 Tools-facade equivalents: `get_transactions`, `get_assignments`,

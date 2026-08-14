@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
 
 use crate::client::Context;
+use crate::commands::tools;
 use crate::output;
 
 #[derive(Parser)]
@@ -43,9 +44,11 @@ enum AcademicSource {
 }
 
 impl AcademicSource {
+    /// The `search_academic` tool names Semantic Scholar `semantic-scholar`;
+    /// papers still come back tagged with the lib's historical `scholar`.
     fn as_backend_value(&self) -> &'static str {
         match self {
-            AcademicSource::Scholar => "scholar",
+            AcademicSource::Scholar => "semantic-scholar",
             AcademicSource::Arxiv => "arxiv",
         }
     }
@@ -73,29 +76,30 @@ async fn search(
     from_year: Option<u32>,
     to_year: Option<u32>,
 ) -> Result<()> {
-    let mut body = json!({
+    let mut input = json!({
         "query": query,
-        "maxResults": limit,
+        "max_results": limit,
     });
     if !sources.is_empty() {
-        body["sources"] = json!(sources
+        input["sources"] = json!(sources
             .iter()
             .map(AcademicSource::as_backend_value)
             .collect::<Vec<_>>());
     }
     let mut filter = json!({});
     if let Some(year) = from_year {
-        filter["fromYear"] = json!(year);
+        filter["from_year"] = json!(year);
     }
     if let Some(year) = to_year {
-        filter["toYear"] = json!(year);
+        filter["to_year"] = json!(year);
     }
     if filter.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
-        body["filter"] = filter;
+        input["filter"] = filter;
     }
 
-    let req = ctx.post("/v1/academic-search", &body);
-    let result = ctx.execute_json_body_or_error(req).await?;
+    let Some(result) = tools::call_tool_data(ctx, "search_academic", &input).await? else {
+        return Ok(());
+    };
 
     let columns = &[
         ("title", "Title"),
@@ -105,10 +109,9 @@ async fn search(
         ("citations", "Citations"),
     ];
 
-    if let Some(papers) = result.get("papers") {
-        output::print_value(&ctx.output_format, papers, columns);
-    } else {
-        output::print_value(&ctx.output_format, &result, columns);
+    match result.get("papers") {
+        Some(papers) => output::print_value(&ctx.output_format, papers, columns),
+        None => output::print_value(&ctx.output_format, &result, columns),
     }
 
     Ok(())

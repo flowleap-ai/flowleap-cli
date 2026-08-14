@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use crate::client::{encode_url_component, Context};
+use crate::client::Context;
 use crate::commands::tools;
 use crate::output;
 
@@ -137,7 +137,7 @@ pub async fn compare(ctx: &Context, args: CompareArgs) -> Result<()> {
 }
 
 /// `flowleap figures` → get_patent_image; `--out` saves one page's image
-/// payload (fetched via /v1/ops/figures, base64-decoded, written as bytes).
+/// payload (the same tool with include_images, base64-decoded to bytes).
 pub async fn figures(ctx: &Context, args: FiguresArgs) -> Result<()> {
     ctx.require_auth()?;
     if let Some(out) = args.out {
@@ -207,15 +207,25 @@ async fn run_facade_tool(ctx: &Context, name: &str, input: &Value) -> Result<Opt
     Ok(Some(data))
 }
 
-/// Fetch one figure page as binary image data and write it to `out`.
-///
-/// The tools facade only exposes figure *metadata* (get_patent_image); the
-/// actual payload comes from the backend's /v1/ops/figures route, which
-/// returns base64-encoded image data. `.png` outputs are rasterized from the
-/// PDF source (most patents are PDF-only); `.pdf`/`.tiff` fetch that format
-/// directly.
-async fn save_figure(ctx: &Context, doc: &str, page: u32, out: &Path) -> Result<()> {
-    let format = match out
+/// Build the `get_patent_image` input that fetches one page's image payload.
+/// `.png` outputs are rasterized from the PDF source (most patents are
+/// PDF-only); `.pdf`/`.tiff` fetch that format directly.
+fn figure_page_input(doc: &str, page: u32, format: &str) -> Value {
+    let mut input = json!({
+        "patent_number": doc,
+        "include_images": true,
+        "pages": [page],
+        "format": if format == "png" { "pdf" } else { format },
+    });
+    if format == "png" {
+        input["render"] = json!("png");
+    }
+    input
+}
+
+/// The image format to write, inferred from the output file's extension.
+fn figure_format_for(out: &Path) -> &'static str {
+    match out
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
@@ -224,22 +234,21 @@ async fn save_figure(ctx: &Context, doc: &str, page: u32, out: &Path) -> Result<
         Some("pdf") => "pdf",
         Some("tif") | Some("tiff") => "tiff",
         _ => "png",
-    };
-    let doc_param = encode_url_component(doc);
-    let query = if format == "png" {
-        format!("doc={doc_param}&include_images=true&pages={page}&format=pdf&render=png")
-    } else {
-        format!("doc={doc_param}&include_images=true&pages={page}&format={format}")
-    };
-    let body = ctx
-        .execute_json_body_or_error(ctx.get(&format!("/v1/ops/figures?{query}")))
-        .await?;
-    if body.get("dryRun").and_then(|v| v.as_bool()) == Some(true) {
-        output::print_json(&body);
-        return Ok(());
     }
+}
 
-    let data = body.get("data").unwrap_or(&body);
+/// Fetch one figure page as binary image data and write it to `out`.
+///
+/// Metadata and image bytes both come from `get_patent_image`: with
+/// `include_images` the tool returns the page as base64 inside the JSON result,
+/// so there is no second byte-fetching surface to straddle.
+async fn save_figure(ctx: &Context, doc: &str, page: u32, out: &Path) -> Result<()> {
+    let format = figure_format_for(out);
+    let input = figure_page_input(doc, page, format);
+    let Some(data) = tools::call_tool_data(ctx, "get_patent_image", &input).await? else {
+        return Ok(());
+    };
+
     let figures = data.get("figures").and_then(|f| f.as_array());
     let figure = figures
         .and_then(|figs| {
@@ -545,8 +554,30 @@ fn render_convert(data: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{render_compare, render_convert, render_figures, render_summary, render_timeline};
+    use super::{
+        figure_page_input, render_compare, render_convert, render_figures, render_summary,
+        render_timeline,
+    };
     use serde_json::json;
+    use std::path::Path;
+
+    /// A `.png` output rasterizes from the PDF source (EPO serves most patents
+    /// PDF-only); the other formats are fetched as-is with no render step.
+    #[test]
+    fn figure_page_input_rasterizes_only_for_png() {
+        let png = figure_page_input("EP1000000", 2, super::figure_format_for(Path::new("f.png")));
+        assert_eq!(png["patent_number"], "EP1000000");
+        assert_eq!(png["include_images"], true);
+        assert_eq!(png["pages"], json!([2]));
+        assert_eq!(png["format"], "pdf");
+        assert_eq!(png["render"], "png");
+
+        for (file, expected) in [("drawings.pdf", "pdf"), ("scan.tiff", "tiff")] {
+            let input = figure_page_input("EP1", 1, super::figure_format_for(Path::new(file)));
+            assert_eq!(input["format"], expected);
+            assert!(input.get("render").is_none(), "{file} must not rasterize");
+        }
+    }
 
     #[test]
     fn renders_convert_as_one_line() {

@@ -10,6 +10,12 @@ use crate::config::{Config, Credentials};
 /// and debug client issues.
 const USER_AGENT: &str = concat!("flowleap-cli/", env!("CARGO_PKG_VERSION"));
 
+/// The client-identification header every request carries (backend ADR 0014
+/// rule 6). `product/semver` — the backend logs it so retirement decisions rest
+/// on usage evidence. Observational only: no request is ever rejected on it.
+const CLIENT_HEADER: &str = "X-FlowLeap-Client";
+const CLIENT_HEADER_VALUE: &str = concat!("cli/", env!("CARGO_PKG_VERSION"));
+
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 5;
 /// Retries beyond the first attempt for transient failures on read-only calls.
@@ -140,6 +146,10 @@ pub const EXIT_SUBSCRIPTION_REQUIRED: i32 = 4;
 pub const EXIT_NOT_FOUND: i32 = 5;
 pub const EXIT_RATE_LIMITED: i32 = 6;
 pub const EXIT_NETWORK: i32 = 7;
+/// HTTP 410 — the endpoint this build calls was retired. Distinct from a
+/// generic failure so a stale CLI fails loudly with a migration path instead of
+/// looking like any other error (backend ADR 0014 rule 3).
+pub const EXIT_ENDPOINT_GONE: i32 = 8;
 
 /// Map an HTTP status to its documented exit code; anything without a
 /// dedicated code is a generic failure (1).
@@ -148,6 +158,7 @@ pub fn exit_code_for_status(status: u16) -> i32 {
         401 => EXIT_AUTH_REQUIRED,
         402 => EXIT_SUBSCRIPTION_REQUIRED,
         404 => EXIT_NOT_FOUND,
+        410 => EXIT_ENDPOINT_GONE,
         429 => EXIT_RATE_LIMITED,
         _ => 1,
     }
@@ -301,33 +312,46 @@ fn is_secret_header(name: &reqwest::header::HeaderName) -> bool {
     SECRET_HEADERS.contains(&name.as_str())
 }
 
-/// Detect provider-key problems in an error response and produce a structured,
-/// agent-parseable hint. Returns None when the error is unrelated to keys.
+/// The backend error code carried by an error body, wherever the unified
+/// envelope puts it: `{ error: { code } }` (every `/v1` surface) or a
+/// top-level `code` (the legacy OPS envelope, still emitted by the non-facade
+/// exceptions — PATSTAT, key validation).
+fn error_code(body: &Value) -> Option<&str> {
+    body.pointer("/error/code")
+        .or_else(|| body.get("code"))
+        .and_then(Value::as_str)
+}
+
+/// Detect patent-data-key problems in an error response and produce a
+/// structured, agent-parseable hint. Returns None when the error is unrelated
+/// to keys.
 ///
-/// Signals (from the backend's patentKeys middleware and provider libs):
-/// - `patent_provider_key_invalid`  → user-supplied keys were rejected
-/// - `EPO_CLIENT_ID` / `EPO_CLIENT_SECRET` in an error → no EPO keys anywhere
-/// - `USPTO_ODP_API_KEY` / "USPTO ODP API key not configured" → no USPTO key
+/// Codes only (backend ADR 0014 rule 4): the closed error-code registry and the
+/// structured `provider` field are the whole protocol. Message wording is
+/// freely editable backend-side by policy, so matching on it — as this function
+/// once did — made an innocent reword a silent breaking change.
+///
+/// - `patent_provider_key_invalid` (+ `provider`) → the user's keys were rejected
+/// - `data_keys_required`          (+ `provider`) → no key for that office anywhere
+/// - `odp_api_key_missing`                        → no USPTO ODP key, server-side
 pub fn provider_keys_hint(status: u16, body: &Value) -> Option<Value> {
     if status < 400 {
         return None;
     }
-    let text = body.to_string();
-    let (code, provider) = if text.contains("patent_provider_key_invalid") {
-        let provider = if text.to_lowercase().contains("uspto") {
-            "uspto"
-        } else {
-            "epo"
-        };
-        ("provider_keys_invalid", provider)
-    } else if text.contains("EPO_CLIENT_ID") || text.contains("EPO_CLIENT_SECRET") {
-        ("provider_keys_required", "epo")
-    } else if text.contains("USPTO_ODP_API_KEY")
-        || text.contains("USPTO ODP API key not configured")
-    {
-        ("provider_keys_required", "uspto")
-    } else {
-        return None;
+    // The provider the backend named. Structured field only — never inferred
+    // from the message, and never guessed from an office name appearing in it.
+    let named_provider = body
+        .pointer("/error/provider")
+        .or_else(|| body.get("provider"))
+        .and_then(Value::as_str);
+
+    let (code, provider) = match error_code(body)? {
+        "patent_provider_key_invalid" => ("provider_keys_invalid", named_provider?),
+        "data_keys_required" => ("provider_keys_required", named_provider?),
+        // The ODP taxonomy's own "no USPTO key configured" verdict: the code
+        // itself names the office, so it needs no provider field.
+        "odp_api_key_missing" => ("provider_keys_required", "uspto"),
+        _ => return None,
     };
 
     Some(json!({
@@ -450,6 +474,57 @@ pub fn rate_limit_hint(retry_after_seconds: Option<&Value>) -> Value {
     hint
 }
 
+/// Structured hint for a `410 endpoint_gone` body: this build called an
+/// endpoint the backend has retired for good. Driven by the code alone; the
+/// backend's own `successor` and `reason` fields are relayed verbatim so the
+/// caller learns exactly what to call instead (backend ADR 0014 rule 3).
+pub fn endpoint_gone_hint(body: &Value) -> Option<Value> {
+    if error_code(body)? != "endpoint_gone" {
+        return None;
+    }
+    let mut hint = json!({
+        "code": "endpoint_gone",
+        "requiresUpgrade": true,
+        "message": "This FlowLeap build called a backend endpoint that has been retired. \
+                    Upgrade the CLI ('flowleap upgrade'); if the failure persists, the \
+                    command needs migrating to the successor named below.",
+    });
+    for field in ["successor", "reason"] {
+        if let Some(value) = body.pointer(&format!("/error/{field}")) {
+            hint[field] = value.clone();
+        }
+    }
+    if let Some(message) = body.pointer("/error/message") {
+        hint["serverMessage"] = message.clone();
+    }
+    Some(hint)
+}
+
+/// Human-readable info box for a retired endpoint, printed to stderr so it
+/// never corrupts parseable stdout.
+pub fn print_endpoint_gone_box(hint: &Value) {
+    use colored::Colorize;
+    let title = "Endpoint retired";
+
+    eprintln!();
+    eprintln!(
+        "┌─ {} {}",
+        title.yellow().bold(),
+        "─".repeat(50_usize.saturating_sub(title.len()))
+    );
+    eprintln!("│ The backend answered 410: this endpoint is gone for good.");
+    if let Some(reason) = hint["reason"].as_str() {
+        eprintln!("│ Why: {reason}");
+    }
+    match hint["successor"].as_str() {
+        Some(successor) => eprintln!("│ Use instead: {}", successor.cyan().bold()),
+        None => eprintln!("│ No successor was named — the capability was withdrawn."),
+    }
+    eprintln!("│");
+    eprintln!("│ Update this CLI: {}", "flowleap upgrade".cyan().bold());
+    eprintln!("└{}", "─".repeat(64));
+}
+
 /// Human-readable info box for the 402 subscription hint, printed to stderr
 /// so it never corrupts parseable stdout.
 pub fn print_subscription_hint_box(hint: &Value) {
@@ -555,7 +630,11 @@ impl Context {
         format!("{}{}", self.config.base_url.trim_end_matches('/'), path)
     }
 
-    fn apply_auth(&self, req: RequestBuilder) -> RequestBuilder {
+    /// Auth, forwarded patent-data keys, and the client-identification header —
+    /// applied to every request the CLI builds.
+    fn apply_headers(&self, req: RequestBuilder) -> RequestBuilder {
+        let req = req.header(CLIENT_HEADER, CLIENT_HEADER_VALUE);
+
         // The backend accepts exactly one credential shape: `Authorization:
         // Bearer <token>` — a Clerk JWT or a personal API token (fl_pat_…).
         // There is no X-API-Key path server-side.
@@ -585,13 +664,13 @@ impl Context {
     /// Build a GET request with auth
     pub fn get(&self, path: &str) -> RequestBuilder {
         let req = self.client().get(self.url(path));
-        self.apply_auth(req)
+        self.apply_headers(req)
     }
 
     /// Build a POST request with auth and JSON body
     pub fn post(&self, path: &str, body: &Value) -> RequestBuilder {
         let req = self.client().post(self.url(path)).json(body);
-        self.apply_auth(req)
+        self.apply_headers(req)
     }
 
     /// Build an arbitrary request with optional JSON body.
@@ -602,7 +681,7 @@ impl Context {
         } else {
             req
         };
-        self.apply_auth(req)
+        self.apply_headers(req)
     }
 
     /// Base-URL credential guard: before anything leaves the process, warn
@@ -869,6 +948,9 @@ impl Context {
             if let Some(hint) = provider_keys_hint(status.as_u16(), &envelope["body"]) {
                 envelope["providerKeysHint"] = hint;
             }
+            if let Some(hint) = endpoint_gone_hint(&envelope["body"]) {
+                envelope["endpointGoneHint"] = hint;
+            }
             match status.as_u16() {
                 402 => {
                     let hint = subscription_hint(&envelope["body"]);
@@ -921,6 +1003,9 @@ impl Context {
             }
             if let Some(hint) = envelope.get("rateLimitHint") {
                 print_rate_limit_hint_box(hint);
+            }
+            if let Some(hint) = envelope.get("endpointGoneHint") {
+                print_endpoint_gone_box(hint);
             }
         }
     }

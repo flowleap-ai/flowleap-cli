@@ -6,9 +6,10 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::client::Context;
+use crate::commands::tools;
 use crate::output;
 
-/// File extensions the backend's `/v1/ocr` route accepts (mirrors its
+/// File extensions the backend's `ocr` tool accepts (mirrors its
 /// server-side validation so unsupported files fail fast, locally).
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "pdf", "png", "jpg", "jpeg", "gif", "webp", "avif", "docx", "pptx",
@@ -50,18 +51,13 @@ pub struct OcrArgs {
 pub async fn run(ctx: &Context, args: OcrArgs) -> Result<()> {
     ctx.require_auth()?;
 
-    let body = build_request_body(&args.input)?;
-    let req = ctx.post("/v1/ocr", &body);
+    let input = build_request_body(&args.input)?;
+    let Some(result) = tools::call_tool_data(ctx, "ocr", &input).await? else {
+        return Ok(());
+    };
 
     if ctx.output_format == "json" {
-        let envelope = ctx.execute_json_envelope_or_error(req).await?;
-        output::print_json(&envelope);
-        return Ok(());
-    }
-
-    let result = ctx.execute_json_body_or_error(req).await?;
-    if result.get("dryRun").and_then(Value::as_bool) == Some(true) {
-        output::print_value(&ctx.output_format, &result, &[]);
+        output::print_json(&result);
         return Ok(());
     }
 
@@ -75,7 +71,7 @@ pub async fn run(ctx: &Context, args: OcrArgs) -> Result<()> {
     Ok(())
 }
 
-/// Build the `/v1/ocr` request body: `{ url }` for http(s) inputs,
+/// Build the `ocr` tool input: `{ url }` for http(s) inputs,
 /// `{ file: <base64>, filename }` for local paths. Local paths are validated
 /// against the backend's format and size limits before any bytes are read.
 fn build_request_body(input: &str) -> Result<Value> {

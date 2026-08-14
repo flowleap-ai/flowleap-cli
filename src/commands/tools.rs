@@ -117,6 +117,35 @@ pub async fn call_tool(ctx: &Context, name: &str, input: &Value) -> Result<Value
         .await
 }
 
+/// Run a backend tool and hand back its `data` payload — the seam every
+/// data command sits on since the facade migration (backend PRD 0013).
+///
+/// Unwraps the facade envelope (`{ success, tool, data, executionTimeMs,
+/// cached? }`) so callers see the same payload shape the retired provider
+/// routes returned at the top level. Returns `None` when the run is already
+/// fully handled and the caller must print nothing more: a `--dry-run`
+/// description. Failures print their error envelope (with the structured
+/// hints) and return the typed error, exactly as [`call_tool`] does.
+pub async fn call_tool_data(ctx: &Context, name: &str, input: &Value) -> Result<Option<Value>> {
+    let result = call_tool(ctx, name, input).await?;
+    if result.get("dryRun").and_then(|v| v.as_bool()) == Some(true) {
+        output::print_json(&result);
+        return Ok(None);
+    }
+    if ctx.verbose {
+        if let Some(cached) = result.get("cached").and_then(|v| v.as_bool()) {
+            eprintln!("  cached: {}", cached);
+        }
+        if let Some(ms) = result.get("executionTimeMs").and_then(|v| v.as_u64()) {
+            eprintln!("  executionTimeMs: {}", ms);
+        }
+    }
+    // A tool that returns a bare value (rather than an object) still lands
+    // under `data`; falling back to the whole envelope keeps a hypothetical
+    // envelope-less response printable instead of empty.
+    Ok(Some(result.get("data").cloned().unwrap_or(result)))
+}
+
 /// Execute a backend tool and return the raw response envelope
 /// (`{ ok, status, body, providerKeysHint?, retryAfterSeconds? }`) without
 /// printing anything. The seam the MCP bridge (`flowleap mcp`) runs on: it

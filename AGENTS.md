@@ -2,7 +2,7 @@
 
 ## Overview
 
-`flowleap` is a Rust CLI for the FlowLeap Patent AI backend API. It provides patent search, CQL query building, academic search, and direct EPO OPS access — designed for both human users and AI agents.
+`flowleap` is a Rust CLI for the FlowLeap Patent AI backend API. It provides patent search, EPO OPS and USPTO document reads, citation and legal-reference search, academic/NPL literature search, analytics and OCR — designed for both human users and AI agents. Every one of those runs on the backend's `/v1/tools` facade; queries are written by the caller, locally.
 
 ## Build & Test
 
@@ -30,11 +30,11 @@ before trusting `skills install` output or regenerating goldens.
 | `src/output.rs` | Output module (re-exports formatter) |
 | `src/output/formatter.rs` | JSON, table, and human-readable output formatting |
 | `src/commands/auth.rs` | OAuth device flow, personal API tokens (create/list/revoke), status |
-| `src/commands/tools.rs` | Agent-first tool facade: list/describe/run `/v1/tools/*` |
+| `src/commands/tools.rs` | Agent-first tool facade: list/describe/run `/v1/tools/*`, plus `call_tool_data` — the shared seam every data command runs on (unwraps the tool envelope to its `data` payload) |
 | `src/commands/skills.rs` | Embedded agent-skill installer (`skills/` baked into binary): multi-harness targets (claude/claude-project/codex/cursor/gemini/--dir), version stamps, `skills update` |
-| `src/commands/patent.rs` | EPO patent search (CQL) and CQL query builder |
-| `src/commands/uspto.rs` | USPTO ODP search, grants, applications, continuity, file wrapper (transactions/assignments/foreign-priority/adjustment/attorney/documents + OCR document text), query builder |
-| `src/commands/ops.rs` | Direct EPO OPS API (biblio, claims, family, legal, abstract) |
+| `src/commands/patent.rs` | EPO patent search (caller-written CQL) |
+| `src/commands/uspto.rs` | USPTO ODP search, grants, applications, continuity, file wrapper (transactions/assignments/foreign-priority/adjustment/attorney/documents + OCR document text) |
+| `src/commands/ops.rs` | EPO OPS document reads (biblio, claims, description, family, legal, abstract) |
 | `src/commands/academic.rs` | Academic literature search |
 | `src/commands/npl.rs` | Non-patent literature search (OpenAlex) |
 | `src/commands/legal.rs` | Patent-law document search (legal RAG) |
@@ -124,6 +124,13 @@ the JSON error envelope carries a `providerKeysHint` object with
 hint and ask the user to run `flowleap setup` (or provide keys via env/flags).
 Human/table output renders the same hint as an info box on stderr.
 
+The hint is raised from backend error **codes** only — `data_keys_required` and
+`patent_provider_key_invalid` (each carrying a structured `provider` field), and
+the ODP-specific `odp_api_key_missing`. Error message text is never inspected:
+backend wording is freely editable by policy, so a reword must not be able to
+invent or erase a key gate. An error that merely mentions `EPO_CLIENT_ID` in its
+message is not a gate.
+
 **Key-gate doctrine** — authored in the `flowleap-keys` skill, mirrored from the
 app's shipped prompt so both harnesses have one personality. A
 `provider_keys_required` gate is a user-action stop for that office, never an
@@ -153,6 +160,7 @@ parsing JSON:
 | 5 | Not found | HTTP 404 |
 | 6 | Rate limited | HTTP 429 — back off, then retry; see `rateLimitHint` |
 | 7 | Network failure | Connection failure or request timeout reaching the backend |
+| 8 | Endpoint gone | HTTP 410 `endpoint_gone` — this CLI build calls a retired endpoint. Run `flowleap upgrade`; see `endpointGoneHint` for the successor |
 
 On failure the JSON error envelope may carry structured hints — **additive**
 fields only, so existing envelope consumers are unaffected. Human/table output
@@ -167,54 +175,84 @@ renders each hint as an info box on stderr:
 - `rateLimitHint` (429) — `{ retryAfterSeconds?, message }`. When
   `retryAfterSeconds` is present (from the `Retry-After` header, also surfaced
   top-level on the envelope), wait exactly that long before retrying.
+- `endpointGoneHint` (410) — `{ code: "endpoint_gone", requiresUpgrade: true,
+  successor?, reason?, serverMessage?, message }`. The build is stale: the
+  endpoint is retired for good. Upgrade the CLI; never retry the same call.
 
 ## API Endpoints
 
-The `/v1/tools/*` facade is the preferred agent surface: `flowleap tools list`
-discovers every tool with its JSON input schema, `flowleap tools run <name>`
-executes one. Provider-specific routes remain for humans and compatibility.
+**The `/v1/tools/*` facade is the only patent-data surface.** Every data
+command — `patent`, `ops`, `uspto`, `citation`, `legal`, `npl`, `academic`,
+`analytics`, `ocr`, and the ergonomic verbs — POSTs to `/v1/tools/<name>`; the
+provider-specific routes they used to call are retired (backend ADR 0013).
+`flowleap tools list` discovers every tool with its JSON input schema and
+per-tool docs; `flowleap tools run <name>` executes one.
+
+Named non-facade exceptions: key validation (usable before subscribing), the
+PATSTAT surface, auth/OAuth, and `api request` (the raw escape hatch, which
+calls whatever path you give it).
 
 | Endpoint | Method | Auth Required |
 |----------|--------|---------------|
 | `/oauth/device` | POST | No |
 | `/oauth/device/token` | POST | No |
+| `/health` (liveness) | GET | No |
+| `/v1/health` (readiness — carries `apiVersion`) | GET | No |
 | `/v1/tools` | GET | Yes |
 | `/v1/tools/openapi.json` | GET | Yes |
 | `/v1/tools/{tool_name}` | POST | Yes |
-| `/v1/patent-search` | POST | Yes |
-| `/v1/academic-search` | POST | Yes |
-| `/v1/npl-search` | POST | Yes |
-| `/v1/legal-search` (+ `/stats`, `/jurisdictions`, `/docs`) | POST/GET | Yes |
-| `/v1/citation-search` (+ `/forward`, `/stats/{n}`, `/novelty/{n}`) | POST/GET | Yes |
-| `/v1/patent-search-uspto/search` | POST | Yes |
-| `/v1/patent-search-uspto/grants/{patentNumber}` | GET | Yes |
-| `/v1/patent-search-uspto/applications/{appNumber}` (+ `/continuity`, `/transactions`, `/assignment`, `/foreign-priority`, `/adjustment`, `/attorney`, `/associated-documents`) | GET | Yes |
-| `/v1/patent-search-uspto/applications/{appNumber}/documents` (+ `/{documentId}/text` — server-side OCR) | GET | Yes |
-| `/v1/ops/biblio?doc={id}` | GET | Yes |
-| `/v1/ops/abstract?doc={id}` | GET | Yes |
-| `/v1/ops/family?doc={id}` | GET | Yes |
-| `/v1/ops/legal?doc={id}` | GET | Yes |
-| `/v1/ops/fulltext/claims?doc={id}&lang={lang}` | GET | Yes |
-| `/v1/ops/fulltext/description?doc={id}&lang={lang}` | GET | Yes |
+| `/v1/patstat/*` | POST/GET | Yes |
 | `/api/profile` | GET | Yes |
 | `/api/usage` | GET | Yes |
 | `/api/tokens` (create/list) | POST/GET | Yes (create requires Clerk auth, not an API token) |
 | `/api/tokens/{id}` | DELETE | Yes |
 | `/v1/keys/validate` | POST | Yes (no subscription required) |
 
-OPS endpoints wrap payloads in a response envelope:
+### Which tool each command calls
+
+| Command | Tool |
+|---------|------|
+| `patent search`, `ops search` | `search_patents` (`provider: epo_ops`) |
+| `uspto search` | `search_patents` (`provider: uspto`) |
+| `ops biblio` / `abstract` / `claims` / `description` / `legal` | `get_bibliography` / `get_abstract` / `get_claims` / `get_description` / `get_legal_status` |
+| `ops family` | `get_family` — the **INPADOC extended family**. `get_patent_family` is the narrower simple-family equivalents tool |
+| `uspto grant` / `application` / `continuity` | `get_us_grant` / `get_us_application` / `get_continuity` |
+| `uspto transactions` / `assignments` / `foreign-priority` / `adjustment` / `attorney` | `get_transactions` / `get_assignments` / `get_foreign_priority` / `get_patent_term_adjustment` / `get_attorney` |
+| `uspto documents` / `document-text` | `get_application_documents` / `read_application_document` |
+| `citation search` / `forward` / `stats` | `search_office_action_citations` / `search_enriched_citations` / `get_citation_stats` |
+| `citation novelty` | `search_office_action_citations` with `category: "X"`, `examiner_cited_only: true` — a recipe, not a tool of its own |
+| `legal search` / `jurisdictions` | `reference_search` / `get_legal_jurisdictions` |
+| `academic search`, `npl` | `search_academic` / `search_npl` |
+| `analytics`, `ocr` | `patent_analytics` / `ocr` |
+| `compare` / `figures` / `summary` / `timeline` / `convert-number` | `compare_patents` / `get_patent_image` / `get_patent_summary` / `get_prosecution_timeline` / `convert_patent_number` |
+
+Tool parameters are `snake_case`. `figures --out` fetches image bytes from
+`get_patent_image` itself (`include_images: true` returns base64 pages) — there
+is no separate byte-fetching endpoint.
+
+Every tool answers one envelope:
 
 ```json
-{ "success": true, "data": { /* endpoint-specific */ }, "cached": false, "executionTimeMs": 432 }
+{ "success": true, "tool": "get_bibliography", "data": { /* tool-specific */ }, "executionTimeMs": 432, "cached": false }
 ```
 
-On failure:
+Commands unwrap it and print `data`; `cached` is present only when the backend
+could determine it. On failure:
 
 ```json
-{ "success": false, "error": "...", "code": "NOT_FOUND", "status": 404 }
+{ "success": false, "error": { "code": "NOT_FOUND", "message": "..." }, "status": 404 }
 ```
 
-Error `code` values: `MISSING_PARAM` (400), `NOT_FOUND` (404), `RATE_LIMITED` (429), `INTERNAL_ERROR` (500). Canonical endpoint list: the backend's `GET /v1/ops/health` response. Live OpenAPI spec: `<base-url>/docs/json` (requires `ENABLE_SWAGGER=true` in production).
+**Branch on `error.code`, never on `message`.** Codes come from a closed
+registry and never change once shipped; message wording is freely editable by
+backend policy. Facade codes: `INVALID_INPUT` (422, carries `issues`),
+`UNKNOWN_TOOL` (404), `TOOL_EXECUTION_ERROR` (422), `NOT_FOUND` (404),
+`RATE_LIMITED` (429), `INTERNAL_ERROR` (500). Access codes:
+`subscription_required` (402), `data_keys_required` / `patent_provider_key_invalid`
+(400, each carrying `provider`), `rate_limit_exceeded` (429), `endpoint_gone`
+(410, carrying `successor` and `reason`).
+
+Live OpenAPI spec, generated from the registry: `<base-url>/v1/tools/openapi.json`.
 
 ## Security
 
