@@ -41,10 +41,10 @@ to a title search. Watch stderr for these notes.
 **Zero recall is not a key gate.** An empty result set, a truncated payload, or
 a 5xx keeps the normal recovery path above. The US office is gated only when a
 command you actually ran returned an explicit gate **code** — the CLI's
-`providerKeysHint.code` (`provider_keys_required` / `provider_keys_invalid`),
-raised from the backend codes `data_keys_required`,
-`patent_provider_key_invalid` (each carrying `provider: "uspto"`) or
-`odp_api_key_missing`. Match the code, never the message text: backend wording
+`providerKeysHint.code` (`provider_keys_required` / `provider_keys_invalid` /
+`trial_budget_exhausted`), raised from the backend codes `data_keys_required`,
+`patent_provider_key_invalid`, `trial_data_budget_exhausted` (each carrying
+`provider: "uspto"`) or `odp_api_key_missing`. Match the code, never the message text: backend wording
 is freely editable, so a reword can neither invent nor erase a gate. A gate is a
 user-action stop: do not substitute web-scraped US data for it, deliver the
 other office's results in full, name the gap as a missing-key gap, and ask for

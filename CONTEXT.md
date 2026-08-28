@@ -41,8 +41,8 @@ A credential the USER holds at a patent office — the EPO OPS consumer
 key/secret pair, the USPTO ODP API key — that FlowLeap forwards per request so
 that office's data flows. Free at each office and obtained through a browser
 signup, so getting one is always a human step. `provider_keys_required` /
-`provider_keys_invalid` are the wire codes naming the concept in error
-envelopes, `providerKeysHint` the envelope field.
+`provider_keys_invalid` / `trial_budget_exhausted` are the wire codes naming
+the concept in error envelopes, `providerKeysHint` the envelope field.
 _Avoid_: "provider keys" in prose (legacy CLI naming), and any wording that
 reads as a FlowLeap paywall — the office issues the key, FlowLeap only carries
 it.
@@ -56,6 +56,17 @@ single-document reads alike. A gate is *read* from an explicit
 errored one. Doctrine text: the `flowleap-keys` skill.
 _Avoid_: calling a gated office a coverage gap or a dead route — both hide that
 a two-minute human action fixes it.
+
+**Trial data budget gate**:
+The soft sibling of the Key gate (backend ADR 0017): during the trial, today's
+SHARED data allowance on FlowLeap's own credentials is spent —
+`trial_budget_exhausted` in the `providerKeysHint`, raised from the backend
+code `trial_data_budget_exhausted` (429). Same doctrine as the Key gate, one
+extra exit: the hint's `resetsAt` names when it lifts on its own, and the
+user's own free Patent-Data Keys lift it permanently. Announced ahead by the
+`trial_data_budget_low` warning on success envelopes.
+_Avoid_: treating it as a rate limit to back off from and retry — the durable
+fix is keys, not waiting.
 
 **Next step**:
 A pending onboarding action that blocks work. Steps whose need is already

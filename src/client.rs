@@ -385,6 +385,9 @@ fn error_code(body: &Value) -> Option<&str> {
 /// - `patent_provider_key_invalid` (+ `provider`) → the user's keys were rejected
 /// - `data_keys_required`          (+ `provider`) → no key for that office anywhere
 /// - `odp_api_key_missing`                        → no USPTO ODP key, server-side
+/// - `trial_data_budget_exhausted` (+ `provider`) → today's shared trial data budget
+///   on FlowLeap's credentials is spent (429, backend ADR 0017). Resets at the
+///   next UTC day; the user's own free keys lift it permanently
 pub fn provider_keys_hint(status: u16, body: &Value) -> Option<Value> {
     if status < 400 {
         return None;
@@ -402,10 +405,15 @@ pub fn provider_keys_hint(status: u16, body: &Value) -> Option<Value> {
         // The ODP taxonomy's own "no USPTO key configured" verdict: the code
         // itself names the office, so it needs no provider field.
         "odp_api_key_missing" => ("provider_keys_required", "uspto"),
+        // Backend ADR 0017: the trial's shared data budget for today is spent.
+        // Same fold (and same exit 9 via the hint), its own hint code: unlike
+        // the key gates this one lifts on its own at the next UTC day, and the
+        // hint carries `resetsAt` so an agent can also wait.
+        "trial_data_budget_exhausted" => ("trial_budget_exhausted", named_provider?),
         _ => return None,
     };
 
-    Some(json!({
+    let mut hint = json!({
         "code": code,
         "provider": provider,
         "requiresHumanIntervention": true,
@@ -428,7 +436,19 @@ pub fn provider_keys_hint(status: u16, body: &Value) -> Option<Value> {
             "https://data.uspto.gov/apis/getting-started (free API key)"
         },
         "verify": "flowleap keys test",
-    }))
+    });
+    if code == "trial_budget_exhausted" {
+        hint["humanAction"] = json!(
+            "Today's shared trial data budget is used up; it resets at the next UTC day. \
+             Adding your own free keys lifts it permanently — run 'flowleap setup' (or \
+             'flowleap keys set') in a terminal. Getting keys involves a browser signup, \
+             so an agent cannot complete this alone — ask the user."
+        );
+        if let Some(resets_at) = body.pointer("/error/resets_at").and_then(Value::as_str) {
+            hint["resetsAt"] = json!(resets_at);
+        }
+    }
+    Some(hint)
 }
 
 /// Human-readable info box for a provider-keys hint, printed to stderr so it
@@ -437,8 +457,11 @@ pub fn print_keys_hint_box(hint: &Value) {
     use colored::Colorize;
     let provider = hint["provider"].as_str().unwrap_or("provider");
     let invalid = hint["code"].as_str() == Some("provider_keys_invalid");
+    let budget = hint["code"].as_str() == Some("trial_budget_exhausted");
     let title = if invalid {
         format!("{} keys were rejected", provider.to_uppercase())
+    } else if budget {
+        "Trial data budget used up".to_string()
     } else {
         format!("{} keys required", provider.to_uppercase())
     };
@@ -456,6 +479,13 @@ pub fn print_keys_hint_box(hint: &Value) {
             "│ The backend rejected the configured {} credentials.",
             provider.to_uppercase()
         );
+    } else if budget {
+        eprintln!("│ Today's shared trial data budget is used up.");
+        match hint["resetsAt"].as_str() {
+            Some(resets_at) => eprintln!("│ It resets at {resets_at}."),
+            None => eprintln!("│ It resets at the next UTC day."),
+        }
+        eprintln!("│ Your own free keys lift the budget permanently.");
     } else {
         eprintln!(
             "│ This command needs {} credentials and none are configured",
@@ -1068,6 +1098,7 @@ impl Context {
             return Ok(envelope);
         }
         if envelope.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+            self.print_trial_budget_low_warning(&envelope);
             return Ok(envelope.get("body").cloned().unwrap_or(Value::Null));
         }
         self.print_error_envelope(&envelope);
@@ -1079,10 +1110,34 @@ impl Context {
         if envelope.get("dryRun").and_then(|v| v.as_bool()) == Some(true)
             || envelope.get("ok").and_then(|v| v.as_bool()) == Some(true)
         {
+            self.print_trial_budget_low_warning(&envelope);
             return Ok(envelope);
         }
         self.print_error_envelope(&envelope);
         Err(printed_error_for(&envelope).into())
+    }
+
+    /// Backend ADR 0017 warn-band: once ≥80% of today's shared trial data
+    /// budget is spent, SUCCESS envelopes carry a `trial_data_budget_low`
+    /// warning (with `remaining` and `resets_at`). Surface it on stderr in
+    /// human formats so the wall never arrives unannounced; JSON consumers
+    /// read `body.warnings` themselves, so JSON output stays untouched.
+    fn print_trial_budget_low_warning(&self, envelope: &Value) {
+        if self.output_format == "json" {
+            return;
+        }
+        let Some(warnings) = envelope.pointer("/body/warnings").and_then(Value::as_array) else {
+            return;
+        };
+        for warning in warnings {
+            if warning.get("code").and_then(Value::as_str) == Some("trial_data_budget_low") {
+                use colored::Colorize;
+                let message = warning.get("message").and_then(Value::as_str).unwrap_or(
+                    "Trial data budget is low — add your own free keys (flowleap setup).",
+                );
+                eprintln!("{} {}", "⚠".yellow().bold(), message);
+            }
+        }
     }
 
     /// Print an error envelope; in human/table formats also render the

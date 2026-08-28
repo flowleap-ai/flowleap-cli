@@ -70,9 +70,9 @@ work without a subscription, so setup can always be diagnosed.
 
 Error envelopes carry additive hints — `subscriptionHint` (402, has
 `upgradeUrl`, needs a human), `providerKeysHint` (missing/rejected EPO/USPTO
-patent-data keys, needs a human), `rateLimitHint` (429, has
-`retryAfterSeconds`), and `endpointGoneHint` (410, `{ requiresUpgrade: true,
-successor?, reason?, message }`).
+patent-data keys, or the trial's shared data budget spent for today — needs a
+human), `rateLimitHint` (429, has `retryAfterSeconds`), and `endpointGoneHint`
+(410, `{ requiresUpgrade: true, successor?, reason?, message }`).
 
 **Branch on codes, never on message text.** Backend codes come from a closed
 registry and never change once shipped; wording is freely editable by policy, so
@@ -96,13 +96,19 @@ doctrine (proceed-then-ask, keyless pivot, resume): `flowleap-keys`.
 | 6 | Rate limited (HTTP 429) — back off per `rateLimitHint.retryAfterSeconds` |
 | 7 | Network failure reaching the backend |
 | 8 | Endpoint gone (HTTP 410 `endpoint_gone`) — this build calls a retired endpoint |
-| 9 | Patent-data keys required or rejected — see `providerKeysHint`; a human must add them, never retry |
+| 9 | Patent-data keys required/rejected, or the trial data budget exhausted — see `providerKeysHint`; a human must add keys, never retry |
 
 **Exit 9 is the key gate, and only the key gate.** It is the code behind
-`provider_keys_required` / `provider_keys_invalid`, on data commands and on
-`keys test` / `keys set` alike, so a first-run key problem is distinguishable
-from a bad query without parsing the envelope. Treat it exactly as the
-`providerKeysHint` doctrine below says: a user-action stop for that office.
+`provider_keys_required` / `provider_keys_invalid` /
+`trial_budget_exhausted`, on data commands and on `keys test` / `keys set`
+alike, so a first-run key problem is distinguishable from a bad query without
+parsing the envelope. Treat it exactly as the `providerKeysHint` doctrine below
+says: a user-action stop for that office. The `trial_budget_exhausted` variant
+(backend ADR 0017) is the soft one — its hint carries `resetsAt` (next UTC
+day), so with the user's blessing an agent may also wait it out; the user's own
+free keys lift it permanently. Success envelopes warn before the wall: a
+`trial_data_budget_low` entry in `body.warnings` means finish the current work,
+then surface the key ask.
 
 **Exit 3 also covers the local auth guard.** A command that needs a credential
 and finds none fails before anything is sent; its `--json` envelope is

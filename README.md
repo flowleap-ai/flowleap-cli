@@ -33,7 +33,7 @@ The CLI itself is open source (MIT) and free to install. The patent-data command
 - Without an active plan, data commands return HTTP 402 and exit with code 4. In `--json` mode the error envelope carries a structured `subscriptionHint` — `{ requiresHumanIntervention: true, plan: "Basic", upgradeUrl, message }` — with the upgrade URL. **This is expected behavior, not a bug**: agents should surface the URL to a human rather than retry.
 - All `/v1` data routes share a rate limit of 60 requests/minute/user. Exceeding it returns HTTP 429 (exit code 6) with a `rateLimitHint` carrying `retryAfterSeconds`.
 
-Some data sources additionally need your own **patent-data keys** — free signups at each office: EPO OPS (key + secret) and USPTO ODP (API key). Run `flowleap setup` for the guided wizard, or see `flowleap keys --help`. `provider_keys_required` / `provider_keys_invalid` are the wire codes that name them in error envelopes.
+Some data sources additionally need your own **patent-data keys** — free signups at each office: EPO OPS (key + secret) and USPTO ODP (API key). Run `flowleap setup` for the guided wizard, or see `flowleap keys --help`. `provider_keys_required` / `provider_keys_invalid` / `trial_budget_exhausted` are the wire codes that name them in error envelopes (the last one meaning today's shared trial data budget is spent — it resets daily, and your own free keys lift it permanently).
 
 **Agent behavior when a key is missing** (the key-gate doctrine, shipped in full in the `flowleap-keys` skill): a `provider_keys_required` error is a **user-action stop for that office, never an exhausted route**. An agent must not substitute web-scraped patent data for the gated office — searches and single-document reads alike — and must not frame the free key as a paywall. With the other office live it delivers those results in full, names the gap as a *missing-key gap* rather than a coverage finding, and asks once at the end of the turn; it never silently narrows a prior-art or FTO scope to the office whose key happens to be set. Keyless commands (`patstat`, `legal`, `academic`, `npl`) stay available meanwhile, offered as *different* data rather than a replacement for live patent search. A gate is read, never inferred: only that explicit code means gated, so an empty result, a truncated payload, or a 5xx keeps the normal retry paths. Once the key is added, only the previously gated office is re-run — no restart, no new session.
 
@@ -312,7 +312,7 @@ Add `--json` (or `--output json`) for stable machine-readable output — recomme
 { "ok": false, "error": { "message": "…" } }
 ```
 
-Envelopes may carry additive structured hints: `subscriptionHint` (402 — upgrade URL, needs a human), `providerKeysHint` (missing/rejected patent-data keys — needs a human, do not retry, and do not substitute web-scraped data for the gated office; see [Access & Pricing](#access--pricing)), `rateLimitHint` (429 — wait `retryAfterSeconds`, then retry), and `endpointGoneHint` (410 — the build is stale; upgrade rather than retry, and the hint names the successor endpoint). Human/table output renders the same hints as info boxes on stderr.
+Envelopes may carry additive structured hints: `subscriptionHint` (402 — upgrade URL, needs a human), `providerKeysHint` (missing/rejected patent-data keys, or the trial's shared data budget spent for today — needs a human, do not retry, and do not substitute web-scraped data for the gated office; see [Access & Pricing](#access--pricing)), `rateLimitHint` (429 — wait `retryAfterSeconds`, then retry), and `endpointGoneHint` (410 — the build is stale; upgrade rather than retry, and the hint names the successor endpoint). Human/table output renders the same hints as info boxes on stderr, and prints the backend's `trial_data_budget_low` success warning (budget ≥80% spent) as a stderr note.
 
 Every run exits with a documented code, so scripts can branch on `$?` without parsing JSON:
 
@@ -327,7 +327,7 @@ Every run exits with a documented code, so scripts can branch on `$?` without pa
 | 6 | Rate limited (HTTP 429) — back off, see `rateLimitHint` |
 | 7 | Network failure reaching the backend |
 | 8 | Endpoint gone (HTTP 410) — this build calls a retired endpoint; run `flowleap upgrade`, see `endpointGoneHint` |
-| 9 | Patent-data keys required or rejected — a human must add EPO/USPTO keys; see `providerKeysHint`, do not retry |
+| 9 | Patent-data keys required/rejected, or the trial data budget exhausted — a human must add EPO/USPTO keys; see `providerKeysHint`, do not retry (the budget variant alone also lifts at its `resetsAt`) |
 
 Two details worth knowing:
 

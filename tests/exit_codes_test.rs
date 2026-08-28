@@ -290,6 +290,37 @@ async fn a_patent_data_key_gate_exits_9_with_its_hint() {
     }
 }
 
+/// Backend ADR 0017: trial-budget exhaustion (429 `trial_data_budget_exhausted`)
+/// rides the key-gate exit (9), not the rate-limit exit (6) — the durable
+/// recovery is the same human key setup, and the hint carries the reset.
+#[tokio::test]
+async fn trial_budget_exhaustion_exits_9_not_6() {
+    let server = MockServer::start().await;
+    mount_thing(
+        &server,
+        ResponseTemplate::new(429).set_body_json(json!({
+            "error": {
+                "message": "…",
+                "code": "trial_data_budget_exhausted",
+                "provider": "epo",
+                "remaining": 0,
+                "resets_at": "2026-08-29T00:00:00.000Z",
+            },
+        })),
+    )
+    .await;
+
+    let output = request_thing_json(&server).await;
+
+    assert_eq!(output.status.code(), Some(9));
+    let value = stdout_json(&output);
+    assert_eq!(value["providerKeysHint"]["code"], "trial_budget_exhausted");
+    assert_eq!(
+        value["providerKeysHint"]["resetsAt"],
+        "2026-08-29T00:00:00.000Z"
+    );
+}
+
 /// A 400 that is NOT a key gate keeps the generic failure code — exit 9 means
 /// the key gate and nothing else.
 #[tokio::test]
