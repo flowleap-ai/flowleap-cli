@@ -435,7 +435,11 @@ fn step(id: &str, actor: &str, title: &str, run: Option<&str>, url: Option<&str>
 fn cli_status() -> serde_json::Value {
     let current = env!("CARGO_PKG_VERSION");
     let channel = crate::commands::upgrade::current_channel();
-    let latest = crate::update::cached_latest();
+    // A cached "latest" OLDER than the running build is provably stale (the
+    // daily check predates this build's release) — drop it rather than report
+    // a latest below current, which reads as the registry lagging.
+    let latest =
+        crate::update::cached_latest().filter(|cached| !crate::update::is_newer(current, cached));
     let update_available = latest
         .as_deref()
         .map(|l| crate::update::is_newer(l, current));
