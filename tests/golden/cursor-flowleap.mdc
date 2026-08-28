@@ -96,7 +96,6 @@ flowleap convert-number US5443036.A --to docdb
 
 ```bash
 flowleap patent search --query <query> [flags]
-flowleap --json tools run search_patents query='ta="foreign object" AND ta=charging' range=1-1 details=false
 flowleap patstat query "SELECT symbol, title FROM flowleap.cpc_scheme WHERE title ILIKE '%photovoltaic%' ORDER BY symbol LIMIT 15" --question "candidate CPC codes for photovoltaics"
 ```
 
@@ -139,13 +138,13 @@ flowleap --json health api
 
 ```bash
 flowleap --json uspto search --query 'applicationMetaData.inventionTitle:"machine learning"' --limit 5
-flowleap --json tools run search_patents provider=uspto query='applicationMetaData.inventionTitle:"charging case"' limit=1
 flowleap --json uspto grant 11800000
 flowleap --json uspto application 16123456
 flowleap --json uspto continuity 16123456
 flowleap --json uspto transactions 14412875
 flowleap --json uspto assignments 14412875
 flowleap --json uspto foreign-priority 14412875
+flowleap --json uspto adjustment 14412875
 ```
 
 ### Workflow Triggers

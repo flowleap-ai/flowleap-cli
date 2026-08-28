@@ -30,6 +30,7 @@ a retired endpoint. You never name the surface yourself: the command carries it.
 | `--query`, `-q` | EPO CQL query (required) — e.g. `ti="battery separator"` | — |
 | `--limit` | Maximum results (1-100) | `10` |
 | `--countries` | Country filter, comma-separated (e.g. `EP,WO`) | none |
+| `--count-only` | Only report the result total (cheap probe, no documents) | `false` |
 
 Jurisdiction is set with `--countries` — `patent search` has no `--source` flag
 (that flag belongs to `academic search`, for `scholar` vs `arxiv`).
@@ -125,14 +126,18 @@ dropping the category word loses the invention.
 
 ### Step 3 — probe the count (mandatory, before trusting any results)
 
-`patent search` output does not surface a result total, so probe the same tool
-directly and read `total` from its payload. `details=false` skips the
-per-document bibliography fan-out, which makes the probe cheap — a count is all
-you want here:
+Use `--count-only`: it asks for range 1-1 with `details=false` (no
+per-document bibliography fan-out), so a probe is cheap — a count is all you
+want here:
 
 ```bash
-flowleap --json tools run search_patents query='ta="foreign object" AND ta=charging' range=1-1 details=false
+flowleap --json patent search --query 'ta="foreign object" AND ta=charging' --count-only
 ```
+
+The JSON payload is `{ query, total }`. (Equivalent raw-tool probe:
+`flowleap --json tools run search_patents query='…' range=1-1 details=false`.)
+Note: `total` counts the full CQL result set — a `--countries` filter narrows
+the returned documents, never the total.
 
 - **Over ~1,000 hits:** too broad — add the next discriminating term from your
   Step 1 list and probe again.
@@ -175,4 +180,8 @@ Match keywords against group titles, then search with the 4-char class
 
 1. Extract the candidate terms from the description (Step 1).
 2. Write the CQL (Step 2) and probe the count (Step 3); refine until workable.
-3. Run the ranked search: `flowleap --json patent search --query "<CQL>" --limit 20`.
+3. Run the search: `flowleap --json patent search --query "<CQL>" --limit 20`.
+   The JSON payload is `{ total, docs }`. Results arrive in EPO OPS default
+   order (no relevance ranking — recent publications tend to come first), so
+   read the whole page, not just the top hits; the CQL itself is the only
+   relevance control.
