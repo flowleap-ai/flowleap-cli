@@ -85,6 +85,34 @@ async fn key_codes_drive_the_provider_keys_hint() {
     }
 }
 
+/// Backend ADR 0017: the trial-data-budget code folds into the same hint (and
+/// the key-gate exit), with its OWN hint code and the reset instant — unlike
+/// the key gates it lifts on its own at the next UTC day, so an agent may
+/// also wait instead of asking for keys.
+#[tokio::test]
+async fn trial_budget_exhaustion_is_a_key_gate_with_a_reset() {
+    let (output, value) = error_envelope(
+        429,
+        json!({ "error": {
+            "message": MISLEADING_MESSAGE,
+            "code": "trial_data_budget_exhausted",
+            "provider": "uspto",
+            "remaining": 0,
+            "resets_at": "2026-08-29T00:00:00.000Z",
+        }}),
+    )
+    .await;
+
+    let hint = &value["providerKeysHint"];
+    assert_eq!(hint["code"], "trial_budget_exhausted");
+    assert_eq!(hint["provider"], "uspto");
+    assert_eq!(hint["requiresHumanIntervention"], true);
+    assert_eq!(hint["resetsAt"], "2026-08-29T00:00:00.000Z");
+    // The hint wins over the 429's rate-limit exit: the durable recovery is
+    // key setup, not back-off.
+    assert_eq!(output.status.code(), Some(9));
+}
+
 /// The inverse, and the whole point of the change: an error whose MESSAGE
 /// names the provider env vars but whose CODE is unrelated is not a key gate.
 /// A backend reword can no longer invent — or destroy — a gate.

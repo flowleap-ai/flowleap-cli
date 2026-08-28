@@ -103,8 +103,8 @@ are stored as before — the guard only fires on a positively short `exp`.
 
 Patent data may require the user's own provider credentials — EPO OPS
 (consumer key + secret, a pair) and USPTO ODP (API key). The domain term is
-**patent-data keys**; `provider_keys_required` / `provider_keys_invalid` are the
-wire codes. The CLI stores them in
+**patent-data keys**; `provider_keys_required` / `provider_keys_invalid` /
+`trial_budget_exhausted` are the wire codes. The CLI stores them in
 `credentials.toml` (0600) and forwards them per-request as
 `x-epo-ops-key`/`x-epo-ops-secret`/`x-uspto-odp-key` headers; they are never
 logged (verbose/dry-run output redacts them).
@@ -120,14 +120,18 @@ logged (verbose/dry-run output redacts them).
 
 **Agent protocol:** when a command fails because keys are missing or rejected,
 the JSON error envelope carries a `providerKeysHint` object with
-`code` (`provider_keys_required` | `provider_keys_invalid`), `provider`, and
-`requiresHumanIntervention: true`. Do NOT retry or invent keys — surface the
-hint and ask the user to run `flowleap setup` (or provide keys via env/flags).
-Human/table output renders the same hint as an info box on stderr.
+`code` (`provider_keys_required` | `provider_keys_invalid` |
+`trial_budget_exhausted`), `provider`, and `requiresHumanIntervention: true`.
+Do NOT retry or invent keys — surface the hint and ask the user to run
+`flowleap setup` (or provide keys via env/flags). The `trial_budget_exhausted`
+variant (backend ADR 0017: today's shared trial data budget is spent, 429) also
+carries `resetsAt` — it lifts on its own at the next UTC day, and the user's own
+free keys lift it permanently. Human/table output renders the same hint as an
+info box on stderr.
 
-The hint is raised from backend error **codes** only — `data_keys_required` and
-`patent_provider_key_invalid` (each carrying a structured `provider` field), and
-the ODP-specific `odp_api_key_missing`. Error message text is never inspected:
+The hint is raised from backend error **codes** only — `data_keys_required`,
+`patent_provider_key_invalid` and `trial_data_budget_exhausted` (each carrying
+a structured `provider` field), and the ODP-specific `odp_api_key_missing`. Error message text is never inspected:
 backend wording is freely editable by policy, so a reword must not be able to
 invent or erase a key gate. An error that merely mentions `EPO_CLIENT_ID` in its
 message is not a gate.
@@ -162,7 +166,7 @@ parsing JSON:
 | 6 | Rate limited | HTTP 429 — back off, then retry; see `rateLimitHint` |
 | 7 | Network failure | Connection failure or request timeout reaching the backend |
 | 8 | Endpoint gone | HTTP 410 `endpoint_gone` — this CLI build calls a retired endpoint. Run `flowleap upgrade`; see `endpointGoneHint` for the successor |
-| 9 | Patent-data keys | `provider_keys_required` / `provider_keys_invalid`. Raised wherever a `providerKeysHint` lands on the envelope (the backend answers 400, which would otherwise be a generic 1), and by `keys test` / `keys set` on a rejected or missing key. A human must add keys; never retry |
+| 9 | Patent-data keys | `provider_keys_required` / `provider_keys_invalid` / `trial_budget_exhausted`. Raised wherever a `providerKeysHint` lands on the envelope (the backend answers 400 — or 429 for the trial budget — which would otherwise map elsewhere), and by `keys test` / `keys set` on a rejected or missing key. A human must add keys; never retry (the budget variant alone also lifts at its `resetsAt`) |
 
 On failure the JSON error envelope may carry structured hints — **additive**
 fields only, so existing envelope consumers are unaffected. Human/table output
@@ -251,8 +255,11 @@ backend policy. Facade codes: `INVALID_INPUT` (422, carries `issues`),
 `UNKNOWN_TOOL` (404), `TOOL_EXECUTION_ERROR` (422), `NOT_FOUND` (404),
 `RATE_LIMITED` (429), `INTERNAL_ERROR` (500). Access codes:
 `subscription_required` (402), `data_keys_required` / `patent_provider_key_invalid`
-(400, each carrying `provider`), `rate_limit_exceeded` (429), `endpoint_gone`
-(410, carrying `successor` and `reason`).
+(400, each carrying `provider`), `trial_data_budget_exhausted` (429, carries
+`provider`, `remaining: 0`, `resets_at` — backend ADR 0017),
+`rate_limit_exceeded` (429), `endpoint_gone` (410, carrying `successor` and
+`reason`). Success envelopes may carry `warnings[]` — `trial_data_budget_low`
+(with `remaining`, `resets_at`) means today's shared trial budget is ≥80% spent.
 
 Live OpenAPI spec, generated from the registry: `<base-url>/v1/tools/openapi.json`.
 

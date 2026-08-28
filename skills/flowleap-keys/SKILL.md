@@ -49,7 +49,7 @@ full `nextSteps`/`ready`/exit contract.
 
 ## Which codes mean gated
 
-Exactly three backend codes, all from the closed error-code registry. They never
+Exactly four backend codes, all from the closed error-code registry. They never
 change once shipped, so they are the only safe thing to match on:
 
 | Backend code | Status | Meaning |
@@ -57,11 +57,20 @@ change once shipped, so they are the only safe thing to match on:
 | `data_keys_required` | 400 | The user pays, forwarded no patent-data key for this office, and the server fallback is denied. Carries `provider`. Never a 402 — this is not a billing problem |
 | `patent_provider_key_invalid` | 400 | The user's own key was rejected upstream. Carries `provider`. Never a passthrough 401/403, which clients map to re-sign-in |
 | `odp_api_key_missing` | 503 | No USPTO ODP key configured server-side and none forwarded |
+| `trial_data_budget_exhausted` | 429 | Trial only (backend ADR 0017): today's SHARED trial data budget on FlowLeap's credentials is spent. Carries `provider` and `resets_at`, plus Retry-After. Lifts on its own at the next UTC day; the user's own free keys lift it permanently |
 
-The CLI folds those three into one `providerKeysHint` on the JSON error
-envelope, with its own `code` (`provider_keys_required` or
-`provider_keys_invalid`) and the `provider`. Either layer is a valid match; both
-are codes.
+The CLI folds those four into one `providerKeysHint` on the JSON error
+envelope, with its own `code` (`provider_keys_required`,
+`provider_keys_invalid`, or `trial_budget_exhausted`) and the `provider`.
+Either layer is a valid match; both are codes.
+
+**The budget gate is the soft one.** `trial_budget_exhausted` follows the same
+doctrine below (never substitute scraped data, keys are free, ask the user),
+with one extra exit: the hint carries `resetsAt`, so with the user's blessing an
+agent may also pause the gated office until then instead of requiring keys now.
+A success envelope may warn first: a `trial_data_budget_low` entry in
+`body.warnings` (with `remaining` and `resets_at`) means the wall is near —
+finish the current work, then surface the key ask.
 
 **Never match on message text.** Backend wording is freely editable by policy, so
 a reword must not be able to invent or erase a gate. An error whose *message*
@@ -133,11 +142,12 @@ the request headers on the next invocation: no restart, no new session.
 ## The agent protocol — when keys are missing or rejected
 
 Failed commands carry a `providerKeysHint` in the JSON error envelope, raised
-from the three backend codes above and from nothing else:
+from the four backend codes above and from nothing else (a
+`trial_budget_exhausted` hint additionally carries `resetsAt`):
 
 ```json
 "providerKeysHint": {
-  "code": "provider_keys_required",      // or provider_keys_invalid
+  "code": "provider_keys_required",      // or provider_keys_invalid / trial_budget_exhausted
   "provider": "epo",
   "requiresHumanIntervention": true,
   "nonInteractive": { "command": "flowleap keys set epo --key … --secret …",

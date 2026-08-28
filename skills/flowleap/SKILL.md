@@ -60,10 +60,12 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
 - **Auth, global flags, config, output formats** → `flowleap-shared`; login,
   token minting, and 401 self-heal → `flowleap-auth`.
 - **Patent-data keys (EPO OPS / USPTO ODP BYOK)** → `flowleap-keys`. A
-  `provider_keys_required` / `provider_keys_invalid` hint — raised from the
-  backend codes `data_keys_required`, `patent_provider_key_invalid` and
-  `odp_api_key_missing`, never from message text — means a human must sign up in
-  a browser (free at both offices). That is a **user-action stop for that
+  `provider_keys_required` / `provider_keys_invalid` /
+  `trial_budget_exhausted` hint — raised from the backend codes
+  `data_keys_required`, `patent_provider_key_invalid`, `odp_api_key_missing`
+  and `trial_data_budget_exhausted`, never from message text — means a human
+  must sign up in a browser (free at both offices; the budget variant also
+  lifts on its own at the hint's `resetsAt`). That is a **user-action stop for that
   office, never an exhausted route**: do not substitute web-scraped data for it,
   for searches or single-document reads. Finish the live office, name the gap as
   a missing-key gap, ask at the end; PATSTAT, legal, and academic/NPL stay live
