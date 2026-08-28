@@ -101,6 +101,14 @@ async fn search(
         return Ok(());
     };
 
+    // JSON keeps the tool's `data` payload verbatim — `{ query, total, papers }`,
+    // the shape the flowleap-academic skill documents. Table/human render the
+    // papers list.
+    if ctx.output_format == "json" {
+        output::print_json(&result);
+        return Ok(());
+    }
+
     let columns = &[
         ("title", "Title"),
         ("authors", "Authors"),

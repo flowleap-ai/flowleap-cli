@@ -77,6 +77,13 @@ enum SkillsCommand {
         #[arg(long)]
         force: bool,
 
+        /// Do not record this install in the global config
+        /// (~/.config/flowleap) — useful in sandboxes where only the target
+        /// directory is writable. Unrecorded installs are skipped by
+        /// `flowleap skills update`.
+        #[arg(long)]
+        no_record: bool,
+
         /// Only install these skills (default: all)
         #[arg(value_name = "SKILL")]
         names: Vec<String>,
@@ -99,8 +106,9 @@ pub fn run(ctx: &Context, args: SkillsArgs) -> Result<()> {
             project,
             dir,
             force,
+            no_record,
             names,
-        } => install(ctx, target, project, dir, force, &names),
+        } => install(ctx, target, project, dir, force, no_record, &names),
         SkillsCommand::Update { force } => update(ctx, force),
     }
 }
@@ -220,6 +228,7 @@ fn install(
     project: bool,
     dir: Option<PathBuf>,
     force: bool,
+    no_record: bool,
     names: &[String],
 ) -> Result<()> {
     let version = env!("CARGO_PKG_VERSION");
@@ -238,7 +247,25 @@ fn install(
     }
 
     let outcome = perform_install(target, &path, &selected, force, version)?;
-    record_install(target, &path, names, version)?;
+    // Recording enables `skills update`, but it writes OUTSIDE the install
+    // target (global config). The skills themselves are already on disk at
+    // this point, so a failure to record — a sandbox with a read-only home
+    // directory, say — must not fail the install.
+    let recorded = if no_record {
+        false
+    } else {
+        match record_install(target, &path, names, version) {
+            Ok(()) => true,
+            Err(err) => {
+                eprintln!(
+                    "warning: skills installed, but recording the install in the global config failed ({}). \
+                     `flowleap skills update` will not refresh this install; pass --no-record to silence this warning.",
+                    err
+                );
+                false
+            }
+        }
+    };
 
     if ctx.output_format == "json" {
         output::print_json(&json!({
@@ -250,6 +277,7 @@ fn install(
             "updated": outcome.updated,
             "unchanged": outcome.unchanged,
             "skipped": outcome.skipped,
+            "recorded": recorded,
             "hint": if outcome.skipped.is_empty() { serde_json::Value::Null } else { json!("locally-modified skills were left untouched; re-run with --force to overwrite") },
         }));
     } else if is_copy_target(target) {

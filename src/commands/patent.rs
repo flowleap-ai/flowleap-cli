@@ -28,6 +28,11 @@ enum PatentCommand {
         /// Country filter, comma-separated (e.g. "EP,WO"); "all" disables
         #[arg(long)]
         countries: Option<String>,
+
+        /// Only report the result total (cheap count probe: range 1-1,
+        /// no per-document bibliography fan-out)
+        #[arg(long)]
+        count_only: bool,
     },
 }
 
@@ -39,7 +44,14 @@ pub async fn run(ctx: &Context, args: PatentArgs) -> Result<()> {
             query,
             limit,
             countries,
-        } => search(ctx, &query, limit, countries.as_deref()).await,
+            count_only,
+        } => {
+            if count_only {
+                count_probe(ctx, &query, countries.as_deref()).await
+            } else {
+                search(ctx, &query, limit, countries.as_deref()).await
+            }
+        }
     }
 }
 
@@ -77,9 +89,15 @@ pub(crate) fn epo_search_input(query: &str, range: String, countries: Option<&st
     input
 }
 
-/// Print an EPO search result: the hydrated `docs` list when present, else
-/// whatever the tool returned, so an unexpected shape is never swallowed.
+/// Print an EPO search result. JSON keeps the tool's `data` payload verbatim
+/// (`total` and `docs` included) so agents see the documented envelope;
+/// table/human render the hydrated `docs` list when present, else whatever
+/// the tool returned, so an unexpected shape is never swallowed.
 pub(crate) fn print_search_result(ctx: &Context, result: &Value) {
+    if ctx.output_format == "json" {
+        output::print_json(result);
+        return;
+    }
     match result.get("docs") {
         Some(docs) => output::print_value(&ctx.output_format, docs, SEARCH_COLUMNS),
         None => output::print_value(&ctx.output_format, result, SEARCH_COLUMNS),
@@ -90,6 +108,33 @@ async fn search(ctx: &Context, query: &str, limit: u32, countries: Option<&str>)
     let input = epo_search_input(query, format!("1-{}", limit.clamp(1, 100)), countries);
     if let Some(result) = tools::call_tool_data(ctx, "search_patents", &input).await? {
         print_search_result(ctx, &result);
+    }
+    Ok(())
+}
+
+/// `--count-only`: probe the total for a CQL query without hydrating any
+/// documents (range 1-1, `details: false`). The backend computes `total`
+/// before the country post-filter, so it always describes the full CQL
+/// result set — the probe reports it as such.
+async fn count_probe(ctx: &Context, query: &str, countries: Option<&str>) -> Result<()> {
+    let mut input = epo_search_input(query, "1-1".into(), countries);
+    input["details"] = json!(false);
+    let Some(result) = tools::call_tool_data(ctx, "search_patents", &input).await? else {
+        return Ok(());
+    };
+    let total = result.get("total").cloned().unwrap_or(Value::Null);
+    if ctx.output_format == "json" {
+        let mut payload = json!({ "query": query, "total": total });
+        if let Some(countries) = input.get("countries") {
+            payload["countries"] = countries.clone();
+            payload["note"] = json!("total counts the full CQL result set; the country filter applies to returned documents only");
+        }
+        output::print_json(&payload);
+    } else {
+        match &total {
+            Value::Null => println!("Total: unknown (tool returned no `total` field)"),
+            value => println!("Total: {}", value),
+        }
     }
     Ok(())
 }

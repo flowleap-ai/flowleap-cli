@@ -39,6 +39,10 @@ enum UsptoCommand {
         /// Maximum results to return (ignored when the body already sets pagination)
         #[arg(long, default_value = "10")]
         limit: u32,
+
+        /// Only report the result count (cheap probe: limit 1)
+        #[arg(long)]
+        count_only: bool,
     },
     /// Get a granted patent by patent number
     Grant {
@@ -117,7 +121,14 @@ pub async fn run(ctx: &Context, args: UsptoArgs) -> Result<()> {
             body,
             body_file,
             limit,
-        } => search(ctx, query.as_deref(), body.as_deref(), body_file, limit).await,
+            count_only,
+        } => {
+            if count_only {
+                count_probe(ctx, query.as_deref(), body.as_deref(), body_file).await
+            } else {
+                search(ctx, query.as_deref(), body.as_deref(), body_file, limit).await
+            }
+        }
         UsptoCommand::Grant { patent_number } => grant(ctx, &patent_number).await,
         UsptoCommand::Application { app_number } => application(ctx, &app_number).await,
         UsptoCommand::Continuity { app_number } => continuity(ctx, &app_number).await,
@@ -221,6 +232,35 @@ async fn search(
     }
 
     print_uspto_collection(ctx, &result);
+    Ok(())
+}
+
+/// `--count-only`: probe the ODP match count without pulling records
+/// (limit 1). Reads `count` from the tool payload — the total ODP matched,
+/// not the page size.
+async fn count_probe(
+    ctx: &Context,
+    query: Option<&str>,
+    body: Option<&str>,
+    body_file: Option<PathBuf>,
+) -> Result<()> {
+    let request = build_search_request(query, body, body_file, 1)?;
+    let Some(result) = tools::call_tool_data(ctx, "search_patents", &request).await? else {
+        return Ok(());
+    };
+    let count = result.get("count").cloned().unwrap_or(Value::Null);
+    if ctx.output_format == "json" {
+        let mut payload = json!({ "count": count });
+        if let Some(query) = request.get("query") {
+            payload["query"] = query.clone();
+        }
+        output::print_json(&payload);
+    } else {
+        match &count {
+            Value::Null => println!("Count: unknown (tool returned no `count` field)"),
+            value => println!("Count: {}", value),
+        }
+    }
     Ok(())
 }
 
@@ -606,6 +646,12 @@ fn document_columns() -> &'static [(&'static str, &'static str)] {
 }
 
 fn print_uspto_collection(ctx: &Context, result: &serde_json::Value) {
+    // JSON keeps the tool's `data` payload verbatim (`count`,
+    // `patentFileWrapperDataBag`, …); table/human unwrap the record bag.
+    if ctx.output_format == "json" {
+        output::print_json(result);
+        return;
+    }
     let columns = search_columns();
     if let Some(results) = result.get("patentFileWrapperDataBag") {
         output::print_value(&ctx.output_format, results, columns);

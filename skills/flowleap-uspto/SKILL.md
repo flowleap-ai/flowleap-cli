@@ -18,7 +18,8 @@ application metadata (get the grammar via
 flowleap --json uspto search --query 'applicationMetaData.inventionTitle:"machine learning"' --limit 5
 ```
 
-Results arrive in `patentFileWrapperDataBag`.
+The JSON payload is `{ count, patentFileWrapperDataBag }` — `count` is the
+total ODP matched, the bag holds the returned records.
 
 **ODP is title + metadata only — there is no abstract/claims full-text.** The
 only free-text field is `applicationMetaData.inventionTitle`. A distinguishing
@@ -86,13 +87,15 @@ applies unchanged — ODP differs from CQL in syntax, not in strategy:
    - The full field grammar comes from
      `flowleap --json tools run get_search_syntax provider=uspto` — read
      field names from it rather than recalling them
-3. **Probe the count before trusting any results.** `uspto search --json`
-   prints the record bag without a total, so probe the same tool directly with
-   `limit=1` and read `count` from its payload:
+3. **Probe the count before trusting any results.** Use `--count-only` (it
+   asks ODP for one record and reads the total match count):
 
 ```bash
-flowleap --json tools run search_patents provider=uspto query='applicationMetaData.inventionTitle:"charging case"' limit=1
+flowleap --json uspto search --query 'applicationMetaData.inventionTitle:"charging case"' --count-only
 ```
+
+The JSON payload is `{ query, count }`. (Equivalent raw-tool probe:
+`flowleap --json tools run search_patents provider=uspto query='…' limit=1`.)
 
 Over ~1,000 hits: add the next discriminating term from your extraction list.
 Under 10: broaden — synonyms, singular/plural title variants, drop a filter.
