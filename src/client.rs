@@ -534,10 +534,10 @@ pub fn subscription_hint(body: &Value) -> Value {
         "requiresHumanIntervention": true,
         "upgradeUrl": upgrade_url,
         "message": format!(
-            "This command requires an active FlowLeap plan. The free 7-day trial starts at \
-             sign-up and has ended for this account (or it never subscribed). Subscribing \
-             happens in a browser, so an agent cannot complete this alone — ask the user to \
-             subscribe at {upgrade_url}, then retry."
+            "This command requires an active FlowLeap plan: the free 7-day trial that starts \
+             at sign-up has ended, a payment failed, or the subscription was canceled. Fixing \
+             this happens in a browser, so an agent cannot complete it alone — ask the user \
+             to subscribe (or resolve billing) at {upgrade_url}, then retry."
         ),
     })
 }
@@ -665,7 +665,7 @@ pub fn print_subscription_hint_box(hint: &Value) {
         "─".repeat(50_usize.saturating_sub(title.len()))
     );
     eprintln!("│ This command needs an active FlowLeap plan; the backend answered 402.");
-    eprintln!("│ The free 7-day trial starts at sign-up and has ended for this account.");
+    eprintln!("│ The sign-up trial has ended, a payment failed, or the plan was canceled.");
     eprintln!("│");
     eprintln!("│ Subscribe: {}", upgrade_url.cyan().bold());
     eprintln!("│ Then re-run this command.");
