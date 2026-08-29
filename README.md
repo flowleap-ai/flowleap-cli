@@ -29,8 +29,8 @@ flowleap doctor
 
 The CLI itself is open source (MIT) and free to install. The patent-data commands call the FlowLeap backend, which requires:
 
-- **A FlowLeap account with an active Basic plan.** A trial is available — see [flowleap.co/pricing](https://flowleap.co/pricing).
-- Without an active plan, data commands return HTTP 402 and exit with code 4. In `--json` mode the error envelope carries a structured `subscriptionHint` — `{ requiresHumanIntervention: true, plan: "Basic", upgradeUrl, message }` — with the upgrade URL. **This is expected behavior, not a bug**: agents should surface the URL to a human rather than retry.
+- **A FlowLeap account with an active plan.** Every new account starts a free 7-day trial at sign-up — no credit card required; after it, subscribe at [flowleap.co/pricing](https://flowleap.co/pricing).
+- Without an active plan, data commands return HTTP 402 and exit with code 4. In `--json` mode the error envelope carries a structured `subscriptionHint` — `{ requiresHumanIntervention: true, upgradeUrl, message }` — with the upgrade URL. **This is expected behavior, not a bug**: agents should surface the URL to a human rather than retry.
 - All `/v1` data routes share a rate limit of 60 requests/minute/user. Exceeding it returns HTTP 429 (exit code 6) with a `rateLimitHint` carrying `retryAfterSeconds`.
 
 Some data sources additionally need your own **patent-data keys** — free signups at each office: EPO OPS (key + secret) and USPTO ODP (API key). Run `flowleap setup` for the guided wizard, or see `flowleap keys --help`. `provider_keys_required` / `provider_keys_invalid` / `trial_budget_exhausted` are the wire codes that name them in error envelopes (the last one meaning today's shared trial data budget is spent — it resets daily, and your own free keys lift it permanently).

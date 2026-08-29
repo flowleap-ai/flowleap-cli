@@ -68,6 +68,14 @@ user's own free Patent-Data Keys lift it permanently. Announced ahead by the
 _Avoid_: treating it as a rate limit to back off from and retry — the durable
 fix is keys, not waiting.
 
+**Trial period**:
+The 7-day access window the backend grants at account creation (backend ADR
+0018) — no card, no user action. Its expiry surfaces as the ordinary
+subscription gate (402, exit 4, a "subscribe" ask), never as a Key gate or
+Trial data budget gate stop (exit 9).
+_Avoid_: "trial" alone where the Trial data budget gate could be meant — the
+period is a clock, the budget is an allowance.
+
 **Next step**:
 A pending onboarding action that blocks work. Steps whose need is already
 covered (e.g. a provider the server has its own keys for) are not next

@@ -64,7 +64,8 @@ When using FlowLeap as an AI agent, always pass `--json` for reliable parsing.
 Patent data runs on the **Tools facade** — the single agent surface, reached as
 `/v1/tools`. Every data command POSTs to a named tool there; the per-source
 **provider routes** they used to call are **retired endpoints** (see the
-`endpoint_gone` row below). All of it requires an active subscription and shares
+`endpoint_gone` row below). All of it requires an active plan — every new
+account starts a free 7-day trial period at sign-up, no card — and shares
 a limit of 60 requests/minute/user. `doctor`, `health`, `auth`, and `keys test`
 work without a subscription, so setup can always be diagnosed.
 
