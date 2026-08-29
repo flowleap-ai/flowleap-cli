@@ -71,8 +71,15 @@ async fn subscription_required_402_exits_4_with_hint() {
     assert_eq!(value["status"], 402);
     let hint = &value["subscriptionHint"];
     assert_eq!(hint["requiresHumanIntervention"], true);
-    assert_eq!(hint["plan"], "Basic");
+    // No plan name: the backend sells one flat License, and naming a plan
+    // here went stale once already ("Basic").
+    assert!(hint.get("plan").is_none());
     assert_eq!(hint["upgradeUrl"], "https://flowleap.co/upgrade-here");
+    // The message must fit the no-card trial (backend ADR 0018): the trial
+    // ran at sign-up, so the ask is subscribe — never "start your trial".
+    let message = hint["message"].as_str().expect("hint message");
+    assert!(message.contains("subscribe"), "message: {message}");
+    assert!(!message.contains("Basic"), "message: {message}");
     assert!(
         hint["message"].as_str().is_some_and(|m| !m.is_empty()),
         "hint must carry a message: {hint}"

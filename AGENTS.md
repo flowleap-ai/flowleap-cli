@@ -82,8 +82,9 @@ completed (exit 7; `--dry-run` keeps exit 0). Read `verification.checked` before
 trusting a state: an unreachable backend yields `unverified`, never `rejected`,
 because the absence of a verdict is not evidence against the credential.
 
-All `/v1/*` patent-data routes additionally require an active subscription
-(402 `subscription_required` with an `upgradeUrl`) and share a fixed
+All `/v1/*` patent-data routes additionally require an active plan — every
+new account starts a free 7-day trial period at sign-up (backend ADR 0018), and
+after it a 402 `subscription_required` with an `upgradeUrl` answers — and share a fixed
 60 requests/minute/user rate limit (429 + `Retry-After`, surfaced as
 `retryAfterSeconds` in JSON error envelopes).
 
@@ -174,8 +175,8 @@ renders each hint as an info box on stderr:
 
 - `providerKeysHint` — missing/rejected EPO or USPTO keys (see Provider Keys
   above). Needs a human; do not retry.
-- `subscriptionHint` (402) — `{ requiresHumanIntervention: true, plan:
-  "Basic", upgradeUrl, message }`. The upgrade URL comes from the response
+- `subscriptionHint` (402) — `{ requiresHumanIntervention: true, upgradeUrl,
+  message }` (no plan name — there is one flat License). The upgrade URL comes from the response
   body when present, else `https://flowleap.co/pricing`. Subscribing happens
   in a browser — surface the URL to the user; do not retry.
 - `rateLimitHint` (429) — `{ retryAfterSeconds?, message }`. When
