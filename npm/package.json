@@ -1,6 +1,6 @@
 {
   "name": "flowleap",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "description": "One CLI for FlowLeap Patent AI \u2014 built for humans and AI agents",
   "bin": {
     "flowleap": "bin/flowleap"
