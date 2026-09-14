@@ -94,7 +94,7 @@ flowleap patent search --query <query> [flags]
 flowleap patstat query "SELECT symbol, title FROM flowleap.cpc_scheme WHERE title ILIKE '%photovoltaic%' ORDER BY symbol LIMIT 15" --question "candidate CPC codes for photovoltaics"
 ```
 
-#### flowleap-patstat — Portfolio Analytics AND guarded SQL over the PATSTAT snapshot — structured-criteria aggregation by named applicant, CPC/IPC class, office, year, family, and grant status, with harmonized entity resolution and Data Edition provenance; plus agent-written SELECTs against the flowleap.* semantic views for any aggregate the typed commands don't cover (landscapes, grant rates, citation impact, inventor analytics, priority/continuation chains and divisional share, decoded legal events such as EP oppositions and per-state lapses, concept-to-CPC text discovery that derives codes from the corpus instead of a hardcoded table, and INPADOC extended-family coverage).
+#### flowleap-patstat — Portfolio Analytics AND guarded SQL over the PATSTAT snapshot — structured-criteria aggregates by applicant/CPC/office/year/family/grant status, priority and continuation chains, decoded legal events, concept-to-CPC text discovery, INPADOC extended-family coverage, every number carrying a Data Edition citation.
 
 ```bash
 flowleap --json patstat portfolio "Siemens AG" --from-year 2015 --to-year 2023

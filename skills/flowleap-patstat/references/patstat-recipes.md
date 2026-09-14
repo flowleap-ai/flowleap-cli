@@ -1,4 +1,4 @@
-# PATSTAT widening recipes — chains, legal events, text discovery, INPADOC coverage
+# PATSTAT recipes — chains, legal events, text discovery, INPADOC coverage
 
 Four view families the typed commands do not reach. Each recipe below is the
 **same SQL** as a verified query in the backend corpus, so this file and
@@ -338,11 +338,15 @@ Any other spelling — `ILIKE`, a different regconfig, no language predicate —
 seq-scans 122M title rows, plans at 7.1M–17M against the gate's 5M ceiling, and
 is **rejected**, not merely slow.
 
-**Abstract variant: same idiom, different columns.** Swap `tx.title` for
-`tx.abstract` and `tx.title_lang` for `tx.abstract_lang`. The abstract index
-exists, so the shape is legal. It is the **more expensive path** and the
-higher-recall one: prefer the title for a tight concept, the abstract when the
-title match comes back thin.
+**Abstract variant: same idiom, different columns — but not yet verified.**
+Swap `tx.title` for `tx.abstract` and `tx.title_lang` for `tx.abstract_lang`.
+It is the higher-recall and more expensive path: reach for it when the title
+match comes back thin. **The backend corpus has no abstract entry yet**, and
+the abstract GIN index was still building when the title entries were proven,
+so an abstract predicate may be **rejected** until
+`idx_tls203_abstr_en_fts` reports valid. Use the title form until the backend
+corpus adds the abstract entry, and treat a rejection of the abstract form as
+that gap rather than as a mistake in your SQL.
 
 **EXPLAIN does not bound a GIN seed.** Postgres estimates about 1 row per GIN
 match however broad the seed, so a query touching thousands of applications
@@ -353,7 +357,11 @@ applied **before** joining out to `classifications` or `applicants`.
 
 **English is a slice, not the corpus.** Titles are English on 86% of rows,
 abstracts on 92%. An English-title match under-counts JP and CN filers badly.
-Say so whenever it matters to the question.
+The indexes are English-only partial indexes, so there is **no indexed path for
+any other language**: a `title_lang = 'de'` or a non-English regconfig seq-scans
+and the gate rejects it. You cannot widen out of the skew — say in the answer
+that the slice is English, and landscape over `flowleap.classifications` once
+the codes are known when the full corpus matters.
 
 ### Three traps, all measured on real answers
 
@@ -469,17 +477,14 @@ ORDER BY families DESC, applicant
 LIMIT 25
 ```
 
-### Where the hardcoded CPC tables now sit
+### Where the hand-typed CPC tables now sit
 
-The CPC tables inside the VS Code app skills
-(`patent-search/references/cql-reference.md`,
-`prior-art/references/cpc-classification.md`) are a **last-resort fallback**,
-behind the PATSTAT lookup. Reach for them only when PATSTAT is unreachable
+The app's own CPC reference tables are a **last-resort fallback**, behind the
+PATSTAT lookup. Reach for them only when PATSTAT is unreachable
 (`patstat_unavailable`) or the question cannot be phrased as a concept. A
 hand-typed table drifts every quarter; `concept_to_cpc_codes` plus
 `cpc_candidate_codes` read the same answer off the corpus and the official
-scheme at the current edition. Those two files live in the `flowleap-agent-v2`
-repository, not here — this skill is their upstream doctrine, not their host.
+scheme at the current edition.
 
 ---
 
@@ -539,7 +544,7 @@ ORDER BY members DESC, m.office
 ```
 
 `MIN(filing_date)` over an extended family is **not** the priority date of one
-invention — the family spans several.
+invention — the extended family spans several.
 
 ### The count-versus-cover check, as a query
 
