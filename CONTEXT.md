@@ -105,3 +105,17 @@ endpoint/tool) is what agents call; a *skill* is instructions composing
 existing capabilities into a workflow. A skill cannot substitute for a missing
 capability, and a capability without a skill is undiscoverable in practice.
 See AGENTS.md "Skills vs. tools" for the authoring policy.
+
+**Designated contracting state** vs **extension/validation state**:
+An EP application names the EPC member states it asks for protection in. Those
+are its **designated contracting states**, on the INPADOC `AK` event and rolled
+up as `designatedStates` by `ops legal` / `summary`. An **extension/validation
+state** is a non-member state the applicant additionally asked the EP right be
+extended or validated in (`AX` event, `extensionStates`). For an EP regional
+filing the designation IS its **designated-state coverage** — which countries
+the right can reach.
+_Avoid_: bare "coverage" for this (that word means the extended family across
+FlowLeap — say "designated-state coverage"); "the countries the family covers"
+(a family names the **offices** a filing published in, and an EP regional
+filing is one "EP" entry); reading an empty list as "unknown" — empty means the
+record designates no states, and every non-EP publication designates none.

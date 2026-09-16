@@ -85,6 +85,28 @@ fn ops_reads_map_onto_document_tools() {
     }
 }
 
+/// The EP designated contracting states are a filing's country coverage, and
+/// they live in the INPADOC legal record rather than the bibliography document
+/// — so `ops biblio` asks for them only when told to, and never by default.
+#[test]
+fn ops_biblio_requests_designated_states_only_on_demand() {
+    let body = dry_run(&["ops", "biblio", "EP1000000"])["body"].clone();
+    assert_eq!(body["patent_number"], json!("EP1000000"));
+    assert!(
+        body.get("include_designated_states").is_none(),
+        "biblio asked for the extra legal read unprompted: {body}"
+    );
+
+    assert_tool_call(
+        &["ops", "biblio", "EP1000000", "--designated-states"],
+        "get_bibliography",
+        &[
+            ("patent_number", json!("EP1000000")),
+            ("include_designated_states", json!(true)),
+        ],
+    );
+}
+
 #[test]
 fn ops_search_uses_the_epo_leg_of_search_patents() {
     assert_tool_call(
