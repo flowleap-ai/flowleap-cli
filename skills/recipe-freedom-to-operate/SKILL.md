@@ -69,12 +69,19 @@ Read the jurisdiction from the right field. `family` names the **offices** the
 invention published in; for an EP member that is one entry ("EP") and says
 nothing about countries. The countries are the `designatedStates` on the legal
 status (`extensionStates` for extension/validation states) — for a European
-regional filing those ARE its coverage. Then subtract the states lapsed per the
-`PG25`/`PGFP` events, which each carry their own `state`: a patent designating
-DE and still paying fees there blocks you in Germany, one lapsed there does not.
+regional filing those ARE its designated-state coverage. Then subtract the states
+lapsed per the `PG25`/`PGFP` events, which each carry their own `state`: a patent
+designating DE and still paying fees there blocks you in Germany, one lapsed
+there does not.
 
-Done when every survivor is both in force and covers a sales jurisdiction; drop
-the rest.
+The designation is rolled up from the AK event with the latest date. If that
+event carried no readable list an older one answers, so the set can be a
+superseded, **wider** one — it can name a state the applicant has since dropped.
+For a clearance call that is the dangerous direction, so read the `AK` rows in
+`events` before you flag or clear a market on the roll-up alone.
+
+Done when every survivor is both in force and designates a sales jurisdiction;
+drop the rest.
 
 ### Step 4: All-Elements Claim Mapping
 
@@ -93,7 +100,7 @@ absent) or flagged as a live infringement risk.
 
 FTO data package per live blocking patent:
 - Legal status (active, expired, abandoned) and remaining term
-- Geographic coverage against your sales jurisdictions — family members for the
+- Geographic reach against your sales jurisdictions — family members for the
   offices, `designatedStates` minus lapsed states for an EP filing's countries
 - Per-claim all-elements verdict: cleared or at-risk
 

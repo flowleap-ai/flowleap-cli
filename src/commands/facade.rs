@@ -482,11 +482,12 @@ fn render_figures(data: &Value) -> String {
     )
 }
 
-/// The `States:` lines of a summary: designated contracting states and
-/// extension states, as get_legal_status rolls them up. Both are empty for a
-/// document that designates none (anything non-EP), and an empty list prints
-/// nothing rather than a bare "-" that could read as "coverage unknown".
-fn render_state_coverage(legal: &Value) -> String {
+/// The `States:` lines of a summary: the designated contracting states and the
+/// extension/validation states, as get_legal_status rolls them up from the AK/AX
+/// event with the latest date. Both are empty for a document that designates none
+/// (anything non-EP), and an empty list prints nothing rather than a bare "-"
+/// that could read as "designation unknown".
+fn render_designated_states(legal: &Value) -> String {
     let codes = |key: &str| -> Vec<String> {
         legal
             .get(key)
@@ -577,11 +578,11 @@ fn render_summary(data: &Value) -> String {
                     let _ = writeln!(out, "Legal:  no events");
                 }
             }
-            // For an EP regional filing the designated contracting states ARE
-            // its country coverage — family only names the offices it published
-            // in — so the summary says them outright rather than leaving them in
-            // the AK/AX events.
-            let _ = write!(out, "{}", render_state_coverage(legal));
+            // For an EP regional filing the designated contracting states ARE its
+            // designated-state coverage — family only names the offices it
+            // published in — so the summary says them outright rather than
+            // leaving them in the AK/AX events.
+            let _ = write!(out, "{}", render_designated_states(legal));
         }
         None => {
             let _ = writeln!(out, "Legal:  unavailable");

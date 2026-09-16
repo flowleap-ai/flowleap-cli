@@ -40,7 +40,7 @@ All document commands take a patent document number (e.g., `EP1234567`).
 
 ```bash
 flowleap ops biblio <doc>                  # Bibliographic data
-flowleap ops biblio <doc> --designated-states  # …plus the EPC states it covers
+flowleap ops biblio <doc> --designated-states  # …plus the EPC states it designates
 flowleap ops claims <doc> --lang en        # Claims text
 flowleap ops description <doc> --lang en   # Full description
 flowleap ops family <doc>                  # Patent family members
@@ -86,12 +86,13 @@ narrower simple-family tool — the same invention republished across offices,
 without the divisionals and continuations. They answer different questions; pick
 deliberately.
 
-### Country coverage: designated states, not family members
+### Designated-state coverage: designated states, not family members
 
 For a European regional filing the **designated contracting states** are its
-country coverage. `ops family` cannot answer that — it names the offices the
-invention published in (EP, TW, WO), never the EPC states an EP application
-designates.
+designated-state coverage — which countries the right can reach. `ops family`
+cannot answer that: it names the offices the invention published in (EP, TW,
+WO), never the EPC states an EP application designates. Keep the two words
+apart — bare "coverage" means the extended family elsewhere in FlowLeap.
 
 `ops legal` carries them at the top level of its payload, rolled up from the
 INPADOC AK and AX events:
@@ -107,17 +108,24 @@ INPADOC AK and AX events:
 
 - `designatedStates` — the EPC states the filing designates (OPS AK event).
 - `extensionStates` — extension/validation states (OPS AX event).
-- Both are rolled up from the **most recent** AK/AX event: a designation set can
-  be narrowed after publication, so the latest event is the current one.
+- Both are rolled up from the AK/AX event with the **latest date**: a designation
+  set can be narrowed after publication, so the newest event is the current one
+  and a union would report states no longer designated.
+- Caveat: if that newest AK event carries no readable state list, an **older** AK
+  answers instead, so the set can be a superseded, WIDER one. When the answer must
+  be exact, read the `AK` rows in `events` yourself. For a clearance call the wide
+  direction is the dangerous one.
 - Both are always present and **empty for a document with no such event** —
   every non-EP publication. Empty means "designates no states", not "unknown".
 - Designated ≠ still in force. Subtract the states lapsed per the `PG25`/`PGFP`
-  events (each carries its `state`) to get live coverage.
+  events (each carries its `state`) to get the states still live.
 
 `flowleap --json summary <doc>` carries the same two lists under `legalStatus`
-— one call for the whole coverage question. `ops biblio --designated-states`
+— one call for the whole designation question. `ops biblio --designated-states`
 joins them onto the bibliography instead; it costs a second EPO read, so prefer
-`summary` or `ops legal` when you are reading legal status anyway.
+`summary` or `ops legal` when you are reading legal status anyway. On that biblio
+path a failed join lands in `errors.designatedStates` and the bibliography still
+returns: read that key before you treat an absent list as "designates none".
 
 ## Examples
 
@@ -151,7 +159,7 @@ flowleap ops biblio EP1234567 --verbose
 3. Read claims: `flowleap ops claims EP1234567`
 4. Check family: `flowleap ops family EP1234567`
 5. Check legal status: `flowleap ops legal EP1234567` — its `designatedStates`
-   answer which countries an EP filing covers
+   name the countries an EP filing designates
 
 One-call alternative: `flowleap --json summary EP1234567` bundles biblio,
 legal status, family, and term.

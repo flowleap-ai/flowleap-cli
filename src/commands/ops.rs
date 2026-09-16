@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::client::Context;
 use crate::commands::{patent, tools};
@@ -83,14 +83,8 @@ pub async fn run(ctx: &Context, args: OpsArgs) -> Result<()> {
             doc,
             designated_states,
         } => {
-            let mut input = json!({ "patent_number": doc });
-            if designated_states {
-                input["include_designated_states"] = json!(true);
-            }
-            if let Some(data) = tools::call_tool_data(ctx, "get_bibliography", &input).await? {
-                output::print_json(&data);
-            }
-            Ok(())
+            let extra = designated_states.then_some(("include_designated_states", json!(true)));
+            document_with(ctx, "get_bibliography", &doc, None, extra).await
         }
         OpsCommand::Claims { doc, lang } => document(ctx, "get_claims", &doc, Some(&lang)).await,
         OpsCommand::Description { doc, lang } => {
@@ -116,9 +110,25 @@ async fn search(ctx: &Context, cql: &str, start: u32, end: u32) -> Result<()> {
 /// Read one document projection through the facade. Every ops read is a
 /// single-document tool taking `patent_number`, optionally with a language.
 async fn document(ctx: &Context, tool: &str, doc: &str, lang: Option<&str>) -> Result<()> {
+    document_with(ctx, tool, doc, lang, None).await
+}
+
+/// `document`, plus one optional extra input field. Every ops read goes through
+/// here so the tool call is built in one place; only `biblio` passes an extra,
+/// for the opt-in `include_designated_states` join.
+async fn document_with(
+    ctx: &Context,
+    tool: &str,
+    doc: &str,
+    lang: Option<&str>,
+    extra: Option<(&str, Value)>,
+) -> Result<()> {
     let mut input = json!({ "patent_number": doc });
     if let Some(lang) = lang {
         input["language"] = json!(lang);
+    }
+    if let Some((key, value)) = extra {
+        input[key] = value;
     }
     if let Some(data) = tools::call_tool_data(ctx, tool, &input).await? {
         output::print_json(&data);
