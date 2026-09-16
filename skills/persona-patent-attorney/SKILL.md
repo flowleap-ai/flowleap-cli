@@ -53,7 +53,7 @@ independent claim is broken into its elements.
 
 ```bash
 flowleap --json patent search --query "wireless charging electric vehicle" --limit 30
-flowleap --json ops legal EP3456789       # still in force?
+flowleap --json ops legal EP3456789       # still in force? which states?
 flowleap --json ops family EP3456789      # where is it filed?
 ```
 

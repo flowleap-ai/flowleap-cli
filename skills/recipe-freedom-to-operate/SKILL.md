@@ -61,12 +61,20 @@ flowleap --json summary <patent-number>
 Or, if you need the pieces separately:
 
 ```bash
-flowleap --json ops legal <patent-number>     # is it active?
+flowleap --json ops legal <patent-number>     # is it active? which states?
 flowleap --json ops family <patent-number>    # where is it filed?
 ```
 
-Done when every survivor is both in force and filed in a sales jurisdiction;
-drop the rest.
+Read the jurisdiction from the right field. `family` names the **offices** the
+invention published in; for an EP member that is one entry ("EP") and says
+nothing about countries. The countries are the `designatedStates` on the legal
+status (`extensionStates` for extension/validation states) — for a European
+regional filing those ARE its coverage. Then subtract the states lapsed per the
+`PG25`/`PGFP` events, which each carry their own `state`: a patent designating
+DE and still paying fees there blocks you in Germany, one lapsed there does not.
+
+Done when every survivor is both in force and covers a sales jurisdiction; drop
+the rest.
 
 ### Step 4: All-Elements Claim Mapping
 
@@ -85,7 +93,8 @@ absent) or flagged as a live infringement risk.
 
 FTO data package per live blocking patent:
 - Legal status (active, expired, abandoned) and remaining term
-- Geographic coverage (family members) against your sales jurisdictions
+- Geographic coverage against your sales jurisdictions — family members for the
+  offices, `designatedStates` minus lapsed states for an EP filing's countries
 - Per-claim all-elements verdict: cleared or at-risk
 
 If the full skill pack is installed, continue with `recipe-infringement-charting`

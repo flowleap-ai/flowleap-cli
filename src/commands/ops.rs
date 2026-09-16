@@ -32,6 +32,11 @@ enum OpsCommand {
     Biblio {
         /// Patent document number (e.g., EP1234567)
         doc: String,
+
+        /// Also return the EP designated contracting states and extension
+        /// states (one extra EPO read — they are not in the biblio document)
+        #[arg(long)]
+        designated_states: bool,
     },
     /// Get claims text for a patent
     Claims {
@@ -71,7 +76,22 @@ pub async fn run(ctx: &Context, args: OpsArgs) -> Result<()> {
 
     match args.command {
         OpsCommand::Search { cql, start, end } => search(ctx, &cql, start, end).await,
-        OpsCommand::Biblio { doc } => document(ctx, "get_bibliography", &doc, None).await,
+        // The designated states live in the INPADOC legal record, not in the
+        // bibliography document, so the backend charges an extra OPS read for
+        // them — opt-in, never on by default.
+        OpsCommand::Biblio {
+            doc,
+            designated_states,
+        } => {
+            let mut input = json!({ "patent_number": doc });
+            if designated_states {
+                input["include_designated_states"] = json!(true);
+            }
+            if let Some(data) = tools::call_tool_data(ctx, "get_bibliography", &input).await? {
+                output::print_json(&data);
+            }
+            Ok(())
+        }
         OpsCommand::Claims { doc, lang } => document(ctx, "get_claims", &doc, Some(&lang)).await,
         OpsCommand::Description { doc, lang } => {
             document(ctx, "get_description", &doc, Some(&lang)).await

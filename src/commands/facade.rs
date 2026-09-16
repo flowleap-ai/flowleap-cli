@@ -482,6 +482,41 @@ fn render_figures(data: &Value) -> String {
     )
 }
 
+/// The `States:` lines of a summary: designated contracting states and
+/// extension states, as get_legal_status rolls them up. Both are empty for a
+/// document that designates none (anything non-EP), and an empty list prints
+/// nothing rather than a bare "-" that could read as "coverage unknown".
+fn render_state_coverage(legal: &Value) -> String {
+    let codes = |key: &str| -> Vec<String> {
+        legal
+            .get(key)
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|c| c.as_str())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    let mut out = String::new();
+    let designated = codes("designatedStates");
+    if !designated.is_empty() {
+        let _ = writeln!(
+            out,
+            "States: {} designated: {}",
+            designated.len(),
+            designated.join(" ")
+        );
+    }
+    let extension = codes("extensionStates");
+    if !extension.is_empty() {
+        let _ = writeln!(out, "        extension/validation: {}", extension.join(" "));
+    }
+    out
+}
+
 /// Sectioned snapshot for get_patent_summary data
 /// (`{ patentNumber, bibliography, legalStatus, family, term, errors? }`).
 fn render_summary(data: &Value) -> String {
@@ -542,6 +577,11 @@ fn render_summary(data: &Value) -> String {
                     let _ = writeln!(out, "Legal:  no events");
                 }
             }
+            // For an EP regional filing the designated contracting states ARE
+            // its country coverage — family only names the offices it published
+            // in — so the summary says them outright rather than leaving them in
+            // the AK/AX events.
+            let _ = write!(out, "{}", render_state_coverage(legal));
         }
         None => {
             let _ = writeln!(out, "Legal:  unavailable");
@@ -782,6 +822,55 @@ mod tests {
              Family: 2 members: EP1000000, NL1010536\n\
              Partial: legalStatus unavailable — partial"
         );
+    }
+
+    /// "Which countries does this cover" is a designation question, and the
+    /// summary is the one call that bundles the legal status it comes from.
+    #[test]
+    fn renders_summary_state_coverage() {
+        let data = json!({
+            "patentNumber": "EP3804704",
+            "bibliography": {
+                "title": "A device",
+                "dates": { "filing": "2019-10-10", "publication": "2021-04-14" },
+            },
+            "legalStatus": {
+                "docId": "EP3804704",
+                "events": [
+                    { "code": "AK", "date": "2021-04-14", "text": "DESIGNATED CONTRACTING STATES" },
+                ],
+                "designatedStates": ["AL", "AT", "BE", "DE", "FR", "GB"],
+                "extensionStates": ["BA", "ME"],
+            },
+        });
+
+        let rendered = render_summary(&data);
+        assert!(
+            rendered.contains("States: 6 designated: AL AT BE DE FR GB\n"),
+            "no designated states in summary: {rendered}"
+        );
+        assert!(
+            rendered.contains("        extension/validation: BA ME"),
+            "no extension states in summary: {rendered}"
+        );
+    }
+
+    /// A document that designates nothing (anything non-EP) says nothing —
+    /// an empty list must not print as a "-" that reads as "coverage unknown".
+    #[test]
+    fn omits_state_coverage_when_there_is_none() {
+        let data = json!({
+            "patentNumber": "US10123456",
+            "bibliography": { "title": "A device" },
+            "legalStatus": {
+                "docId": "US10123456",
+                "events": [],
+                "designatedStates": [],
+                "extensionStates": [],
+            },
+        });
+
+        assert!(!render_summary(&data).contains("States:"));
     }
 
     #[test]
