@@ -93,6 +93,28 @@ pub(crate) fn epo_search_input(query: &str, range: String, countries: Option<&st
 /// (`total` and `docs` included) so agents see the documented envelope;
 /// table/human render the hydrated `docs` list when present, else whatever
 /// the tool returned, so an unexpected shape is never swallowed.
+/// The one-line warning for a page the backend could not fully hydrate.
+///
+/// `search_patents` returns `detailsUnavailable` — the count of results whose
+/// bibliography could not be read — and OMITS it when the page is whole. Those
+/// results still carry their `docId`; only the detail fields came back null.
+///
+/// The table prints `docs` alone, so without this line a half-read page looks
+/// exactly like a page of patents that have no title and no applicant. That is
+/// the wrong conclusion to hand an analyst, so say which it is. `None` when the
+/// page is whole, so a complete search stays as quiet as it was before.
+fn partial_page_note(result: &Value) -> Option<String> {
+    let unavailable = result.get("detailsUnavailable")?.as_u64()?;
+    if unavailable == 0 {
+        return None;
+    }
+    Some(format!(
+        "Note: {unavailable} result(s) could not be read — their title, applicants and date are \
+         blank because the detail fetch failed, not because the patent has none. Re-read those by \
+         number with `flowleap ops biblio <docId>`."
+    ))
+}
+
 pub(crate) fn print_search_result(ctx: &Context, result: &Value) {
     if ctx.output_format == "json" {
         output::print_json(result);
@@ -101,6 +123,11 @@ pub(crate) fn print_search_result(ctx: &Context, result: &Value) {
     match result.get("docs") {
         Some(docs) => output::print_value(&ctx.output_format, docs, SEARCH_COLUMNS),
         None => output::print_value(&ctx.output_format, result, SEARCH_COLUMNS),
+    }
+    // After the rows, so it is the last thing read and cannot be mistaken for a
+    // column header. JSON output already carries the field verbatim.
+    if let Some(note) = partial_page_note(result) {
+        eprintln!("{note}");
     }
 }
 
@@ -141,8 +168,42 @@ async fn count_probe(ctx: &Context, query: &str, countries: Option<&str>) -> Res
 
 #[cfg(test)]
 mod tests {
-    use super::epo_search_input;
+    use super::{epo_search_input, partial_page_note};
     use serde_json::json;
+
+    #[test]
+    fn a_partial_page_says_how_many_rows_were_not_read() {
+        // Without this the table shows blank Title/Applicants cells and nothing
+        // says whether the patent HAS no title or was simply never read.
+        let note = partial_page_note(&json!({ "returned": 10, "detailsUnavailable": 3 }));
+        let note = note.expect("a partial page must announce itself");
+        assert!(note.contains('3'), "note must carry the count: {note}");
+        assert!(
+            note.contains("not read") || note.contains("could not be read"),
+            "note must say the rows were unread, not empty: {note}"
+        );
+    }
+
+    #[test]
+    fn a_whole_page_says_nothing() {
+        // The backend omits the field when every result hydrated, so silence is
+        // the correct rendering — a "0 unavailable" line would be noise.
+        assert_eq!(partial_page_note(&json!({ "returned": 10 })), None);
+        assert_eq!(partial_page_note(&json!({ "detailsUnavailable": 0 })), None);
+        assert_eq!(partial_page_note(&json!({ "docs": [] })), None);
+    }
+
+    #[test]
+    fn a_non_numeric_count_is_ignored_rather_than_printed_raw() {
+        assert_eq!(
+            partial_page_note(&json!({ "detailsUnavailable": "three" })),
+            None
+        );
+        assert_eq!(
+            partial_page_note(&json!({ "detailsUnavailable": null })),
+            None
+        );
+    }
 
     #[test]
     fn country_filter_becomes_a_code_list_and_all_means_unfiltered() {
