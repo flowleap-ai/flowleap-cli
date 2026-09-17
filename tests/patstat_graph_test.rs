@@ -9,7 +9,7 @@
 
 mod support;
 
-use serde_json::json;
+use serde_json::{json, Value};
 use support::{run_cli, stdout_json};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -18,6 +18,9 @@ const API_KEY_ENV: (&str, &str) = ("FLOWLEAP_API_KEY", "fl_pat_test_key");
 
 /// Canned `kind: "patent"` body, shaped like the real backend response
 /// (flowleap-backend src/lib/patstat-graph/resolve.ts → ResolveResult).
+/// Carries the flowleap-backend#419 shape: `publication` (citable) alongside
+/// the deprecated DOCDB `application` alias, EP here so DOCDB's own format
+/// happens to equal the application number (the case that hid the bug).
 fn patent_body() -> serde_json::Value {
     json!({
         "success": true,
@@ -26,6 +29,8 @@ fn patent_body() -> serde_json::Value {
         "anchor": {
             "node": "pat:56123456",
             "appln_id": 56123456,
+            "publication": "EP3477840B1",
+            "docdb_application": "EP18000829 (A)",
             "application": "EP18000829 (A)",
             "title": "Method for operating a wind turbine",
             "granted": true,
@@ -218,7 +223,10 @@ async fn patent_kind_renders_the_anchor_in_human_mode() {
     let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
 
     assert!(stdout.contains("Anchor: pat:56123456"));
-    assert!(stdout.contains("Application: EP18000829 (A)"));
+    // The citable publication is the headline, never the deprecated DOCDB
+    // application string (flowleap-backend#419).
+    assert!(stdout.contains("Publication: EP3477840B1"));
+    assert!(!stdout.contains("EP18000829"));
     assert!(stdout.contains("Title: Method for operating a wind turbine"));
     assert!(stdout.contains("Filed: 2018"));
     assert!(stdout.contains("Granted: yes"));
@@ -229,6 +237,32 @@ async fn patent_kind_renders_the_anchor_in_human_mode() {
     assert!(stdout.contains("EXTRACTED"));
     // Rendered, not dumped.
     assert!(!stdout.contains("\"anchor\""));
+}
+
+/// flowleap-backend#419: when an application has no publication at all
+/// (`publication: null`), human-mode text falls back to the DOCDB string —
+/// but labeled as such, never a bare number under "Application"/"Publication"
+/// that reads like a real filing number.
+#[tokio::test]
+async fn patent_kind_with_no_publication_falls_back_to_a_labeled_docdb_number() {
+    let server = MockServer::start().await;
+    let mut body = patent_body();
+    body["anchor"]["publication"] = Value::Null;
+    body["anchor"]["docdb_application"] = json!("US10374408 (A)");
+    body["anchor"]["application"] = json!("US10374408 (A)");
+    mount_resolve(&server, ResponseTemplate::new(200).set_body_json(body)).await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &["patstat", "graph", "resolve", "EP3477840"],
+    )
+    .await;
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+
+    assert!(stdout.contains("Publication: DOCDB appln US10374408 (A)"));
 }
 
 #[tokio::test]
@@ -814,6 +848,114 @@ async fn patent_view_truncated_hub_patent_shows_true_totals() {
     // Sections that did NOT hit their cap get no notice.
     assert!(!stdout.contains("backward NPL citations."));
     assert!(!stdout.contains("priority claims."));
+}
+
+/// Direct reproduction of flowleap-backend#419/#422: EP2110298's family. The
+/// US members' raw DOCDB application numbers (`US10374408`, `US75653110`)
+/// decode to real USPTO applications but are not themselves numbers anyone
+/// can look up — the citable numbers are the granted patents US7722129B2 and
+/// US8056987B2. A JP sibling with no publication at all still shows a
+/// number, but explicitly labeled DOCDB so it is never read as a filing
+/// number, and the priority line — the exact one that used to print
+/// "Priority: US application 10374408" — names the same citable grant.
+fn ep2110298_family_view_body() -> serde_json::Value {
+    json!({
+        "success": true,
+        "meta": {},
+        "anchor": {
+            "node": "pat:56549757",
+            "appln_id": 56549757,
+            "publication": "EP2110298B1",
+            "docdb_application": "EP09250131 (A)",
+            "application": "EP09250131 (A)",
+            "granted": true,
+            "filing_year": 2009,
+            "docdb_family_id": 40846074,
+            "at": "tls201:56549757",
+        },
+        "header": {},
+        "citations": {},
+        "family": [
+            { "node": "pat:267837275", "appln_id": 267837275, "office": "US",
+              "publication": "US7722129B2", "docdb_application": "US10374408 (A)",
+              "application": "US10374408 (A)", "filing_date": "2008-04-16",
+              "filing_year": 2008, "first_grant_date": "2010-05-25",
+              "granted": true, "is_anchor": false, "edge": "in_family",
+              "confidence": { "tag": "EXTRACTED", "score": 1.0 }, "at": "tls201:267837275" },
+            { "node": "pat:56549757", "appln_id": 56549757, "office": "EP",
+              "publication": "EP2110298B1", "docdb_application": "EP09250131 (A)",
+              "application": "EP09250131 (A)", "filing_date": "2009-02-16",
+              "filing_year": 2009, "first_grant_date": "2012-01-11",
+              "granted": true, "is_anchor": true, "edge": "in_family",
+              "confidence": { "tag": "EXTRACTED", "score": 1.0 }, "at": "tls201:56549757" },
+            { "node": "pat:318225823", "appln_id": 318225823, "office": "US",
+              "publication": "US8056987B2", "docdb_application": "US75653110 (A)",
+              "application": "US75653110 (A)", "filing_date": "2010-04-08",
+              "filing_year": 2010, "first_grant_date": "2011-11-15",
+              "granted": true, "is_anchor": false, "edge": "in_family",
+              "confidence": { "tag": "EXTRACTED", "score": 1.0 }, "at": "tls201:318225823" },
+            { "node": "pat:999000111", "appln_id": 999000111, "office": "JP",
+              "publication": null, "docdb_application": "JP12345678 (A)",
+              "application": "JP12345678 (A)", "filing_date": "2009-02-10",
+              "filing_year": 2009, "first_grant_date": null,
+              "granted": false, "is_anchor": false, "edge": "in_family",
+              "confidence": { "tag": "EXTRACTED", "score": 1.0 }, "at": "tls201:999000111" },
+        ],
+        "priorities": [
+            { "node": "pat:267837275",
+              "prior_publication": "US7722129B2", "prior_docdb_application": "US10374408 (A)",
+              "prior_application": "US10374408 (A)", "prior_filing_date": "2008-04-16",
+              "edge": "claims_priority", "confidence": { "tag": "EXTRACTED", "score": 1.0 },
+              "at": "tls204:267837275/1" },
+        ],
+    })
+}
+
+#[tokio::test]
+async fn patent_view_family_and_priorities_show_citable_publications_not_docdb_numbers() {
+    let server = MockServer::start().await;
+    mount_patent_view(
+        &server,
+        "EP2110298",
+        ResponseTemplate::new(200).set_body_json(ep2110298_family_view_body()),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &["patstat", "graph", "patent", "EP2110298"],
+    )
+    .await;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+
+    // Anchor headline: the citable publication, not the deprecated alias.
+    assert!(stdout.contains("Publication: EP2110298B1"));
+
+    // The two granted US family members read by their citable USPTO grant
+    // numbers, never the DOCDB serial+filing-year strings that look like
+    // (but are not) real US application numbers.
+    assert!(stdout.contains("US7722129B2"));
+    assert!(stdout.contains("US8056987B2"));
+    assert!(!stdout.contains("US10374408"));
+    assert!(!stdout.contains("US75653110"));
+
+    // A family member with no publication at all still shows a number, but
+    // labeled as DOCDB's own format rather than a bare application number.
+    assert!(stdout.contains("DOCDB appln JP12345678 (A)"));
+
+    // "Application" never appears as a column/field label any more — the
+    // family and priority sections are headed "Publication" / "Prior
+    // Publication".
+    assert!(!stdout.contains("Application:"));
+    assert!(!stdout.contains("Prior Application"));
+    assert!(stdout.contains("Prior Publication"));
 }
 
 /// A parseable number with no row in the loaded edition — same typed 404

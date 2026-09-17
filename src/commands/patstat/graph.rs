@@ -9,6 +9,17 @@
 //! `--json` emits the backend body unmodified (including error bodies for the
 //! typed graph family), human mode renders it, and ambiguity is always an
 //! interaction step — candidates are printed, never auto-picked.
+//!
+//! **Which number is which** (flowleap-backend#419): every node the backend
+//! answers with carries a citable `publication` (first grant, else earliest
+//! publication — may be absent) alongside the deprecated `application` /
+//! `prior_application`, which are DOCDB's OWN application-number format, not
+//! the office's filing number (`US10374408` decodes to USPTO application
+//! 12/103,744; only EP happens to look right). Human-mode rendering here
+//! always prefers `publication`; where it is null it falls back to the
+//! `docdb_application` value labeled `DOCDB appln …`, never a bare number
+//! under the word "Application". `--json` stays a pure passthrough of the
+//! backend body either way — see `citable()` below.
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -466,9 +477,17 @@ fn print_resolve(body: &Value) {
 /// publications of ONE application collapse into a single anchor — seeing the
 /// number that was typed among them is how the caller confirms the collapse
 /// was the intended one.
+///
+/// The headline number is the citable `publication` (see `citable()`), never
+/// the raw DOCDB application string under a bare "Application" label — that
+/// was flowleap-backend#419 (`US10374408` read as a filing number when it was
+/// not one).
 fn print_anchor(anchor: &Value) {
     println!("Anchor: {}", text(anchor, "node"));
-    println!("Application: {}", text(anchor, "application"));
+    println!(
+        "Publication: {}",
+        citable(anchor, "publication", "docdb_application", "application")
+    );
     if let Some(title) = anchor.get("title").and_then(Value::as_str) {
         println!("Title: {title}");
     }
@@ -522,7 +541,7 @@ fn print_ambiguous(message: &str, candidates: Vec<Value>) {
             "  {}. {} — {}, filed {}, {}",
             index + 1,
             text(candidate, "node"),
-            text(candidate, "application"),
+            citable(candidate, "publication", "docdb_application", "application"),
             filing_year(candidate),
             if candidate.get("granted").and_then(Value::as_bool) == Some(true) {
                 "granted"
@@ -713,7 +732,7 @@ fn print_patent_view(body: &Value) {
     print_section_table(
         &flatten_family(&candidates(body, "/family")),
         &[
-            ("application", "Application"),
+            ("publication", "Publication"),
             ("office", "Office"),
             ("range", "Filed → Granted"),
             ("is_anchor", "Anchor?"),
@@ -725,9 +744,9 @@ fn print_patent_view(body: &Value) {
 
     println!("\nPriority Claims");
     print_section_table(
-        &flatten_confidence(&candidates(body, "/priorities")),
+        &flatten_priorities(&candidates(body, "/priorities")),
         &[
-            ("prior_application", "Prior Application"),
+            ("prior_publication", "Prior Publication"),
             ("prior_filing_date", "Prior Filing Date"),
             ("confidence", "Confidence"),
             ("at", "Provenance"),
@@ -746,7 +765,10 @@ fn print_patent_view(body: &Value) {
 /// helpers apply unchanged).
 fn print_patent_anchor(anchor: &Value) {
     println!("Anchor: {}", text(anchor, "node"));
-    println!("Application: {}", text(anchor, "application"));
+    println!(
+        "Publication: {}",
+        citable(anchor, "publication", "docdb_application", "application")
+    );
     if let Some(title) = anchor.get("title").and_then(Value::as_str) {
         println!("Title: {title}");
     }
@@ -892,7 +914,9 @@ fn flatten_confidence(rows: &[Value]) -> Vec<Value> {
 
 /// Family rows additionally get a computed `Filed → Granted` range column
 /// (filing year via the shared 9999-sentinel-safe helper, first-grant date
-/// verbatim) and a yes/no `is_anchor` flag in the same style as `granted()`.
+/// verbatim), a yes/no `is_anchor` flag in the same style as `granted()`, and
+/// the row's `publication` overwritten with its citable display value (see
+/// `citable()`) so the "Publication" column never prints a bare DOCDB string.
 fn flatten_family(rows: &[Value]) -> Vec<Value> {
     flatten_confidence(rows)
         .into_iter()
@@ -912,6 +936,31 @@ fn flatten_family(rows: &[Value]) -> Vec<Value> {
                     "no"
                 }
             );
+            row["publication"] = json!(citable(
+                &row,
+                "publication",
+                "docdb_application",
+                "application"
+            ));
+            row
+        })
+        .collect()
+}
+
+/// Priority rows get their `prior_publication` overwritten with the citable
+/// display value (see `citable()`) — the same "US10374408 read as a filing
+/// number" bug (flowleap-backend#419) originated in this exact row, where the
+/// DOCDB string printed as "Priority: US application 10374408".
+fn flatten_priorities(rows: &[Value]) -> Vec<Value> {
+    flatten_confidence(rows)
+        .into_iter()
+        .map(|mut row| {
+            row["prior_publication"] = json!(citable(
+                &row,
+                "prior_publication",
+                "prior_docdb_application",
+                "prior_application"
+            ));
             row
         })
         .collect()
@@ -983,6 +1032,30 @@ fn text(value: &Value, key: &str) -> String {
         Some(Value::String(string)) => string.clone(),
         Some(Value::Null) | None => "?".to_string(),
         Some(other) => other.to_string(),
+    }
+}
+
+/// The citable number for a node: the backend's `publication_key` (first
+/// grant, else earliest publication) when present, else the raw DOCDB
+/// application string — carried under `docdb_key`, or (backend bodies from
+/// before flowleap-backend#419 shipped) the deprecated `legacy_key` alias —
+/// labeled so it is never mistaken for a filing number.
+///
+/// `US10374408 (A)` is DOCDB's own application-number format (serial + 2-digit
+/// filing year for US); it decodes to USPTO application 12/103,744 and is not
+/// itself a number anyone can look up. That is #419: the label is what makes
+/// the fallback honest, not the number alone.
+fn citable(value: &Value, publication_key: &str, docdb_key: &str, legacy_key: &str) -> String {
+    if let Some(publication) = value.get(publication_key).and_then(Value::as_str) {
+        return publication.to_string();
+    }
+    match value
+        .get(docdb_key)
+        .and_then(Value::as_str)
+        .or_else(|| value.get(legacy_key).and_then(Value::as_str))
+    {
+        Some(docdb) => format!("DOCDB appln {docdb}"),
+        None => "?".to_string(),
     }
 }
 

@@ -97,6 +97,22 @@ the list. `Filings by Year` is uncapped; do not imply a cap there.
 CLI envelope around it. There is no `body` wrapper: read `text`, `data`,
 `meta`, or `error` at the top level.
 
+**Which number is which.** Every node the backend answers with carries a
+citable `publication` — the first grant where one exists, else the earliest
+publication (may be `null` for an application with no publication at all).
+`application` / `prior_application` are **deprecated**: they carry DOCDB's own
+application-number format, which for a US application is a 6-digit serial
+plus the 2-digit filing year (`US10374408 (A)` decodes to USPTO application
+12/103,744 — it is not itself a lookupable number). EP happens to be the one
+office where DOCDB's format equals the real application number, which is why
+this stayed hidden until a US-bearing family was reported (flowleap-backend
+#419). Prefer `publication` / `prior_publication`; read `docdb_application` /
+`prior_docdb_application` only when you need the raw DOCDB string and know to
+label it as such. In `--json` all four keys ride on every node — this is
+additive, not a breaking change. Human-mode text already applies this rule:
+it prints the citable publication, falling back to a `DOCDB appln …`-labeled
+string only when no publication exists.
+
 ## Budgets and bounds
 
 - `--token-budget` (default 2000) trims the `text` serialization only; `--json`
