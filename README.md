@@ -48,7 +48,9 @@ Two integration paths, both embedded in the binary — no network needed to inst
 
 Authenticate once before wiring either path (`flowleap auth login`, or set `FLOWLEAP_API_KEY` for headless use). An unauthenticated MCP server still starts, but every tool call returns an error explaining how to log in.
 
-Verify readiness any time with the one-command diagnostic — it checks backend reachability, auth, patent-data keys, and the live tool count, and exits nonzero with fix instructions when something is missing:
+Beside the tools, `flowleap mcp` serves the backend's PATSTAT doctrine. It serves five **resources**: the semantic model (`flowleap://patstat/semantic-model`), the verified examples (`flowleap://patstat/examples`), and three workflows (`flowleap://patstat/workflow/portfolio-analysis`, `…/guarded-sql`, `…/graph`). It also serves three **prompts**, one per workflow: `patstat-portfolio-analysis`, `patstat-guarded-sql` and `patstat-graph`. The server reads these documents from the backend at startup and serves them verbatim, so the doctrine changes without a CLI release. In Claude Code, the prompts appear as `/mcp__flowleap__<name>` slash commands and the resources attach with `@`. A document that the backend refuses (the PATSTAT docs route needs an active plan) is skipped and logged to stderr; the rest keep serving.
+
+Verify readiness any time with the one-command diagnostic — it checks backend reachability, auth, patent-data keys, the live tool count, and the resource and prompt counts, and exits nonzero with fix instructions when something is missing:
 
 ```bash
 flowleap mcp --check
