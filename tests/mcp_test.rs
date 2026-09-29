@@ -7,6 +7,7 @@
 
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use wiremock::matchers::{body_json, method, path, query_param};
@@ -801,5 +802,176 @@ async fn dry_run_prints_the_five_requests_and_serves_nothing() {
             .unwrap_or_default()
             .is_empty(),
         "dry-run sends nothing"
+    );
+}
+
+#[tokio::test]
+async fn a_slow_doctrine_load_never_blocks_other_frames() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/patstat/docs"))
+        .and(query_param("section", "semantic-model"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(2))
+                .set_body_json(json!({ "success": true, "data": { "yaml": "a: 1\n" } })),
+        )
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    mount_doctrine(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/tools"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "tools": mock_tools() })))
+        .mount(&server)
+        .await;
+
+    let responses = run_mcp(
+        &server.uri(),
+        AUTH_ENV,
+        &[
+            frame(json!({ "jsonrpc": "2.0", "id": 1, "method": "resources/list" })),
+            frame(json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })),
+            frame(json!({ "jsonrpc": "2.0", "id": 3, "method": "ping" })),
+        ],
+    )
+    .await;
+
+    // tools/list and ping answer first; resources/list answers once loaded.
+    let ids: Vec<&Value> = responses.iter().map(|r| &r["id"]).collect();
+    assert_eq!(ids, vec![&json!(2), &json!(3), &json!(1)]);
+    assert_eq!(responses[0]["result"], json!({ "tools": mock_tools() }));
+    assert_eq!(
+        responses[2]["result"]["resources"].as_array().map(Vec::len),
+        Some(5)
+    );
+}
+
+#[tokio::test]
+async fn without_credentials_doctrine_methods_return_the_login_hint() {
+    let server = MockServer::start().await;
+    mount_doctrine(&server).await;
+
+    let (responses, stderr) = run_mcp_with_stderr(
+        &server.uri(),
+        &[],
+        &[],
+        &[
+            frame(json!({ "jsonrpc": "2.0", "id": 1, "method": "resources/list" })),
+            frame(json!({ "jsonrpc": "2.0", "id": 2, "method": "prompts/list" })),
+        ],
+    )
+    .await;
+
+    for response in &responses {
+        assert_eq!(response["error"]["code"], -32002);
+        let message = response["error"]["message"].as_str().expect("message");
+        assert!(
+            message.contains("flowleap auth login"),
+            "login hint: {message}"
+        );
+    }
+    assert!(
+        stderr.contains("flowleap mcp: no credentials"),
+        "stderr says the load was skipped: {stderr}"
+    );
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty(),
+        "no doc is fetched without credentials"
+    );
+}
+
+/// Run `flowleap mcp --check` (human output) and return (success, stdout).
+async fn run_check_human(base_url: &str) -> (bool, String) {
+    let base_url = base_url.to_string();
+    tokio::task::spawn_blocking(move || {
+        let temp_home = tempfile::tempdir().expect("create temp home");
+        let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
+            .env("HOME", temp_home.path())
+            .env("XDG_CONFIG_HOME", temp_home.path().join(".config"))
+            .env("FLOWLEAP_BASE_URL", &base_url)
+            .env("FLOWLEAP_API_KEY", "fl_pat_test_key")
+            .env("FLOWLEAP_NO_UPDATE_CHECK", "1")
+            .env_remove("FLOWLEAP_TOKEN")
+            .args(["mcp", "--check"])
+            .output()
+            .expect("run mcp --check");
+        (
+            output.status.success(),
+            String::from_utf8(output.stdout).expect("stdout utf8"),
+        )
+    })
+    .await
+    .expect("join mcp --check")
+}
+
+async fn mount_health_and_tools(server: &MockServer) {
+    Mock::given(method("GET"))
+        .and(path("/health"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "status": "ok" })))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/tools"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "tools": mock_tools() })))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn mcp_check_human_lines_report_resources_and_prompts_ok() {
+    let server = MockServer::start().await;
+    mount_health_and_tools(&server).await;
+    mount_doctrine(&server).await;
+
+    let (ok, stdout) = run_check_human(&server.uri()).await;
+    assert!(ok, "ready: {stdout}");
+    assert!(stdout.contains("  resources ok   5 served\n"), "{stdout}");
+    assert!(stdout.contains("  prompts   ok   3 served\n"), "{stdout}");
+}
+
+#[tokio::test]
+async fn mcp_check_human_lines_warn_resources_and_prompts_separately() {
+    let server = MockServer::start().await;
+    mount_health_and_tools(&server).await;
+    // graph fails outright: resource and prompt both missing.
+    Mock::given(method("GET"))
+        .and(path("/v1/patstat/docs"))
+        .and(query_param("workflow", "graph"))
+        .respond_with(ResponseTemplate::new(402).set_body_json(json!({
+            "error": { "code": "subscription_required", "message": "subscribe" },
+        })))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    // guarded-sql loads but carries no workflow object: resource served,
+    // prompt unavailable.
+    Mock::given(method("GET"))
+        .and(path("/v1/patstat/docs"))
+        .and(query_param("workflow", "guarded-sql"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "success": true, "data": { "other": true } })),
+        )
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    mount_doctrine(&server).await;
+
+    let (ok, stdout) = run_check_human(&server.uri()).await;
+    assert!(ok, "a doc failure never makes the bridge unready: {stdout}");
+    assert!(
+        stdout.contains("  resources warn 4 served (could not load: workflow/graph)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "  prompts   warn 1 served (unavailable: patstat-guarded-sql, patstat-graph)\n"
+        ),
+        "{stdout}"
     );
 }

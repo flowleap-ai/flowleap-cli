@@ -25,7 +25,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-use tokio::sync::OnceCell;
+use tokio::sync::{Notify, OnceCell};
 
 use crate::client::Context;
 use crate::commands::tools;
@@ -95,38 +95,101 @@ pub async fn run(ctx: &Context, args: McpArgs) -> Result<()> {
         );
     }
 
-    // The doctrine loads at startup, concurrently with serving: initialize and
-    // tools never wait on it, and a resources/prompts request waits for the
-    // one in-flight load instead of starting another.
+    // The doctrine loads once, at startup, concurrently with serving. No
+    // frame waits for it: initialize, ping and tools answer at once, and a
+    // resources/prompts request that arrives before the load completes is
+    // queued and answered when it does. The loaded set is kept for the life
+    // of the process — a document that failed (or an unauthenticated start)
+    // stays missing until the server is restarted.
     let doctrine = OnceCell::new();
+    let loaded = Notify::new();
     let preload = async {
-        let loaded = doctrine.get_or_init(|| load_doctrine(ctx)).await;
+        let doctrine_loaded = load_doctrine(ctx).await;
         eprintln!(
             "flowleap mcp: serving {} resources and {} prompts",
-            loaded.resources.len(),
-            loaded.prompts.len()
+            doctrine_loaded.resources.len(),
+            doctrine_loaded.prompts.len()
         );
+        let _ = doctrine.set(doctrine_loaded);
+        // A stored permit: the serve loop sees it even if not yet waiting.
+        loaded.notify_one();
     };
-    let (_, served) = tokio::join!(preload, serve(ctx, &doctrine));
-    served
+    let serving = serve(ctx, &doctrine, &loaded);
+    tokio::pin!(preload, serving);
+    // Stdin EOF before the load completes ends the server without waiting.
+    tokio::select! {
+        served = &mut serving => return served,
+        () = &mut preload => {}
+    }
+    serving.await
 }
 
-async fn serve(ctx: &Context, doctrine: &OnceCell<Doctrine>) -> Result<()> {
+/// A doctrine request queued while the load is in flight.
+struct Deferred {
+    id: Value,
+    params: Value,
+    handler: DoctrineHandler,
+}
+
+/// What one inbound line produces.
+enum Handled {
+    Respond(Value),
+    Defer(Deferred),
+    /// A notification: no frame goes back.
+    Silent,
+}
+
+async fn serve(ctx: &Context, doctrine: &OnceCell<Doctrine>, loaded: &Notify) -> Result<()> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut stdout = tokio::io::stdout();
+    let mut pending: Vec<Deferred> = Vec::new();
+    let mut awaiting_load = true;
 
-    while let Some(line) = lines.next_line().await? {
-        if line.trim().is_empty() {
-            continue;
+    loop {
+        tokio::select! {
+            () = loaded.notified(), if awaiting_load => {
+                awaiting_load = false;
+                if let Some(doctrine) = doctrine.get() {
+                    for deferred in pending.drain(..) {
+                        let response = (deferred.handler)(doctrine, deferred.id, &deferred.params);
+                        write_frame(&mut stdout, &response).await?;
+                    }
+                }
+            }
+            line = lines.next_line() => {
+                let Some(line) = line? else { break };
+                if line.trim().is_empty() {
+                    continue;
+                }
+                match handle_line(ctx, doctrine.get(), &line).await {
+                    Handled::Respond(response) => write_frame(&mut stdout, &response).await?,
+                    Handled::Defer(deferred) => pending.push(deferred),
+                    Handled::Silent => {}
+                }
+            }
         }
-        let Some(response) = handle_line(ctx, doctrine, &line).await else {
-            continue; // notification — no frame goes back
-        };
-        let mut frame = serde_json::to_string(&response)?;
-        frame.push('\n');
-        stdout.write_all(frame.as_bytes()).await?;
-        stdout.flush().await?;
     }
+    // Stdin closed with requests still queued: answer them once loaded.
+    if !pending.is_empty() {
+        if awaiting_load {
+            loaded.notified().await;
+        }
+        if let Some(doctrine) = doctrine.get() {
+            for deferred in pending.drain(..) {
+                let response = (deferred.handler)(doctrine, deferred.id, &deferred.params);
+                write_frame(&mut stdout, &response).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One JSON-RPC frame per line on stdout — the only writer of stdout.
+async fn write_frame(stdout: &mut tokio::io::Stdout, response: &Value) -> Result<()> {
+    let mut frame = serde_json::to_string(response)?;
+    frame.push('\n');
+    stdout.write_all(frame.as_bytes()).await?;
+    stdout.flush().await?;
     Ok(())
 }
 
@@ -194,6 +257,7 @@ async fn run_check(ctx: &Context) -> Result<()> {
                 "resourceCount": doctrine.as_ref().map(|d| d.resources.len()),
                 "promptCount": doctrine.as_ref().map(|d| d.prompts.len()),
                 "unloadedDocuments": doctrine.as_ref().map(|d| d.unloaded.clone()),
+                "unavailablePrompts": doctrine.as_ref().map(|d| d.unavailable_prompts.clone()),
             }))?
         );
     } else {
@@ -219,14 +283,19 @@ async fn run_check(ctx: &Context) -> Result<()> {
         }
         match &doctrine {
             Some(doctrine) => {
-                let unloaded = doctrine.unloaded.join(", ");
-                let (resources, prompts) = (doctrine.resources.len(), doctrine.prompts.len());
+                let resources = doctrine.resources.len();
                 if doctrine.unloaded.is_empty() {
                     println!("  resources ok   {resources} served");
+                } else {
+                    let unloaded = doctrine.unloaded.join(", ");
+                    println!("  resources warn {resources} served (could not load: {unloaded})");
+                }
+                let prompts = doctrine.prompts.len();
+                if doctrine.unavailable_prompts.is_empty() {
                     println!("  prompts   ok   {prompts} served");
                 } else {
-                    println!("  resources warn {resources} served (could not load: {unloaded})");
-                    println!("  prompts   warn {prompts} served (could not load: {unloaded})");
+                    let unavailable = doctrine.unavailable_prompts.join(", ");
+                    println!("  prompts   warn {prompts} served (unavailable: {unavailable})");
                 }
             }
             None => {
@@ -256,11 +325,11 @@ async fn run_check(ctx: &Context) -> Result<()> {
 }
 
 /// Parse one inbound line and produce the response frame, if any.
-async fn handle_line(ctx: &Context, doctrine: &OnceCell<Doctrine>, line: &str) -> Option<Value> {
+async fn handle_line(ctx: &Context, doctrine: Option<&Doctrine>, line: &str) -> Handled {
     let message: Value = match serde_json::from_str(line) {
         Ok(value) => value,
         Err(err) => {
-            return Some(error_response(
+            return Handled::Respond(error_response(
                 Value::Null,
                 -32700,
                 &format!("Parse error: {err}"),
@@ -276,33 +345,46 @@ async fn handle_line(ctx: &Context, doctrine: &OnceCell<Doctrine>, line: &str) -
         .to_string();
     // Absent id = notification (no response). A present id — even null — is
     // echoed back so the client can correlate.
-    let id = message.get("id").cloned();
+    let Some(id) = message.get("id").cloned() else {
+        return Handled::Silent;
+    };
     let params = message.get("params").cloned().unwrap_or(Value::Null);
 
+    let doctrine_frame = |handler: DoctrineHandler| {
+        if ctx.credentials.auth_header().is_none() {
+            return Handled::Respond(error_response(
+                id.clone(),
+                -32002,
+                AUTH_REQUIRED_MESSAGE,
+                None,
+            ));
+        }
+        match doctrine {
+            Some(doctrine) => Handled::Respond(handler(doctrine, id.clone(), &params)),
+            None => Handled::Defer(Deferred {
+                id: id.clone(),
+                params: params.clone(),
+                handler,
+            }),
+        }
+    };
+
     match method.as_str() {
-        "initialize" => id.map(|id| result_response(id, initialize_result(&params))),
-        "notifications/initialized" => None,
-        "ping" => id.map(|id| result_response(id, json!({}))),
-        "tools/list" => match id {
-            Some(id) => Some(tools_list(ctx, id).await),
-            None => None,
-        },
-        "tools/call" => match id {
-            Some(id) => Some(tools_call(ctx, id, &params).await),
-            None => None,
-        },
-        "resources/list"
-        | "resources/read"
-        | "resources/templates/list"
-        | "prompts/list"
-        | "prompts/get" => match id {
-            Some(id) => {
-                let doctrine = doctrine.get_or_init(|| load_doctrine(ctx)).await;
-                Some(doctrine_request(doctrine, &method, id, &params))
-            }
-            None => None,
-        },
-        _ => id.map(|id| error_response(id, -32601, &format!("Method not found: {method}"), None)),
+        "initialize" => Handled::Respond(result_response(id, initialize_result(&params))),
+        "ping" => Handled::Respond(result_response(id, json!({}))),
+        "tools/list" => Handled::Respond(tools_list(ctx, id).await),
+        "tools/call" => Handled::Respond(tools_call(ctx, id, &params).await),
+        "resources/list" => doctrine_frame(resources_list),
+        "resources/templates/list" => doctrine_frame(resource_templates_list),
+        "resources/read" => doctrine_frame(resources_read),
+        "prompts/list" => doctrine_frame(prompts_list),
+        "prompts/get" => doctrine_frame(prompts_get),
+        _ => Handled::Respond(error_response(
+            id,
+            -32601,
+            &format!("Method not found: {method}"),
+            None,
+        )),
     }
 }
 
@@ -335,18 +417,17 @@ async fn tools_list(ctx: &Context, id: Value) -> Value {
         Ok(envelope) => envelope,
         Err(err) => return error_response(id, -32603, &err.to_string(), None),
     };
-    if envelope.get("ok").and_then(|v| v.as_bool()) != Some(true) {
-        let status = envelope.get("status").and_then(|v| v.as_u64()).unwrap_or(0);
+    let Some(body) = ok_body(&envelope) else {
+        let status = envelope_status(&envelope);
         return error_response(
             id,
             -32002,
             &format!("FlowLeap backend rejected tools/list (HTTP {status})"),
             Some(envelope),
         );
-    }
-    let tools = envelope
-        .get("body")
-        .and_then(|body| body.get("tools"))
+    };
+    let tools = body
+        .get("tools")
         .and_then(|tools| tools.as_array())
         .cloned()
         .unwrap_or_default();
@@ -384,16 +465,32 @@ async fn tools_call(ctx: &Context, id: Value, params: &Value) -> Value {
         Err(err) => return tool_error(id, json!({ "error": err.to_string() })),
     };
 
-    if envelope.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+    if let Some(body) = ok_body(&envelope) {
         // Backend tool envelope: { success, tool, data, executionTimeMs } —
         // surface `data` (like `flowleap tools run`), whole body otherwise.
-        let body = envelope.get("body").cloned().unwrap_or(Value::Null);
-        let payload = body.get("data").cloned().unwrap_or(body);
-        return text_result(id, false, &payload);
+        return text_result(id, false, &data_payload(body));
     }
     // The envelope already carries status, body, and any structured hints
     // (providerKeysHint, retryAfterSeconds) — pass it through whole.
     tool_error(id, envelope)
+}
+
+/// The response body of a 2xx client envelope; `None` for any other status.
+fn ok_body(envelope: &Value) -> Option<Value> {
+    (envelope.get("ok").and_then(Value::as_bool) == Some(true))
+        .then(|| envelope.get("body").cloned().unwrap_or(Value::Null))
+}
+
+fn envelope_status(envelope: &Value) -> u64 {
+    envelope.get("status").and_then(Value::as_u64).unwrap_or(0)
+}
+
+/// A backend `{ success, data, … }` body's `data`, else the whole body.
+fn data_payload(body: Value) -> Value {
+    match body.get("data") {
+        Some(data) => data.clone(),
+        None => body,
+    }
 }
 
 fn result_response(id: Value, result: Value) -> Value {
@@ -501,9 +598,15 @@ struct Prompt {
 struct Doctrine {
     resources: Vec<Resource>,
     prompts: Vec<Prompt>,
-    /// Keys of the documents that could not be loaded, in spec order.
+    /// Keys of the documents whose resource could not be loaded, in spec order.
     unloaded: Vec<String>,
+    /// Names of the prompts that could not be built, in spec order: the
+    /// document failed, or it loaded but carries no workflow object.
+    unavailable_prompts: Vec<String>,
 }
+
+/// Answers one resources/* or prompts/* request from the loaded doctrine.
+type DoctrineHandler = fn(&Doctrine, Value, &Value) -> Value;
 
 /// Fetch the five documents concurrently (a fixed set of five small GETs is
 /// its own bound) through the shared client, so credentials, base URL,
@@ -512,7 +615,14 @@ async fn load_doctrine(ctx: &Context) -> Doctrine {
     let mut doctrine = Doctrine::default();
     if ctx.credentials.auth_header().is_none() && !ctx.dry_run {
         doctrine.unloaded = DOC_SPECS.iter().map(|s| s.key.to_string()).collect();
-        eprintln!("flowleap mcp: no credentials — serving no PATSTAT resources or prompts");
+        doctrine.unavailable_prompts = DOC_SPECS
+            .iter()
+            .filter_map(|s| s.prompt.map(str::to_string))
+            .collect();
+        eprintln!(
+            "flowleap mcp: no credentials — serving no PATSTAT resources or prompts \
+             (run 'flowleap auth login', then restart the server)"
+        );
         return doctrine;
     }
 
@@ -533,17 +643,20 @@ async fn load_doctrine(ctx: &Context) -> Doctrine {
                 eprintln!("{request}");
             }
             Fetched::Failed(reason) => {
-                eprintln!("flowleap mcp: could not load {}: {reason}", spec.key);
+                log_unloaded(spec.key, &reason);
                 doctrine.unloaded.push(spec.key.to_string());
+                if let Some(name) = spec.prompt {
+                    doctrine.unavailable_prompts.push(name.to_string());
+                }
             }
             Fetched::Loaded(data) => {
                 let (resource, prompt) = build_doc(spec, &data);
                 doctrine.resources.push(resource);
                 match prompt {
                     Some(Ok(prompt)) => doctrine.prompts.push(prompt),
-                    Some(Err(reason)) => {
-                        eprintln!("flowleap mcp: could not load {}: {reason}", spec.key);
-                        doctrine.unloaded.push(spec.key.to_string());
+                    Some(Err((name, reason))) => {
+                        log_unloaded(&format!("prompt {name}"), &reason);
+                        doctrine.unavailable_prompts.push(name.to_string());
                     }
                     None => {}
                 }
@@ -551,6 +664,10 @@ async fn load_doctrine(ctx: &Context) -> Doctrine {
         }
     }
     doctrine
+}
+
+fn log_unloaded(what: &str, reason: &str) {
+    eprintln!("flowleap mcp: could not load {what}: {reason} (restart the server to retry)");
 }
 
 enum Fetched {
@@ -568,23 +685,25 @@ async fn fetch_doc(ctx: &Context, spec: &DocSpec) -> Fetched {
     if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
         return Fetched::DryRun(envelope.to_string());
     }
-    if envelope.get("ok").and_then(Value::as_bool) != Some(true) {
-        let status = envelope.get("status").and_then(Value::as_u64).unwrap_or(0);
+    let Some(body) = ok_body(&envelope) else {
+        let status = envelope_status(&envelope);
         let code = envelope
             .pointer("/body/error/code")
             .and_then(Value::as_str)
             .map(|code| format!(" {code}"))
             .unwrap_or_default();
         return Fetched::Failed(format!("HTTP {status}{code}"));
-    }
-    let body = envelope.get("body").cloned().unwrap_or(Value::Null);
-    Fetched::Loaded(body.get("data").cloned().unwrap_or(body))
+    };
+    Fetched::Loaded(data_payload(body))
 }
 
 /// Build the resource (and, for a workflow, the prompt) from one payload.
 /// The resource text is the payload verbatim: the YAML string itself when
 /// the document is YAML, else the `data` object as JSON.
-fn build_doc(spec: &DocSpec, data: &Value) -> (Resource, Option<Result<Prompt, String>>) {
+/// A prompt that could not be built: its name and the reason.
+type PromptError = (&'static str, String);
+
+fn build_doc(spec: &DocSpec, data: &Value) -> (Resource, Option<Result<Prompt, PromptError>>) {
     let (text, mime_type) = match data.get("yaml").and_then(Value::as_str) {
         Some(yaml) => (yaml.to_string(), "application/yaml"),
         None => (
@@ -611,7 +730,7 @@ fn build_doc(spec: &DocSpec, data: &Value) -> (Resource, Option<Result<Prompt, S
             description: description.clone(),
             text: render_workflow(workflow),
         }),
-        None => Err("payload carries no workflow object".to_string()),
+        None => Err((name, "payload carries no workflow object".to_string())),
     });
 
     let resource = Resource {
@@ -636,6 +755,13 @@ fn non_empty_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
 /// A plain text rendering of a served workflow: name, description, then each
 /// step's number, action, endpoint or tools, and note. Adds no words of its
 /// own beyond the field labels.
+///
+/// It renders only the workflow's `name`, `description` and `steps`, and of
+/// each step only `step`, `action`, `endpoint`, `tools` and `note`; every
+/// other field is omitted — `curlExample` by decision, since an MCP client
+/// calls tools, not raw HTTP routes. The full payload stays available,
+/// verbatim, as the workflow resource. A `tools` value is a string or an
+/// array of strings; non-string array items are dropped.
 fn render_workflow(workflow: &Value) -> String {
     let mut text = String::new();
     if let Some(name) = non_empty_str(workflow, "name") {
@@ -679,79 +805,79 @@ fn render_workflow(workflow: &Value) -> String {
     text
 }
 
-/// resources/* and prompts/* against the loaded doctrine.
-fn doctrine_request(doctrine: &Doctrine, method: &str, id: Value, params: &Value) -> Value {
-    match method {
-        "resources/list" => {
-            let resources: Vec<Value> = doctrine
-                .resources
-                .iter()
-                .map(|r| {
-                    json!({
-                        "uri": r.uri,
-                        "name": r.name,
-                        "title": r.title,
-                        "description": r.description,
-                        "mimeType": r.mime_type,
-                    })
-                })
-                .collect();
-            result_response(id, json!({ "resources": resources }))
-        }
-        "resources/templates/list" => result_response(id, json!({ "resourceTemplates": [] })),
-        "resources/read" => {
-            let Some(uri) = params.get("uri").and_then(Value::as_str) else {
-                return error_response(id, -32602, "Invalid params: missing resource 'uri'", None);
-            };
-            match doctrine.resources.iter().find(|r| r.uri == uri) {
-                Some(r) => result_response(
-                    id,
-                    json!({
-                        "contents": [{ "uri": r.uri, "mimeType": r.mime_type, "text": r.text }],
-                    }),
-                ),
-                None => error_response(
-                    id,
-                    -32602,
-                    &format!("Unknown resource: {uri}"),
-                    Some(json!({ "uri": uri })),
-                ),
-            }
-        }
-        "prompts/list" => {
-            let prompts: Vec<Value> = doctrine
-                .prompts
-                .iter()
-                .map(|p| {
-                    json!({
-                        "name": p.name,
-                        "title": p.title,
-                        "description": p.description,
-                        "arguments": [],
-                    })
-                })
-                .collect();
-            result_response(id, json!({ "prompts": prompts }))
-        }
-        "prompts/get" => {
-            let Some(name) = params.get("name").and_then(Value::as_str) else {
-                return error_response(id, -32602, "Invalid params: missing prompt 'name'", None);
-            };
-            match doctrine.prompts.iter().find(|p| p.name == name) {
-                Some(p) => result_response(
-                    id,
-                    json!({
-                        "description": p.description,
-                        "messages": [{
-                            "role": "user",
-                            "content": { "type": "text", "text": p.text },
-                        }],
-                    }),
-                ),
-                None => error_response(id, -32602, &format!("Unknown prompt: {name}"), None),
-            }
-        }
-        _ => error_response(id, -32601, &format!("Method not found: {method}"), None),
+fn resources_list(doctrine: &Doctrine, id: Value, _params: &Value) -> Value {
+    let resources: Vec<Value> = doctrine
+        .resources
+        .iter()
+        .map(|r| {
+            json!({
+                "uri": r.uri,
+                "name": r.name,
+                "title": r.title,
+                "description": r.description,
+                "mimeType": r.mime_type,
+            })
+        })
+        .collect();
+    result_response(id, json!({ "resources": resources }))
+}
+
+fn resource_templates_list(_doctrine: &Doctrine, id: Value, _params: &Value) -> Value {
+    result_response(id, json!({ "resourceTemplates": [] }))
+}
+
+fn resources_read(doctrine: &Doctrine, id: Value, params: &Value) -> Value {
+    let Some(uri) = params.get("uri").and_then(Value::as_str) else {
+        return error_response(id, -32602, "Invalid params: missing resource 'uri'", None);
+    };
+    match doctrine.resources.iter().find(|r| r.uri == uri) {
+        Some(r) => result_response(
+            id,
+            json!({
+                "contents": [{ "uri": r.uri, "mimeType": r.mime_type, "text": r.text }],
+            }),
+        ),
+        None => error_response(
+            id,
+            -32602,
+            &format!("Unknown resource: {uri}"),
+            Some(json!({ "uri": uri })),
+        ),
+    }
+}
+
+fn prompts_list(doctrine: &Doctrine, id: Value, _params: &Value) -> Value {
+    let prompts: Vec<Value> = doctrine
+        .prompts
+        .iter()
+        .map(|p| {
+            json!({
+                "name": p.name,
+                "title": p.title,
+                "description": p.description,
+                "arguments": [],
+            })
+        })
+        .collect();
+    result_response(id, json!({ "prompts": prompts }))
+}
+
+fn prompts_get(doctrine: &Doctrine, id: Value, params: &Value) -> Value {
+    let Some(name) = params.get("name").and_then(Value::as_str) else {
+        return error_response(id, -32602, "Invalid params: missing prompt 'name'", None);
+    };
+    match doctrine.prompts.iter().find(|p| p.name == name) {
+        Some(p) => result_response(
+            id,
+            json!({
+                "description": p.description,
+                "messages": [{
+                    "role": "user",
+                    "content": { "type": "text", "text": p.text },
+                }],
+            }),
+        ),
+        None => error_response(id, -32602, &format!("Unknown prompt: {name}"), None),
     }
 }
 
