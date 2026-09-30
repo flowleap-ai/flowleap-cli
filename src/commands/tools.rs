@@ -4,7 +4,7 @@ use serde_json::{Map, Value};
 use std::fs;
 use std::path::PathBuf;
 
-use crate::client::{encode_url_component, Context};
+use crate::client::{encode_url_component, Context, RetryPolicy};
 use crate::output;
 
 #[derive(Parser)]
@@ -106,6 +106,25 @@ fn tool_path(name: &str) -> String {
     format!("/v1/tools/{}", encode_url_component(name))
 }
 
+/// The tool whose calls the client must never resend on its own.
+pub const GUARDED_SQL_TOOL: &str = "patstat_query";
+
+/// The client-side resend policy for one tool call — the one place it is
+/// chosen, so `patstat query`, `tools run` and the MCP bridge agree.
+///
+/// Guarded SQL gets exactly one send (backend ADR 0010): the agent owns the
+/// one informed retry, and a hidden resend after a 504 would swallow the
+/// cold-timeout signal (the agent would see a spent retry, or a wall time
+/// that hides a cold failure behind a warm success). Every other tool keeps
+/// the generic transient retry.
+pub fn retry_policy_for(name: &str) -> RetryPolicy {
+    if name == GUARDED_SQL_TOOL {
+        RetryPolicy::Never
+    } else {
+        RetryPolicy::Transient
+    }
+}
+
 /// Execute a backend tool through the `/v1/tools/{name}` facade.
 ///
 /// Returns the backend's tool envelope (`{ success, tool, data,
@@ -113,7 +132,7 @@ fn tool_path(name: &str) -> String {
 /// active. Shared by `tools run` and the ergonomic verbs (`compare`,
 /// `figures`, `summary`, `timeline`, `convert-number`).
 pub async fn call_tool(ctx: &Context, name: &str, input: &Value) -> Result<Value> {
-    ctx.execute_json_body_or_error(ctx.post(&tool_path(name), input))
+    ctx.execute_json_body_or_error_with(ctx.post(&tool_path(name), input), retry_policy_for(name))
         .await
 }
 
@@ -152,7 +171,7 @@ pub async fn call_tool_data(ctx: &Context, name: &str, input: &Value) -> Result<
 /// must keep stdout protocol-clean and needs the structured error hints
 /// intact instead of `call_tool`'s print-and-fail behavior.
 pub async fn call_tool_envelope(ctx: &Context, name: &str, input: &Value) -> Result<Value> {
-    ctx.execute_json_envelope(ctx.post(&tool_path(name), input))
+    ctx.execute_json_envelope_with(ctx.post(&tool_path(name), input), retry_policy_for(name))
         .await
 }
 
@@ -238,7 +257,21 @@ fn parse_object(raw: &str) -> Result<Map<String, Value>> {
 
 #[cfg(test)]
 mod tests {
-    use super::build_input;
+    use super::{build_input, retry_policy_for};
+    use crate::client::RetryPolicy;
+
+    #[test]
+    fn only_guarded_sql_opts_out_of_the_client_resend() {
+        assert_eq!(retry_policy_for("patstat_query"), RetryPolicy::Never);
+        for tool in [
+            "patstat_portfolio",
+            "patstat_docs",
+            "get_bibliography",
+            "patstat_path",
+        ] {
+            assert_eq!(retry_policy_for(tool), RetryPolicy::Transient, "{tool}");
+        }
+    }
 
     #[test]
     fn key_value_pairs_parse_json_types() {

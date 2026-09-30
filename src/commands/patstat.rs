@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
 use crate::client::Context;
+use crate::commands::tools;
 use crate::output;
 
 mod graph;
@@ -124,36 +125,86 @@ async fn query(
     question: Option<String>,
     retry_of: Option<String>,
 ) -> Result<()> {
-    let mut body = json!({ "sql": sql });
+    let mut input = json!({ "sql": sql });
     if let Some(question) = question {
-        body["question"] = json!(question);
+        input["question"] = json!(question);
     }
     if let Some(retry_of) = retry_of {
-        body["retryOf"] = json!(retry_of);
+        input["retry_of"] = json!(retry_of);
     }
 
-    let envelope = ctx
-        .execute_json_envelope(ctx.post("/v1/patstat/query", &body))
-        .await?;
-    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
-        output::print_json(&envelope);
-        return Ok(());
-    }
-
-    let http_ok = envelope.get("ok").and_then(Value::as_bool) == Some(true);
-    let resp_body = envelope.get("body").cloned().unwrap_or(Value::Null);
-
-    if !http_ok {
-        return Err(render_query_error(ctx, &envelope, &resp_body));
-    }
+    // `patstat_query` is sent exactly once — the tool seam switches the
+    // client's generic resend off for guarded SQL (see
+    // `tools::retry_policy_for`).
+    let data = match call(ctx, "patstat_query", &input).await? {
+        Outcome::DryRun => return Ok(()),
+        Outcome::Failed(envelope) => return Err(render_query_error(ctx, &envelope)),
+        Outcome::Data(data) => data,
+    };
 
     if ctx.output_format == "json" {
-        output::print_json(&resp_body);
+        output::print_json(&data);
         return Ok(());
     }
 
-    print_query_result(&resp_body);
+    print_query_result(&data);
     Ok(())
+}
+
+/// What one PATSTAT tool call came back with.
+enum Outcome {
+    /// `--dry-run`: the request description is already printed.
+    DryRun,
+    /// The tool's `data` payload, unwrapped from the facade envelope.
+    Data(Value),
+    /// The raw response envelope of a failed call (nothing printed yet), so
+    /// the typed PATSTAT errors keep their dedicated rendering.
+    Failed(Value),
+}
+
+/// Run one PATSTAT tool on the shared tool seam (`POST /v1/tools/<name>`).
+/// Unlike `tools::call_tool_data`, a failure is handed back unprinted: the
+/// ambiguity, guarded-SQL and unavailability errors render their own way.
+async fn call(ctx: &Context, tool: &str, input: &Value) -> Result<Outcome> {
+    let envelope = tools::call_tool_envelope(ctx, tool, input).await?;
+    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
+        output::print_json(&envelope);
+        return Ok(Outcome::DryRun);
+    }
+    if envelope.get("ok").and_then(Value::as_bool) != Some(true) {
+        return Ok(Outcome::Failed(envelope));
+    }
+    let body = envelope.get("body").cloned().unwrap_or(Value::Null);
+    if ctx.verbose {
+        if let Some(cached) = body.get("cached").and_then(Value::as_bool) {
+            eprintln!("  cached: {cached}");
+        }
+        if let Some(ms) = body.get("executionTimeMs").and_then(Value::as_u64) {
+            eprintln!("  executionTimeMs: {ms}");
+        }
+    }
+    Ok(Outcome::Data(body.get("data").cloned().unwrap_or(body)))
+}
+
+/// The backend error envelope of a failed call (`{ success: false, error }`).
+fn error_body(envelope: &Value) -> Value {
+    envelope.get("body").cloned().unwrap_or(Value::Null)
+}
+
+/// One extra field of a typed PATSTAT error. The facade nests the route's
+/// extra fields under `error.details`; the flat route shape is still read so
+/// an older backend renders the same.
+fn error_field<'a>(body: &'a Value, key: &str) -> Option<&'a Value> {
+    body.pointer(&format!("/error/details/{key}"))
+        .or_else(|| body.pointer(&format!("/error/{key}")))
+}
+
+/// The documented exit code for a failed call's HTTP status.
+fn printed_error(envelope: &Value) -> anyhow::Error {
+    match envelope.get("status").and_then(Value::as_u64) {
+        Some(status) => crate::client::PrintedError::with_status(status as u16).into(),
+        None => crate::client::PrintedError::new().into(),
+    }
 }
 
 /// Typed rendering for the guarded-SQL error family. Every `patstat_sql_*`
@@ -161,7 +212,8 @@ async fn query(
 /// line (the retry prompt) — it is relayed VERBATIM, never rephrased, with
 /// the one-retry contract appended. `patstat_busy` is a back-off signal
 /// (retry the SAME SQL after Retry-After), never a rewrite signal.
-fn render_query_error(ctx: &Context, envelope: &Value, body: &Value) -> anyhow::Error {
+fn render_query_error(ctx: &Context, envelope: &Value) -> anyhow::Error {
+    let body = &error_body(envelope);
     let code = body
         .pointer("/error/code")
         .and_then(Value::as_str)
@@ -187,7 +239,7 @@ fn render_query_error(ctx: &Context, envelope: &Value, body: &Value) -> anyhow::
                 "row_cap",
                 "timeout_ms",
             ] {
-                if let Some(value) = body.pointer(&format!("/error/{key}")) {
+                if let Some(value) = error_field(body, key) {
                     println!("  {key}: {value}");
                 }
             }
@@ -209,10 +261,7 @@ fn render_query_error(ctx: &Context, envelope: &Value, body: &Value) -> anyhow::
         render_generic_error(ctx, envelope);
     }
 
-    match envelope.get("status").and_then(Value::as_u64) {
-        Some(status) => crate::client::PrintedError::with_status(status as u16).into(),
-        None => crate::client::PrintedError::new().into(),
-    }
+    printed_error(envelope)
 }
 
 /// Render guarded-SQL rows as a table with generic columns (taken from the
@@ -266,51 +315,31 @@ async fn docs(
     endpoint: Option<String>,
     compact: bool,
 ) -> Result<()> {
-    let path = if let Some(section) = &section {
-        format!("/v1/patstat/docs?section={section}")
-    } else if let Some(workflow) = &workflow {
-        format!("/v1/patstat/docs?workflow={workflow}")
-    } else if let Some(endpoint) = &endpoint {
-        format!("/v1/patstat/docs?endpoint={endpoint}")
-    } else if compact {
-        "/v1/patstat/docs?format=compact".to_string()
-    } else {
-        "/v1/patstat/docs".to_string()
-    };
-
-    let envelope = ctx.execute_json_envelope(ctx.get(&path)).await?;
-    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
-        output::print_json(&envelope);
-        return Ok(());
-    }
-
-    let http_ok = envelope.get("ok").and_then(Value::as_bool) == Some(true);
-    let resp_body = envelope.get("body").cloned().unwrap_or(Value::Null);
-
-    if !http_ok {
-        let code = resp_body
-            .pointer("/error/code")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        if code == "patstat_unavailable" {
-            render_unavailable(ctx, &resp_body);
-        } else {
-            render_generic_error(ctx, &envelope);
+    let data = match call(
+        ctx,
+        "patstat_docs",
+        &docs_input(section, workflow, endpoint, compact),
+    )
+    .await?
+    {
+        Outcome::DryRun => return Ok(()),
+        Outcome::Failed(envelope) => {
+            let body = error_body(&envelope);
+            if body.pointer("/error/code").and_then(Value::as_str) == Some("patstat_unavailable") {
+                render_unavailable(ctx, &body);
+            } else {
+                render_generic_error(ctx, &envelope);
+            }
+            return Err(printed_error(&envelope));
         }
-        return Err(match envelope.get("status").and_then(Value::as_u64) {
-            Some(status) => crate::client::PrintedError::with_status(status as u16).into(),
-            None => crate::client::PrintedError::new().into(),
-        });
-    }
+        Outcome::Data(data) => data,
+    };
 
     // The semantic model ships as verbatim YAML — print it raw in human mode
     // so nothing is lost between the backend's single source and the agent.
     if ctx.output_format != "json" {
-        if let Some(yaml) = resp_body.pointer("/data/yaml").and_then(Value::as_str) {
-            if let Some(edition) = resp_body
-                .pointer("/data/data_edition")
-                .and_then(Value::as_str)
-            {
+        if let Some(yaml) = data.get("yaml").and_then(Value::as_str) {
+            if let Some(edition) = data.get("data_edition").and_then(Value::as_str) {
                 println!("# Loaded edition: {edition}");
             }
             println!("{yaml}");
@@ -318,8 +347,28 @@ async fn docs(
         }
     }
 
-    output::print_json(&resp_body);
+    output::print_json(&data);
     Ok(())
+}
+
+/// The `patstat_docs` input for the docs selectors (clap keeps them mutually
+/// exclusive). The tool answers an empty input with the compact manifest, so
+/// the no-flag run asks for `compact: false` — the full docs, as before.
+fn docs_input(
+    section: Option<String>,
+    workflow: Option<String>,
+    endpoint: Option<String>,
+    compact: bool,
+) -> Value {
+    if let Some(section) = section {
+        json!({ "section": section })
+    } else if let Some(workflow) = workflow {
+        json!({ "workflow": workflow })
+    } else if let Some(endpoint) = endpoint {
+        json!({ "endpoint": endpoint })
+    } else {
+        json!({ "compact": compact })
+    }
 }
 
 async fn portfolio(
@@ -328,35 +377,26 @@ async fn portfolio(
     from_year: Option<i32>,
     to_year: Option<i32>,
 ) -> Result<()> {
-    let mut body = json!({ "applicant": applicant });
+    let mut input = json!({ "applicant": applicant });
     if let Some(from_year) = from_year {
-        body["fromYear"] = json!(from_year);
+        input["from_year"] = json!(from_year);
     }
     if let Some(to_year) = to_year {
-        body["toYear"] = json!(to_year);
+        input["to_year"] = json!(to_year);
     }
 
-    let envelope = ctx
-        .execute_json_envelope(ctx.post("/v1/patstat/portfolio", &body))
-        .await?;
-    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
-        output::print_json(&envelope);
-        return Ok(());
-    }
-
-    let http_ok = envelope.get("ok").and_then(Value::as_bool) == Some(true);
-    let resp_body = envelope.get("body").cloned().unwrap_or(Value::Null);
-
-    if !http_ok {
-        return Err(render_error(ctx, &envelope, &resp_body));
-    }
+    let data = match call(ctx, "patstat_portfolio", &input).await? {
+        Outcome::DryRun => return Ok(()),
+        Outcome::Failed(envelope) => return Err(render_error(ctx, &envelope)),
+        Outcome::Data(data) => data,
+    };
 
     if ctx.output_format == "json" {
-        output::print_json(&resp_body);
+        output::print_json(&data);
         return Ok(());
     }
 
-    print_portfolio(&resp_body);
+    print_portfolio(&data);
     Ok(())
 }
 
@@ -371,7 +411,8 @@ async fn portfolio(
 /// to the shared envelope + hint-box rendering every other command uses.
 ///
 /// [`PrintedError`]: crate::client::PrintedError
-fn render_error(ctx: &Context, envelope: &Value, body: &Value) -> anyhow::Error {
+fn render_error(ctx: &Context, envelope: &Value) -> anyhow::Error {
+    let body = &error_body(envelope);
     let code = body
         .pointer("/error/code")
         .and_then(Value::as_str)
@@ -383,10 +424,7 @@ fn render_error(ctx: &Context, envelope: &Value, body: &Value) -> anyhow::Error 
         _ => render_generic_error(ctx, envelope),
     }
 
-    match envelope.get("status").and_then(Value::as_u64) {
-        Some(status) => crate::client::PrintedError::with_status(status as u16).into(),
-        None => crate::client::PrintedError::new().into(),
-    }
+    printed_error(envelope)
 }
 
 /// The candidate-list rendering the ambiguity flow needs in both output
@@ -398,21 +436,23 @@ fn render_ambiguous(ctx: &Context, body: &Value) {
         .pointer("/error/message")
         .and_then(Value::as_str)
         .unwrap_or("The applicant name matches several distinct entities.");
-    let candidates = body
-        .pointer("/error/candidates")
+    let candidates = error_field(body, "candidates")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
 
     if ctx.output_format == "json" {
-        output::print_json(&json!({
-            "ok": false,
-            "error": {
-                "code": "patstat_applicant_ambiguous",
-                "message": message,
-                "candidates": candidates,
-            },
-        }));
+        let mut error = json!({
+            "code": "patstat_applicant_ambiguous",
+            "message": message,
+            "candidates": candidates,
+        });
+        // The backend's details ride along verbatim, next to the flattened
+        // candidate list existing consumers read.
+        if let Some(details) = body.pointer("/error/details") {
+            error["details"] = details.clone();
+        }
+        output::print_json(&json!({ "ok": false, "error": error }));
         return;
     }
 

@@ -197,8 +197,10 @@ provider-specific routes they used to call are retired (backend ADR 0013).
 per-tool docs; `flowleap tools run <name>` executes one.
 
 Named non-facade exceptions: key validation (usable before subscribing), the
-PATSTAT surface, auth/OAuth, and `api request` (the raw escape hatch, which
-calls whatever path you give it).
+`patstat graph` verbs (on the `/v1/patstat/graph/*` routes until #96),
+auth/OAuth, and `api request` (the raw escape hatch, which calls whatever path
+you give it). `patstat portfolio`, `docs` and `query` run on the facade like
+every other data command.
 
 | Endpoint | Method | Auth Required |
 |----------|--------|---------------|
@@ -209,7 +211,7 @@ calls whatever path you give it).
 | `/v1/tools` | GET | Yes |
 | `/v1/tools/openapi.json` | GET | Yes |
 | `/v1/tools/{tool_name}` | POST | Yes |
-| `/v1/patstat/*` | POST/GET | Yes |
+| `/v1/patstat/graph/*` (graph verbs only, until #96) | GET | Yes |
 | `/api/profile` | GET | Yes |
 | `/api/usage` | GET | Yes |
 | `/api/tokens` (create/list) | POST/GET | Yes (create requires Clerk auth, not an API token) |
@@ -233,6 +235,18 @@ calls whatever path you give it).
 | `academic search`, `npl` | `search_academic` / `search_npl` |
 | `analytics`, `ocr` | `patent_analytics` / `ocr` |
 | `compare` / `figures` / `summary` / `timeline` / `convert-number` | `compare_patents` / `get_patent_image` / `get_patent_summary` / `get_prosecution_timeline` / `convert_patent_number` |
+| `patstat portfolio` | `patstat_portfolio` (`--from-year`/`--to-year` → `from_year`/`to_year`) |
+| `patstat docs` | `patstat_docs` (`--section`/`--workflow`/`--endpoint`; no flag sends `compact: false` for the full docs, `--compact` sends `compact: true`) |
+| `patstat query` | `patstat_query` (`--retry-of` → `retry_of`) — **never resent by the client**, see below |
+
+**No hidden retry on guarded SQL.** The client resends a request on its own
+after a 5xx, a connection failure or a short 429 (twice by default,
+`FLOWLEAP_MAX_RETRIES`). `patstat_query` is the one exception: it is sent
+exactly once, on `patstat query`, `tools run` and the MCP `tools/call` path
+alike (`tools::retry_policy_for`, the one place the policy is chosen). Backend
+ADR 0010 gives the agent the one informed retry; a client resend would swallow
+the cold-timeout signal. Its typed errors (`patstat_sql_*`, `patstat_busy`, …)
+reach the caller with the backend `code`, `message` and `details` verbatim.
 
 Tool parameters are `snake_case`. `figures --out` fetches image bytes from
 `get_patent_image` itself (`include_images: true` returns base64 pages) — there

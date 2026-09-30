@@ -24,6 +24,19 @@ const DEFAULT_MAX_RETRIES: u32 = 2;
 /// long; longer waits pass through to the envelope so the caller decides.
 const RETRY_AFTER_MAX_SECS: u64 = 5;
 
+/// Whether the client may resend a request on its own after a transient
+/// failure (5xx, connection failure, short 429). Chosen per request.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RetryPolicy {
+    /// Bounded, jittered resends on transient failures (the default).
+    #[default]
+    Transient,
+    /// Exactly one send: the caller owns any retry. Guarded SQL uses this —
+    /// a hidden resend would swallow the cold-timeout signal the agent needs
+    /// to spend its one informed retry (backend ADR 0010).
+    Never,
+}
+
 /// Build the one shared HTTP client every command uses. Applies a bounded
 /// request/connect timeout (so a hung backend can never block a caller forever)
 /// and the versioned User-Agent. Both timeouts are overridable via env for
@@ -839,9 +852,13 @@ impl Context {
     /// resend is safe. Retries: 5xx (server transient), connection-level errors
     /// (refused/reset/unreachable), and a 429 whose Retry-After is short. A
     /// request timeout and any 4xx are never retried. A non-cloneable body
-    /// (streaming) is attempted exactly once.
-    async fn send_retrying(&self, req: Request) -> Result<Response> {
-        let max = max_retries();
+    /// (streaming) is attempted exactly once, and so is every request under
+    /// [`RetryPolicy::Never`].
+    async fn send_retrying(&self, req: Request, policy: RetryPolicy) -> Result<Response> {
+        let max = match policy {
+            RetryPolicy::Transient => max_retries(),
+            RetryPolicy::Never => 0,
+        };
         let mut attempt: u32 = 0;
         loop {
             let Some(this_attempt) = req.try_clone() else {
@@ -884,7 +901,10 @@ impl Context {
     /// Send a request; on 401 with a stored session token, retry once with
     /// the stored API key. A Clerk session token expires quickly and would
     /// otherwise shadow a still-valid fl_pat_ key (see auth_header precedence).
-    async fn send_with_auth_fallback(&self, req: Request) -> Result<Response> {
+    ///
+    /// The fallback is a credential switch after a 401 — the request never
+    /// ran — so it applies under every [`RetryPolicy`].
+    async fn send_with_auth_fallback(&self, req: Request, policy: RetryPolicy) -> Result<Response> {
         let retry = match self.auth_fallback_key() {
             Some(key) if req.headers().contains_key(reqwest::header::AUTHORIZATION) => {
                 req.try_clone().and_then(|mut r| {
@@ -899,7 +919,7 @@ impl Context {
             _ => None,
         };
 
-        let resp = self.send_retrying(req).await?;
+        let resp = self.send_retrying(req, policy).await?;
         if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
             return Ok(resp);
         }
@@ -908,7 +928,7 @@ impl Context {
         if self.verbose {
             eprintln!("  401 with session token — retrying with stored API key");
         }
-        let retry_resp = self.send_retrying(retry).await?;
+        let retry_resp = self.send_retrying(retry, policy).await?;
         if retry_resp.status().is_success() {
             eprintln!(
                 "warning: the stored session token was rejected (401); the request succeeded with the stored API key. \
@@ -947,7 +967,9 @@ impl Context {
             bail!("Dry run — no request was sent");
         }
 
-        let resp = self.send_with_auth_fallback(req).await?;
+        let resp = self
+            .send_with_auth_fallback(req, RetryPolicy::Transient)
+            .await?;
 
         if self.verbose {
             eprintln!("  Status: {}", resp.status());
@@ -975,7 +997,9 @@ impl Context {
             return self.dry_run_response(&req);
         }
 
-        let resp = self.send_with_auth_fallback(req).await?;
+        let resp = self
+            .send_with_auth_fallback(req, RetryPolicy::Transient)
+            .await?;
 
         if self.verbose {
             eprintln!("  Status: {}", resp.status());
@@ -1007,7 +1031,9 @@ impl Context {
             return self.dry_run_response(&req);
         }
 
-        let resp = self.send_with_auth_fallback(req).await?;
+        let resp = self
+            .send_with_auth_fallback(req, RetryPolicy::Transient)
+            .await?;
 
         if self.verbose {
             eprintln!("  Status: {}", resp.status());
@@ -1026,6 +1052,16 @@ impl Context {
 
     /// Execute and return a stable response envelope, preserving non-2xx API bodies.
     pub async fn execute_json_envelope(&self, req: RequestBuilder) -> Result<Value> {
+        self.execute_json_envelope_with(req, RetryPolicy::Transient)
+            .await
+    }
+
+    /// [`Self::execute_json_envelope`] under an explicit [`RetryPolicy`].
+    pub async fn execute_json_envelope_with(
+        &self,
+        req: RequestBuilder,
+        policy: RetryPolicy,
+    ) -> Result<Value> {
         let req = req.build()?;
         self.guard_credentials(&req)?;
 
@@ -1037,7 +1073,7 @@ impl Context {
             return self.dry_run_response(&req);
         }
 
-        let resp = self.send_with_auth_fallback(req).await?;
+        let resp = self.send_with_auth_fallback(req, policy).await?;
         let status = resp.status();
         let headers = resp.headers().clone();
         let text = resp.text().await.unwrap_or_default();
@@ -1089,7 +1125,17 @@ impl Context {
     }
 
     pub async fn execute_json_body_or_error(&self, req: RequestBuilder) -> Result<Value> {
-        let envelope = self.execute_json_envelope(req).await?;
+        self.execute_json_body_or_error_with(req, RetryPolicy::Transient)
+            .await
+    }
+
+    /// [`Self::execute_json_body_or_error`] under an explicit [`RetryPolicy`].
+    pub async fn execute_json_body_or_error_with(
+        &self,
+        req: RequestBuilder,
+        policy: RetryPolicy,
+    ) -> Result<Value> {
+        let envelope = self.execute_json_envelope_with(req, policy).await?;
         if envelope.get("dryRun").and_then(|v| v.as_bool()) == Some(true) {
             return Ok(envelope);
         }
