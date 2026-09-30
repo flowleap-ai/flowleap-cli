@@ -136,8 +136,8 @@ fn probe_credentials(
 /// verdicts object, mapping the middleware's eager EPO rejection (400
 /// patent_provider_key_invalid) into an epo-invalid verdict.
 ///
-/// Shared with `doctor`, which uses the same verdicts (source user|server|none,
-/// valid true|false|null) to decide which provider next-steps actually block.
+/// Shared with `doctor`, which uses the same verdicts (source
+/// user|stored|server|none, valid true|false|null) to decide which provider next-steps actually block.
 pub(crate) async fn validate(ctx: &Context, creds: Credentials) -> Result<Value> {
     let probe = with_candidate_keys(ctx, creds);
     let envelope = probe
@@ -153,7 +153,7 @@ pub(crate) async fn validate(ctx: &Context, creds: Credentials) -> Result<Value>
             .as_str()
             .unwrap_or("Provider rejected the supplied keys.")
             .to_string();
-        // `source` is a closed union (user|server|none) answering "where does
+        // `source` is a closed union (user|stored|server|none) answering "where does
         // the key that served this request come from". USPTO was never
         // reached, so no member of that union is true — say so structurally
         // (`checked: false`, null source) instead of inventing a value.
@@ -449,27 +449,58 @@ fn prompt_uspto_key() -> Result<String> {
     Ok(key.trim().to_string())
 }
 
-fn skip_warning(provider: &str, server_has_keys: bool, commands: &str) {
-    if server_has_keys {
-        println!(
-            "  {} Skipped — the server has its own {} keys, so commands still work.",
+/// What keeps an office working when the wizard's key step for it is
+/// skipped. `Stored` and `Server` come from the validate reply's `source`
+/// (the user's stored key on FlowLeap, backend ADR 0023; the server's own
+/// keys); `Local` is a key already on this machine.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Coverage {
+    Local,
+    Stored,
+    Server,
+}
+
+/// The coverage a validate verdict proves for one office: a stored key the
+/// office did not reject, or the server's own keys. Anything else (a
+/// forwarded key, `none`, an unchecked office) proves no coverage that
+/// survives skipping the local key.
+fn remote_coverage(verdict: &Value) -> Option<Coverage> {
+    match verdict["source"].as_str() {
+        Some("stored") if verdict["valid"] != Value::Bool(false) => Some(Coverage::Stored),
+        Some("server") => Some(Coverage::Server),
+        _ => None,
+    }
+}
+
+fn skip_warning(provider: &str, coverage: Option<Coverage>, commands: &str) {
+    let office = provider.to_uppercase();
+    match coverage {
+        Some(Coverage::Stored) => println!(
+            "  {} Skipped — your {office} key stored on FlowLeap is used, so commands still work.",
             "•".yellow(),
-            provider.to_uppercase()
-        );
-    } else {
-        println!();
-        println!(
-            "  {} Skipped {} keys — {} will fail until they are added:",
-            "!".yellow().bold(),
-            provider.to_uppercase(),
-            commands
-        );
-        println!(
-            "    add later with {} or {}",
-            format!("flowleap keys set {}", provider).cyan(),
-            "flowleap setup".cyan()
-        );
-        println!();
+        ),
+        Some(Coverage::Server) => println!(
+            "  {} Skipped — the server has its own {office} keys, so commands still work.",
+            "•".yellow(),
+        ),
+        Some(Coverage::Local) => println!(
+            "  {} Skipped — the {office} keys on this machine stay in use.",
+            "•".yellow(),
+        ),
+        None => {
+            println!();
+            println!(
+                "  {} Skipped {office} keys — {} will fail until they are added:",
+                "!".yellow().bold(),
+                commands
+            );
+            println!(
+                "    add later with {} or {}",
+                format!("flowleap keys set {}", provider).cyan(),
+                "flowleap setup".cyan()
+            );
+            println!();
+        }
     }
 }
 
@@ -488,20 +519,20 @@ enum StepVerdict {
     Skipped(String),
 }
 
-/// Recap verdict for a skipped provider step, mirroring the server-aware
-/// `skip_warning` semantics (covered by server > existing keys kept > blocking).
+/// Recap verdict for a skipped provider step, mirroring the coverage-aware
+/// `skip_warning` semantics (stored key or server coverage > existing keys
+/// kept > blocking).
 fn skip_verdict(
     provider_label: &str,
-    covered_by_server: bool,
+    coverage: Option<Coverage>,
     kept_existing: bool,
     commands: &str,
 ) -> StepVerdict {
-    let reason = if covered_by_server {
-        "covered by server".to_string()
-    } else if kept_existing {
-        "kept existing keys".to_string()
-    } else {
-        format!("{commands} will fail until keys are added")
+    let reason = match coverage {
+        Some(Coverage::Stored) => "stored key on FlowLeap is used".to_string(),
+        Some(Coverage::Server) => "covered by server".to_string(),
+        _ if kept_existing => "kept existing keys".to_string(),
+        _ => format!("{commands} will fail until keys are added"),
     };
     StepVerdict::Skipped(format!("{provider_label} skipped — {reason}"))
 }
@@ -631,8 +662,8 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
     let baseline = validate(ctx, ctx.credentials.clone())
         .await
         .unwrap_or(json!({}));
-    let epo_on_server = baseline["epo"]["source"].as_str() == Some("server");
-    let uspto_on_server = baseline["uspto"]["source"].as_str() == Some("server");
+    let epo_covered = remote_coverage(&baseline["epo"]);
+    let uspto_covered = remote_coverage(&baseline["uspto"]);
 
     println!();
     println!("{}", "Patent data providers — bring your own keys".bold());
@@ -675,9 +706,9 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
                     {
                         continue;
                     }
-                    skip_warning("epo", epo_on_server, "patent/ops commands");
+                    skip_warning("epo", epo_covered, "patent/ops commands");
                     epo_verdict =
-                        skip_verdict("EPO", epo_on_server, epo_existing, "patent/ops commands");
+                        skip_verdict("EPO", epo_covered, epo_existing, "patent/ops commands");
                     break;
                 }
                 Value::Bool(true) => {
@@ -689,9 +720,9 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
                         .default(true)
                         .interact()?
                     {
-                        skip_warning("epo", epo_on_server, "patent/ops commands");
+                        skip_warning("epo", epo_covered, "patent/ops commands");
                         epo_verdict =
-                            skip_verdict("EPO", epo_on_server, epo_existing, "patent/ops commands");
+                            skip_verdict("EPO", epo_covered, epo_existing, "patent/ops commands");
                         break;
                     }
                     epo_verdict =
@@ -705,10 +736,10 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
     } else {
         skip_warning(
             "epo",
-            epo_on_server || creds.epo_pair().is_some(),
+            epo_covered.or(creds.epo_pair().map(|_| Coverage::Local)),
             "patent/ops commands",
         );
-        epo_verdict = skip_verdict("EPO", epo_on_server, epo_existing, "patent/ops commands");
+        epo_verdict = skip_verdict("EPO", epo_covered, epo_existing, "patent/ops commands");
     }
 
     // [4/4] USPTO key
@@ -745,10 +776,10 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
                     {
                         continue;
                     }
-                    skip_warning("uspto", uspto_on_server, "uspto/citation commands");
+                    skip_warning("uspto", uspto_covered, "uspto/citation commands");
                     uspto_verdict = skip_verdict(
                         "USPTO",
-                        uspto_on_server,
+                        uspto_covered,
                         uspto_existing,
                         "uspto/citation commands",
                     );
@@ -763,10 +794,10 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
                         .default(true)
                         .interact()?
                     {
-                        skip_warning("uspto", uspto_on_server, "uspto/citation commands");
+                        skip_warning("uspto", uspto_covered, "uspto/citation commands");
                         uspto_verdict = skip_verdict(
                             "USPTO",
-                            uspto_on_server,
+                            uspto_covered,
                             uspto_existing,
                             "uspto/citation commands",
                         );
@@ -782,12 +813,12 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
     } else {
         skip_warning(
             "uspto",
-            uspto_on_server || creds.uspto_key.is_some(),
+            uspto_covered.or(creds.uspto_key.as_ref().map(|_| Coverage::Local)),
             "uspto/citation commands",
         );
         uspto_verdict = skip_verdict(
             "USPTO",
-            uspto_on_server,
+            uspto_covered,
             uspto_existing,
             "uspto/citation commands",
         );

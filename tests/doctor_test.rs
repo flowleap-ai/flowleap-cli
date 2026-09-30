@@ -587,3 +587,137 @@ async fn human_server_covered_provider_renders_dot_and_no_step() {
         "blocking provider keeps its steps: {stdout}"
     );
 }
+
+/// A stored key (backend ADR 0023) is a key present: validate `source:
+/// "stored"` for both offices with no local keys → ready, exit 0, no key
+/// steps, and the source reported per office in `keyValidation.providers`.
+#[tokio::test]
+async fn stored_keys_count_as_present() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "stored", "valid": true },
+            "uspto": { "source": "stored", "valid": null },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0));
+    let report = stdout_json(&output);
+    assert_eq!(report["ready"], true, "{report}");
+    assert_eq!(report["nextSteps"], json!([]));
+    assert_eq!(report["providerKeys"]["epo"], false);
+    assert_eq!(report["keyValidation"]["source"], "server");
+    assert_eq!(
+        report["keyValidation"]["providers"],
+        json!({ "epo": "stored", "uspto": "stored" })
+    );
+    assert_existing_fields(&report);
+}
+
+/// The human checklist names a stored key as the user's own key (✓), never
+/// as server coverage.
+#[tokio::test]
+async fn human_doctor_names_a_stored_key() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "stored", "valid": true },
+            "uspto": { "source": "server", "valid": null },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = stdout_human(&output);
+    assert!(
+        stdout.contains("✓ EPO keys: none locally — stored key on FlowLeap"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("• USPTO key: none locally — covered by server"),
+        "{stdout}"
+    );
+}
+
+/// A stored key next to an office with no key anywhere: only the `none`
+/// office yields key steps, and the stored office yields none.
+#[tokio::test]
+async fn a_stored_key_leaves_only_the_keyless_office_pending() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "stored", "valid": true },
+            "uspto": { "source": "none", "valid": false },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(1));
+    let report = stdout_json(&output);
+    assert_eq!(report["ready"], false);
+    assert_eq!(
+        step_ids(&report),
+        ["obtain-uspto-key", "store-uspto-key", "verify-keys"]
+    );
+    assert_eq!(
+        report["keyValidation"]["providers"],
+        json!({ "epo": "stored", "uspto": "none" })
+    );
+}
+
+/// A stored key the office rejected blocks like a rejected forwarded key.
+#[tokio::test]
+async fn a_rejected_stored_key_is_blocking() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "stored", "valid": false, "message": "rejected" },
+            "uspto": { "source": "stored", "valid": true },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(1));
+    let report = stdout_json(&output);
+    assert_eq!(
+        step_ids(&report),
+        ["obtain-epo-keys", "store-epo-keys", "verify-keys"]
+    );
+}
