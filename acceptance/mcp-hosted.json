@@ -1,0 +1,1 @@
+{"mcpServers":{"flowleap":{"type":"http","url":"https://api.flowleap.co/mcp","headers":{"Authorization":"Bearer ${FLOWLEAP_GATE_TOKEN}"}}}}
