@@ -401,6 +401,13 @@ fn error_code(body: &Value) -> Option<&str> {
 /// - `trial_data_budget_exhausted` (+ `provider`) → today's shared trial data budget
 ///   on FlowLeap's credentials is spent (429, backend ADR 0017). Resets at the
 ///   next UTC day; the user's own free keys lift it permanently
+///
+/// While the backend keeps stored keys (backend ADR 0023, #516), a
+/// `data_keys_required` body also carries `keysPageUrl` (the FlowLeap
+/// "Patent-data keys" page) and `nextStep` (`{ id, actor: "human", title, url }`,
+/// the shape and ids of `doctor`'s `nextSteps`). Both are copied onto the hint
+/// verbatim when present, and the human action then names the page first.
+/// Absent, the hint is exactly the one it was before.
 pub fn provider_keys_hint(status: u16, body: &Value) -> Option<Value> {
     if status < 400 {
         return None;
@@ -461,6 +468,24 @@ pub fn provider_keys_hint(status: u16, body: &Value) -> Option<Value> {
             hint["resetsAt"] = json!(resets_at);
         }
     }
+    let keys_page_url = body.pointer("/error/keysPageUrl").and_then(Value::as_str);
+    if let Some(url) = keys_page_url {
+        hint["keysPageUrl"] = json!(url);
+    }
+    if let Some(next_step) = body
+        .pointer("/error/nextStep")
+        .filter(|step| step.is_object())
+    {
+        hint["nextStep"] = next_step.clone();
+    }
+    if let Some(url) = keys_page_url.or_else(|| hint["nextStep"]["url"].as_str()) {
+        hint["humanAction"] = json!(format!(
+            "Ask the user to add the key on the FlowLeap Patent-data keys page ({url}) — \
+             a stored key is used whenever no key is forwarded — or to run 'flowleap setup' \
+             in a terminal. Never ask for the key value in the chat. Getting keys involves \
+             a browser signup, so an agent cannot complete this alone."
+        ));
+    }
     Some(hint)
 }
 
@@ -507,6 +532,22 @@ pub fn print_keys_hint_box(hint: &Value) {
         eprintln!("│ (neither on this machine nor on the server).");
     }
     eprintln!("│");
+    // The backend's human next step (#516), rendered like doctor's numbered
+    // next steps: the title, then the URL on its own line.
+    if let Some(title) = hint["nextStep"]["title"].as_str() {
+        eprintln!("│ Next step (human): {title}");
+        if let Some(url) = hint["nextStep"]["url"]
+            .as_str()
+            .or_else(|| hint["keysPageUrl"].as_str())
+        {
+            eprintln!("│   {}", url.cyan());
+        }
+        eprintln!("│");
+    } else if let Some(url) = hint["keysPageUrl"].as_str() {
+        eprintln!("│ Add the key on the FlowLeap Patent-data keys page:");
+        eprintln!("│   {}", url.cyan());
+        eprintln!("│");
+    }
     eprintln!("│ Fix it (requires a human — keys come from a browser signup):");
     eprintln!("│   {}   guided setup", "flowleap setup".cyan().bold());
     eprintln!("│   {}", command.cyan());
@@ -1290,6 +1331,57 @@ fn redact_sensitive_json(value: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `data_keys_required` body without the #516 fields: the hint keeps
+    /// exactly its previous shape — no `keysPageUrl`, no `nextStep`, and the
+    /// `flowleap setup` human action.
+    #[test]
+    fn the_keys_hint_is_unchanged_without_the_keys_page_fields() {
+        let body = json!({ "error": { "code": "data_keys_required", "provider": "epo" } });
+        let hint = provider_keys_hint(400, &body).expect("a key gate");
+        assert_eq!(hint["code"], "provider_keys_required");
+        assert_eq!(hint["provider"], "epo");
+        assert!(hint.get("keysPageUrl").is_none(), "{hint}");
+        assert!(hint.get("nextStep").is_none(), "{hint}");
+        assert!(
+            hint["humanAction"]
+                .as_str()
+                .unwrap()
+                .starts_with("Run 'flowleap setup'"),
+            "{hint}"
+        );
+    }
+
+    /// With stored keys enabled the backend adds `keysPageUrl` and a human
+    /// `nextStep`; the hint carries both verbatim and its human action names
+    /// the page and forbids asking for the key value in the chat.
+    #[test]
+    fn the_keys_hint_carries_the_keys_page_and_the_human_next_step() {
+        let url = "https://www.flowleap.co/en/dashboard/keys";
+        let next_step = json!({
+            "id": "store-uspto-key",
+            "actor": "human",
+            "title": "Add your USPTO ODP API key on the FlowLeap Patent-data keys page",
+            "url": url,
+        });
+        let body = json!({ "error": {
+            "code": "data_keys_required",
+            "provider": "uspto",
+            "keysPageUrl": url,
+            "nextStep": next_step,
+        }});
+        let hint = provider_keys_hint(400, &body).expect("a key gate");
+        assert_eq!(hint["code"], "provider_keys_required");
+        assert_eq!(hint["provider"], "uspto");
+        assert_eq!(hint["keysPageUrl"], url);
+        assert_eq!(hint["nextStep"], next_step);
+        let action = hint["humanAction"].as_str().unwrap();
+        assert!(action.contains(url), "{action}");
+        assert!(action.contains("Never ask for the key value"), "{action}");
+        // The existing fields stay: the fields are additive.
+        assert_eq!(hint["requiresHumanIntervention"], true);
+        assert_eq!(hint["verify"], "flowleap keys test");
+    }
 
     /// The full exit-code contract for typed errors (see AGENTS.md).
     #[test]
