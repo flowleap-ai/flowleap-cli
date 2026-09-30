@@ -102,10 +102,10 @@ flowleap patstat query "SELECT symbol, title FROM flowleap.cpc_scheme WHERE titl
 #### flowleap-patstat — Portfolio Analytics AND guarded SQL over the PATSTAT snapshot — structured-criteria aggregates by applicant/CPC/office/year/family/grant status, priority and continuation chains, decoded legal events, concept-to-CPC text discovery, INPADOC extended-family coverage, every number carrying a Data Edition citation.
 
 ```bash
+flowleap --json tools run patstat_portfolio applicant="<applicant name>"
 flowleap --json patstat portfolio "Siemens AG" --from-year 2015 --to-year 2023
 flowleap patstat docs --section examples
 flowleap patstat query "SELECT office, COUNT(DISTINCT family_id) AS inventions FROM flowleap.applications a JOIN flowleap.applicants ap ON ap.application_id = a.application_id WHERE UPPER(ap.name) LIKE 'SIEMENS%' GROUP BY office ORDER BY inventions DESC" --question "where does Siemens hold the most inventions?"
-flowleap --json tools run patstat_portfolio applicant="<applicant name>"
 ```
 
 #### flowleap-patstat-graph — Graph Analytics over the PATSTAT snapshot — a named node and the relationships around it.

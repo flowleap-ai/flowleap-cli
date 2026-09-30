@@ -15,7 +15,7 @@ them (verbose/dry-run redact).
 
 The gate applies wherever patent data is read — the commands and the Tools
 facade alike, since the commands run on the facade. Key validation
-(`keys test`, `keys set`) is a named non-facade exception and works before a
+(`keys test`, `keys set`) runs outside the facade and works before a
 subscription exists, so setup can always be diagnosed.
 
 ## Diagnose

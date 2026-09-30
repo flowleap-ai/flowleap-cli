@@ -4,14 +4,15 @@
  *
  * QUESTION  One company's patent filings by year x office, plus grant ratio.
  * DATA      `flowleap patstat portfolio "<applicant>" --from-year Y --to-year Y --json`
- *           Response envelope (backend body on success), see cli issue #32 /
- *           POST /v1/patstat/portfolio:
- *             { success, applicant:{query,matched_name,matched_psn_names,other_matches},
+ *           Tool data of `patstat_portfolio`, printed verbatim (cli #95):
+ *             { applicant:{query,matched_name,matched_psn_names,other_matches},
  *               filters:{from_year,to_year}, totals:{applications,granted},
  *               by_year:[{year,applications,granted}],
  *               by_office:[{office,applications,granted|null}],
  *               by_year_office:[{year,office,applications,granted|null}],
- *               grant_status_caveats:[...], notes:[...], summary, data_edition }
+ *               grant_status_caveats:[...], notes:[...], summary, data_edition, attribution }
+ *           An ambiguous name fails with its candidates at
+ *           error.details.candidates.
  *
  * HOW TO ADAPT
  *   1. Pin APPLICANT to the EXACT harmonized name resolved with the user
@@ -64,7 +65,7 @@ function envelopeError(parsed) {
 	const body = parsed.body && typeof parsed.body === 'object' ? parsed.body : parsed;
 	const err = body.error && typeof body.error === 'object' ? body.error : null;
 	if (!err) return null;
-	return { code: err.code ?? null, message: err.message ?? '', candidates: err.candidates ?? null };
+	return { code: err.code ?? null, message: err.message ?? '', candidates: err.details?.candidates ?? err.candidates ?? null };
 }
 
 /** Run `flowleap <args> --json` as a subprocess and return the parsed body. Never holds a token. */

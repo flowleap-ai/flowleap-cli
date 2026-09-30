@@ -11,16 +11,16 @@ self-describing registry. It is not one API among several — every JSON
 patent-data capability is a tool.
 
 `flowleap tools` is the direct way in. Every data command (`patent`, `ops`,
-`uspto`, `citation`, `legal`, `npl`, `academic`, `analytics`, `ocr`, and the
-one-call verbs) already runs on it, so use the named commands for ordinary work
+`uspto`, `citation`, `legal`, `npl`, `academic`, `analytics`, `ocr`, `patstat`,
+and the one-call verbs) already runs on it, so use the named commands for ordinary work
 and reach for `tools run` when you want a parameter the command does not expose,
 a tool with no command of its own, or a schema you can read at runtime.
 
 The per-source **provider routes** those commands used to call — the endpoints
 from before the facade became canonical — are **retired endpoints**: permanently
 removed, answering `410 Gone` with a machine-readable successor. Retirement is
-forever, and a retired path is never reused. Named non-facade exceptions:
-PATSTAT, auth/OAuth, key validation, and `api request`.
+forever, and a retired path is never reused. Only auth/OAuth, key validation
+and `api request` run outside the facade.
 
 ## Discover
 
@@ -104,10 +104,21 @@ Guidelines, MPEP, …), `get_legal_jurisdictions`.
 Analytics and documents: `patent_analytics` (Topic Analytics, free-text
 keywords), `ocr`. Meta: `server_info`.
 
-Portfolio Analytics (structured-criteria applicant aggregation over the PATSTAT
-snapshot) is **not** on the facade — it stays a named non-facade exception under
-`flowleap patstat`. See `flowleap-patstat` for the routing rule against Topic
-Analytics (`flowleap analytics`) and the `data_edition` contract.
+PATSTAT tools (the PATSTAT snapshot: no patent-data key, a gate and a rate
+limit per tool, `data_edition` and `attribution` on every result), each beside
+its command:
+
+- Portfolio and guarded SQL (`flowleap-patstat`): `patstat_portfolio`
+  (`patstat portfolio`), `patstat_query` (`patstat query`), `patstat_docs`
+  (`patstat docs`). `patstat_query` is sent exactly once on every path,
+  `tools run` included; the agent owns its one retry (see `flowleap-patstat`).
+- Graph Analytics (`flowleap-patstat-graph`): `patstat_resolve`,
+  `patstat_cpc`, `patstat_patent`, `patstat_applicant`, `patstat_technology`,
+  `patstat_neighborhood`, `patstat_path`, `patstat_explain`
+  (`patstat graph resolve|cpc|patent|applicant|technology|neighborhood|path|explain`).
+
+`flowleap-patstat` carries the routing rule between Topic, Portfolio and Graph
+Analytics.
 
 ## Recipes
 

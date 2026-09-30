@@ -26,6 +26,26 @@ containing CLI skills copied byte-for-byte from a pinned flowleap-cli tag
 catalog from Skill Packs at build time. Skill Packs ship CLI skills only —
 app skills never flow through them.
 
+**MCP server**:
+The `flowleap mcp` stdio bridge the CLI binary embeds: it mirrors the backend
+tools registry as MCP tools and serves the backend's doctrine documents as MCP
+resources and prompts. Speaks only what the registry publishes — it authors no
+tool, no schema and no doctrine of its own. A **hosted MCP server** is the same
+registry served by the backend over HTTP for clients that cannot run a binary;
+the two differ in transport and sign-in only, never in tool list.
+_Avoid_: "the MCP" alone where stdio and hosted could be meant; treating the
+bridge as a place to add a tool or a rule (that is the registry's job).
+
+**PATSTAT tool**:
+A tool on the backend tools facade whose data comes from the analytics layer
+(the PATSTAT snapshot): portfolio, guarded SQL query, docs, and the graph
+verbs. A PATSTAT tool carries the Data Edition and the EPO attribution on
+every result, needs no Patent-Data Key, and publishes its own gate (sign-in or
+plan) and rate limit in the registry. The `patstat` commands are the CLI's
+ergonomic verbs over these tools, the same way `ops` is over the document tools.
+_Avoid_: "named non-facade exception" (the pre-2026-09 state, retired once the
+tools are registered); "the PATSTAT API" (there is one facade).
+
 **Agent-mediated onboarding**:
 Onboarding driven by an agent on a human's behalf: the agent executes every
 step it can and relays the rest to the human. Contrast with the interactive

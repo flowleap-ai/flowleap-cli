@@ -56,7 +56,7 @@ function envelopeError(parsed) {
 	const body = parsed.body && typeof parsed.body === 'object' ? parsed.body : parsed;
 	const err = body.error && typeof body.error === 'object' ? body.error : null;
 	if (!err) return null;
-	return { code: err.code ?? null, message: err.message ?? '', candidates: err.candidates ?? null };
+	return { code: err.code ?? null, message: err.message ?? '', candidates: err.details?.candidates ?? err.candidates ?? null };
 }
 
 /** Run `flowleap <args> --json` as a subprocess and return the parsed body. Never holds a token. */

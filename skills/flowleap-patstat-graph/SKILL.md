@@ -5,67 +5,80 @@ description: Graph Analytics over the PATSTAT snapshot — a named node and the 
 
 # FlowLeap Patstat Graph (Graph Analytics)
 
-Auth and global flags: see `flowleap-shared`. Six native commands under
-`flowleap patstat graph` — no raw `api request` escape hatch needed.
+Auth and global flags: see `flowleap-shared`.
 
-Like the rest of PATSTAT, this is a **named non-facade exception**: its own
-surface, no patent-data key, untouched by the provider-route retirement.
+Eight native commands under `flowleap patstat graph`. Each one runs one
+**PATSTAT tool** on the Tools facade, the same tool `flowleap mcp` serves under
+the same name. The graph tools need sign-in only: no plan and no patent-data
+key. They share a 30 requests/minute limit.
 
 ## Routing: which engine answers this?
-
-FlowLeap runs three analytics engines, split by **criteria shape**:
 
 | The question's essential criterion | Engine | Skill |
 |---|---|---|
 | Free-text keywords over title/abstract | Topic Analytics | `flowleap analytics` |
-| Structured criteria → a table of counts | Portfolio Analytics | `flowleap-patstat` |
+| Structured criteria giving a table of counts | Portfolio Analytics | `flowleap-patstat` |
 | **A named node and its relationships** | **Graph Analytics** | **this skill** |
 
-If the answer is a count, go to `flowleap-patstat`. If it is a *connection* —
-who cites what, what links these two patents, who co-files with whom — it is
-here. One known document's text, claims, or legal status is neither: use
-`flowleap-patent` / `flowleap-ops` / `flowleap-uspto`.
+A count goes to `flowleap-patstat`. A *connection* (who cites what, what links
+two patents, who co-files with whom) is here. One known document's text, claims
+or legal status is neither: use `flowleap-patent`, `flowleap-ops` or
+`flowleap-uspto`. The served procedure, routing first, then resolve, is
+`flowleap patstat docs --workflow graph`.
 
-## The six commands
+## The eight commands
 
 ```bash
 flowleap patstat graph resolve EP3477840
+flowleap patstat graph cpc "solid electrolyte"
 flowleap patstat graph patent EP3477840
 flowleap patstat graph applicant 98765
+flowleap patstat graph technology H01M10/0562
 flowleap patstat graph neighborhood pat:56123456 --depth 2 --edge-types cites,cited_by
 flowleap patstat graph path EP3477840 US5960411 --max-hops 3
 flowleap patstat graph explain EP3477840 --token-budget 4000
 ```
 
-| Command | Answers |
-|---|---|
-| `resolve <query>` | Number → its `pat:<appln_id>` anchor; free text → ranked applicant entities with `psn_id`, largest portfolio first |
-| `patent <number>` | The whole patent picture in one call: anchor, backward/forward citations, family, applicants/inventors/CPC, priorities |
-| `applicant <psn_id>` | One harmonized entity: filings by year, top CPC, jurisdictions, co-applicants |
-| `neighborhood <node>` | Bounded 1–2 hop expansion, examiner citations ranked first |
-| `path <a> <b>` | Shortest citation/family path between two patents |
-| `explain <node>` | Node card + top connections, the remainder grouped with TRUE counts |
+| Command | Tool | Answers |
+|---|---|---|
+| `resolve <query>` | `patstat_resolve` | Number → its `pat:<appln_id>` anchor; free text → ranked applicant entities with `psn_id`, largest portfolio first |
+| `cpc <keyword>` | `patstat_cpc` | Technology keyword → ranked CPC symbols with scheme title and application count |
+| `patent <number>` | `patstat_patent` | The whole patent picture in one call: anchor, backward/forward citations, family, applicants/inventors/CPC, priorities |
+| `applicant <psn_id>` | `patstat_applicant` | One harmonized entity: filings by year, top CPC, jurisdictions, co-applicants |
+| `technology <cpc>` | `patstat_technology` | One CPC area: top applicants, filing trend, grant rate by office, new entrants, seminal families, top inventors, geography |
+| `neighborhood <node>` | `patstat_neighborhood` | Bounded 1–2 hop expansion, examiner citations ranked first |
+| `path <a> <b>` | `patstat_path` | Shortest citation/family path between two patents |
+| `explain <node>` | `patstat_explain` | Node card + top connections, the remainder grouped with TRUE counts |
 
 Node ids are `pat:<appln_id>`, `person:<psn_id>`, `family:<docdb_family_id>`,
-`cpc:<symbol>`.
+`cpc:<symbol>`. Through `tools run` the inputs are snake_case: `q`, `number`,
+`psn_id`, `cpc`, `depth`, `edge_types` (an array), `max_hops`, `token_budget`.
 
-## Start with resolve
+## Start with resolve, or with cpc
 
-`resolve` is how a human input becomes a node id, and the graph verbs
+A human input becomes a node id through an entry ramp, and the graph verbs
 **refuse** rather than guess:
 
-- An ambiguous publication number is rejected with HTTP 400
-  `patstat_invalid_request` whose message names the candidates in prose. The
-  verbs never prompt — run `resolve` and pass the `pat:` id you meant.
-- `applicant` takes a strict numeric `psn_id`, which only `resolve <name>`
-  produces. A company name will not work there.
-- Passing a company name to a verb is refused the same way ("not a patent
-  node").
+- A number or a company name goes through `resolve`. `applicant` takes a strict
+  numeric `psn_id`, which only `resolve <name>` produces.
+- A technology word goes through `cpc`, and one symbol from its list goes to
+  `technology`. Take CPC codes from `cpc`, never from memory. When nothing
+  matches, `cpc` prints one line and exits 0: try a shorter or different
+  keyword.
 
-`resolve` on a company name is a **pick-one list, not an answer** — present
-the ranked candidates and let the user choose. It exits 0. An ambiguous
-*number* exits 1, so a script can never mistake a pick-one prompt for a
-resolved anchor.
+`resolve` on a company name is a **pick-one list, not an answer**: present the
+ranked candidates and let the user choose. It exits 0.
+
+An ambiguous publication number has one answer per verb family, and none exits
+0, so a script can never mistake a pick-one prompt for a resolved anchor:
+
+- `resolve` answers 200 with `kind: "ambiguous"` and its candidates, and exits 1.
+- `patent` answers 422 `patstat_patent_ambiguous`, with the candidates at
+  `error.details.candidates`.
+- `neighborhood`, `path` and `explain` refuse with 400
+  `patstat_invalid_request`, whose message names the candidates in prose.
+
+In each case, pass the `pat:` id the user meant.
 
 ## Reading output
 
@@ -93,9 +106,18 @@ absent section means no data, never a parsing slip. Truncation reads literally
 `Showing {shown} of {total} {label}.` — repeat the TRUE total when you quote
 the list. `Filings by Year` is uncapped; do not imply a cap there.
 
-**`--json`, every command** — the backend body exactly as it arrived, with no
-CLI envelope around it. There is no `body` wrapper: read `text`, `data`,
-`meta`, or `error` at the top level.
+**Human mode, `cpc` / `technology`** — `cpc` prints one line per candidate
+(symbol, scheme title, application count). `technology` prints the area card,
+then Top Applicants → Filing Trend → Grant Rate by Office → New Entrants →
+Seminal Families → Top Inventors → the three geography rankings → notes and
+data-quality flags → footer. Its notes say the most recent filing years are
+incomplete: never read that tail as a decline.
+
+**`--json`, every command** — the tool data verbatim, with no CLI envelope and
+no `success` flag. `neighborhood`, `path` and `explain` answer
+`{ text, data, data_edition, attribution }`; the other verbs answer their own
+fields with `data_edition` and `attribution` beside them. A typed error prints
+as `{ error: { code, message, details } }`.
 
 **Which number is which.** Every node the backend answers with carries a
 citable `publication` — the first grant where one exists, else the earliest
@@ -149,7 +171,7 @@ relationship; carry it when the user needs to verify a claim.
 | Code | Meaning | What to do |
 |---|---|---|
 | `patstat_invalid_request` (400) | Bad node, ambiguous input, or out-of-range bound | Read the relayed message — it states the fix. Resolve first if ambiguous. |
-| `patstat_patent_ambiguous` (422) | **Composites only**: a number matching several applications, with structured `error.candidates` | Render the candidates; never auto-pick. |
+| `patstat_patent_ambiguous` (422) | `graph patent` only: a number matching several applications, with the candidates at `error.details.candidates` | Render the candidates and let the user pick. |
 | `patstat_patent_not_found` / `patstat_entity_not_found` (404) | Nothing matches in the loaded edition | Check the number, or the input may postdate the snapshot. |
 | `patstat_unavailable` (503) | No PATSTAT dataset configured on this deployment | Report plainly; do not retry-loop. |
 
@@ -160,8 +182,8 @@ verification states.
 ## Snapshot honesty
 
 PATSTAT is a named snapshot, not live data. Every result names its Data
-Edition — carry it alongside any number you quote, and only compare numbers
-within the same edition. For **current legal status** (in force, lapsed,
+Edition: carry it with any number you quote, compare numbers only within the
+same edition, and keep the `attribution` line with any table you hand on. For **current legal status** (in force, lapsed,
 opposed) the snapshot is the wrong source: use the live document tools
 (`flowleap ops legal`, `flowleap-uspto`).
 
