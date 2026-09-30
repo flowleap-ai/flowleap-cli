@@ -506,9 +506,11 @@ fn error_response(id: Value, code: i64, message: &str, data: Option<Value>) -> V
     json!({ "jsonrpc": "2.0", "id": id, "error": error })
 }
 
-/// A successful (or `isError`) MCP tool result with one pretty-JSON text block.
+/// A successful (or `isError`) MCP tool result with one compact-JSON text
+/// block. Compact, not pretty: indentation added about a third to large
+/// replies and pushed them past the client's tool-output limit (#104).
 fn text_result(id: Value, is_error: bool, payload: &Value) -> Value {
-    let text = serde_json::to_string_pretty(payload).unwrap_or_else(|_| payload.to_string());
+    let text = payload.to_string();
     let mut result = json!({ "content": [{ "type": "text", "text": text }] });
     if is_error {
         result["isError"] = json!(true);
@@ -886,6 +888,52 @@ fn prompts_get(doctrine: &Doctrine, id: Value, params: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn result_text(response: &Value) -> &str {
+        response["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text block")
+    }
+
+    /// Fifty nested records, shaped like a tool reply (a portfolio row list).
+    fn nested_fixture() -> Value {
+        let rows: Vec<Value> = (0..50)
+            .map(|i| {
+                json!({
+                    "applicant": { "name": format!("Applicant {i}"), "country": "DE" },
+                    "counts": { "families": i, "applications": i * 2, "granted": i / 2 },
+                    "cpc": [{ "code": "H04L", "share": 0.5 }, { "code": "G06F", "share": 0.25 }],
+                })
+            })
+            .collect();
+        json!({ "rows": rows, "meta": { "returned": 50, "edition": "2026 Spring" } })
+    }
+
+    #[test]
+    fn tool_result_text_is_compact_json_with_no_newline_or_double_space() {
+        let payload = nested_fixture();
+        for is_error in [false, true] {
+            let response = text_result(json!(1), is_error, &payload);
+            let text = result_text(&response);
+            assert!(!text.contains('\n'), "no newline in tool text");
+            assert!(!text.contains("  "), "no double space in tool text");
+            assert_eq!(serde_json::from_str::<Value>(text).unwrap(), payload);
+        }
+    }
+
+    #[test]
+    fn compact_text_is_at_least_a_quarter_shorter_than_pretty_for_nested_replies() {
+        // Documents why #104 dropped pretty-printing: indentation alone
+        // pushed large replies past the client's MCP tool-output limit.
+        let payload = nested_fixture();
+        let compact = result_text(&text_result(json!(1), false, &payload)).len();
+        let pretty = serde_json::to_string_pretty(&payload).unwrap().len();
+        eprintln!("nested fixture: pretty {pretty} chars, compact {compact} chars");
+        assert!(
+            compact * 4 <= pretty * 3,
+            "compact {compact} must be <= 75% of pretty {pretty}"
+        );
+    }
 
     #[test]
     fn render_workflow_numbers_steps_from_the_payload_or_position() {

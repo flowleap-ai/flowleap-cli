@@ -160,9 +160,12 @@ async fn tools_call_round_trips_the_tool_envelope() {
     let result = &responses[1]["result"];
     assert_eq!(result.get("isError"), None, "success must not set isError");
     assert_eq!(result["content"][0]["type"], "text");
-    let payload: Value =
-        serde_json::from_str(result["content"][0]["text"].as_str().expect("text block"))
-            .expect("text block is JSON");
+    let text = result["content"][0]["text"].as_str().expect("text block");
+    assert_eq!(
+        text, r#"{"converted":"EP 1000000","format":"docdb"}"#,
+        "tool result text is compact JSON (#104)"
+    );
+    let payload: Value = serde_json::from_str(text).expect("text block is JSON");
     assert_eq!(
         payload,
         json!({ "converted": "EP 1000000", "format": "docdb" })
@@ -306,6 +309,10 @@ async fn unauthenticated_server_starts_and_gates_tools_with_login_help() {
     assert!(
         call_text.contains("flowleap auth login"),
         "call error must point at auth login: {call_text}"
+    );
+    assert!(
+        !call_text.contains('\n') && !call_text.contains("  "),
+        "error result text is compact JSON (#104): {call_text}"
     );
 }
 
