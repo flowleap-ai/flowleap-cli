@@ -4,11 +4,12 @@
  *
  * It never touches the network. It inspects the argv the templates pass and
  * echoes a recorded fixture from ./fixtures/, matching the real CLI's --json
- * contract (verified against cli-patstat-verb, src/commands/patstat.rs):
+ * contract (verified against src/commands/patstat.rs, cli #95):
  *   - success: prints the backend body verbatim, exit 0.
  *   - the two TYPED patstat codes (patstat_applicant_ambiguous /
- *     patstat_unavailable): a FLAT top-level shape { ok:false, error:{ code,
- *     message, candidates? } } — no `status`, no `body` wrapper — exit 1.
+ *     patstat_unavailable): the tool error envelope verbatim, { success:false,
+ *     error:{ code, message, details }, status } — candidates live at
+ *     error.details.candidates — exit 1.
  *   - any other failure: the generic CLI envelope { ok:false, status, body:{
  *     success:false, error:{ code, message } } } — exit 1.
  * Set FLOWLEAP_STUB_DIR to the fixtures directory.
@@ -38,8 +39,8 @@ function emitError(status, code, message, extra = {}) {
 	process.exit(1);
 }
 /** Flat typed-PATSTAT error shape the real CLI emits for the two typed codes, then exit non-zero. */
-function emitPatstatError(code, message, extra = {}) {
-	process.stdout.write(JSON.stringify({ ok: false, error: { code, message, ...extra } }, null, 2) + '\n');
+function emitPatstatError(code, message, status, details = {}) {
+	process.stdout.write(JSON.stringify({ success: false, error: { code, message, details }, status }, null, 2) + '\n');
 	process.exit(1);
 }
 function flagValue(name) {
@@ -64,16 +65,16 @@ if (argv.includes('patstat') && argv.includes('portfolio')) {
 	const applicant = positionalsAfter('portfolio')[0] || '';
 	// Test hook: this reserved name models a deployment with no PATSTAT dataset.
 	if (slug(applicant) === 'patstat-unavailable') {
-		emitPatstatError('patstat_unavailable', 'The PATSTAT analytics layer is not configured on this deployment (PATSTAT_DATABASE_URL is unset).');
+		emitPatstatError('patstat_unavailable', 'The PATSTAT analytics layer is not configured on this deployment (PATSTAT_DATABASE_URL is unset).', 503);
 	}
 	const file = `portfolio-${slug(applicant)}.json`;
 	try {
 		emit(fixture(file));
 	} catch {
-		// No fixture for this applicant -> model the 422 ambiguous case (flat typed shape).
+		// No fixture for this applicant -> model the 422 ambiguous case.
 		emitPatstatError('patstat_applicant_ambiguous',
 			`"${applicant}" matches 2 distinct applicant entities: ${applicant} HOLDING (900 applications), ${applicant} TECH (410 applications). These may be separate companies, so they are not merged automatically.`,
-			{ candidates: [{ name: `${applicant} HOLDING`, applications: 900 }, { name: `${applicant} TECH`, applications: 410 }] });
+			422, { candidates: [{ name: `${applicant} HOLDING`, applications: 900 }, { name: `${applicant} TECH`, applications: 410 }] });
 	}
 }
 if (argv.includes('analytics')) {

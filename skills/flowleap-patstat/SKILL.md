@@ -7,56 +7,66 @@ description: Portfolio Analytics AND guarded SQL over the PATSTAT snapshot — s
 
 Auth and global flags: see `flowleap-shared`.
 
-PATSTAT is a **named non-facade exception**: it keeps its own surface instead of
-running on the Tools facade, and needs no patent-data key. Nothing here was
-touched by the provider-route retirement.
+Every `patstat` command runs one **PATSTAT tool** on the Tools facade. An
+agent that also has `flowleap mcp` sees the same tool under the same name, so
+the command and the tool are one capability. PATSTAT tools need no patent-data
+key; each one publishes its own gate and rate limit in the registry
+(`flowleap --json tools describe <tool>`).
 
-## Which engine? — the three-way routing rule
+| Command | Tool | Gate |
+|---|---|---|
+| `patstat portfolio <applicant> [--from-year Y] [--to-year Y]` | `patstat_portfolio` | plan |
+| `patstat query "<SQL>" --question "<question>" [--retry-of <code>]` | `patstat_query` | plan, 10/min |
+| `patstat docs` with one of `--section S`, `--workflow W`, `--endpoint E`, `--compact` | `patstat_docs` | sign-in |
+| `patstat graph <verb> …` | `patstat_resolve`, `patstat_cpc`, `patstat_patent`, `patstat_applicant`, `patstat_technology`, `patstat_neighborhood`, `patstat_path`, `patstat_explain` | sign-in; see `flowleap-patstat-graph` |
 
-FlowLeap runs three analytics engines, split by *criteria shape*, not by
-metric:
+`--json` prints the tool data verbatim. There is no top-level `success`; every
+result carries `data_edition` and `attribution`. Through `tools run` the inputs
+are snake_case (`from_year`, `to_year`, `retry_of`):
 
-- **Topic Analytics** (`flowleap analytics`, the Google-Patents corpus
-  engine) — the question asks for a **trend or landscape over free-text
-  keywords** in title/abstract ("quantum computing filings over time"), and
-  the keywords are the whole criterion. Publication-level counts, substring
-  name matching, per-query cost. Free text alone does not settle the routing —
-  PATSTAT reads text too; see the extra bullet below.
-- **Portfolio Analytics** (`flowleap patstat`, this skill, the PATSTAT
-  engine) — the question is expressible in **structured criteria**: named
-  applicant (entity-resolved, harmonized names), CPC/IPC class, office, year,
-  family, grant status. Family-level counting, zero marginal cost.
-- **Graph Analytics** (`flowleap patstat graph …` → `flowleap-patstat-graph`)
-  — the question is about **a named node and the relationships around it**:
-  who cites EP3477840, the citation/family path between two patents, where a
-  family has coverage, an applicant's co-applicant network. Typed nodes and
-  edges, each with a confidence tag and row-level provenance.
+```bash
+flowleap --json tools run patstat_portfolio applicant="<applicant name>"
+```
 
-Routing rule: free-text keyword **trends or landscapes** over the
-Google-Patents corpus → `flowleap analytics`; structured criteria, especially a
-named company → `flowleap patstat`; a *connection* rather than a count →
-`flowleap-patstat-graph`. If the answer is a table of counts it is here; if it
-is who-links-to-what, it is traversal — go across. Individual documents (one
-known publication or application) are none of the three — use the
-search/retrieval skills (`flowleap-patent`, `flowleap-uspto`, `flowleap-ops`).
+## Which engine?
 
-- **Free text is not exclusive to Topic Analytics.** A **concept** that must
-  become identifiers, CPC codes, or a candidate set feeding a structured
-  aggregate goes to PATSTAT text discovery (this skill,
-  `flowleap.application_texts`) — the text is never the answer there, only the
-  way in.
+FlowLeap has three analytics engines, split by *criteria shape*, not by metric:
 
-**Keyless, but not a stand-in.** PATSTAT needs no patent-data key, so it stays
-live when EPO OPS or USPTO ODP answers `provider_keys_required`. You may offer it
-to keep work moving — framed for what it is: aggregate counts from a
-twice-yearly snapshot, not documents and not current. It never answers "what
-prior art exists for this claim", and a PATSTAT table never closes a missing-key
-gap in a prior-art, FTO, or invalidity deliverable. See `flowleap-keys`.
+| The question's essential criterion | Engine | Go to |
+|---|---|---|
+| A trend or landscape over free-text keywords, and the keywords are the whole criterion | Topic Analytics | `flowleap analytics` |
+| Structured criteria (a named applicant, CPC/IPC class, office, year, family, grant status) giving a table of counts | Portfolio Analytics | this skill |
+| A named node and the relationships around it (who cites it, the path between two patents, co-applicants) | Graph Analytics | `flowleap-patstat-graph` |
 
-Note that `patstat portfolio` and `graph applicant` draw entity boundaries
-differently: `portfolio` groups by name-prefix aliases, `graph applicant`
-takes one harmonized `psn_id`. They may disagree about where one company ends
-and another begins — always say which produced a number.
+A **concept** that must become identifiers, CPC codes or a candidate set for a
+structured aggregate comes here too, through text discovery (see the recipes
+below): the text is the way in, never the answer. One known document is none
+of the three engines: use `flowleap-patent`, `flowleap-uspto` or `flowleap-ops`.
+
+A CPC/IPC-class landscape is Portfolio Analytics.
+`flowleap patstat graph technology <cpc>` is its fast path: find the code with
+`graph cpc` first. Use `patstat query` when the composite does not answer.
+
+The served statement of the rule is step 1 of every served workflow
+(`flowleap patstat docs --workflow <portfolio-analysis|guarded-sql|graph>`).
+
+**Keyless, but not a stand-in.** PATSTAT stays live when EPO OPS or USPTO ODP
+answers `provider_keys_required`. You may offer it to keep work moving, framed
+for what it is: aggregate counts from a twice-yearly snapshot, not documents and
+not current. It never answers "what prior art exists for this claim", and a
+PATSTAT table never closes a missing-key gap in a prior-art, FTO or invalidity
+deliverable. See `flowleap-keys`.
+
+`patstat portfolio` and `graph applicant` draw entity boundaries differently:
+`portfolio` groups by name-prefix aliases, `graph applicant` takes one
+harmonized `psn_id`. They may disagree about where one company ends and another
+begins, so always say which one produced a number.
+
+## Data Edition and attribution
+
+PATSTAT is published in snapshot editions, about twice a year. Quote the
+`data_edition` with every number from this skill, and compare two numbers only
+within the same edition. Keep the `attribution` line with any table you hand on.
 
 ## Portfolio
 
@@ -64,85 +74,62 @@ and another begins — always say which produced a number.
 flowleap --json patstat portfolio "Siemens AG" --from-year 2015 --to-year 2023
 ```
 
-Response shape: a quotable `summary` line first — relay it verbatim before
-adding any narrative — then filings-by-year/office/grant-status aggregate
-tables, then a `data_edition` provenance line.
+The result opens with a quotable `summary` line: relay it verbatim before any
+narrative. The aggregate tables by year, office and grant status follow. The
+served procedure, with the caveats to surface, is
+`flowleap patstat docs --workflow portfolio-analysis`.
 
-## Ambiguous applicant (422)
+**Ambiguous applicant.** An applicant name that matches several distinct
+entities answers 422 `patstat_applicant_ambiguous`; in `--json` the candidates
+are at `error.details.candidates`. This is an **interaction step**: show every
+candidate to the user and let the user pick. Re-run with the exact candidate
+name and pin that string. A caller that repeats the query (for example a
+`recipe-custom-dashboard` script) hard-codes the resolved name as a constant, so
+the user picks once.
 
-An unresolved applicant name returns HTTP 422 with a candidate list. This is
-an **interaction step, not a retryable error**: render every candidate to the
-user in both `--json` and human output, and **never auto-pick one**. Once the
-user picks, re-run with the exact candidate name and pin that exact string —
-a caller that needs to repeat the query (e.g. a `recipe-custom-dashboard`
-script) hard-codes the resolved name as a constant so the choice is made once,
-not re-asked on every run.
+## Guarded SQL — aggregates beyond the typed commands
 
-## Data Edition
+Grant rates, citation-impact rankings, inventor analytics, jurisdiction
+coverage and other aggregates that no typed command answers take **one SQL
+SELECT** against the `flowleap.*` semantic views.
 
-PATSTAT is published in discrete snapshot editions (~twice a year). Every
-Portfolio Analytics answer carries its `data_edition` — treat Portfolio
-Analytics as a snapshot with a name, not live data. Two answers are only
-comparable within the **same** `data_edition`; always surface the edition
-alongside any number quoted from this skill.
+The procedure is served, and it is the source of truth:
+`flowleap patstat docs --workflow guarded-sql`. Its steps map to these commands:
 
-## Guarded SQL (Layer 2) — aggregates beyond the typed commands
+| Served step | Command |
+|---|---|
+| Verified examples first; reuse a match, or use its `promoted_to` command | `flowleap patstat docs --section examples` |
+| Semantic model and interpretation conventions, applied as served | `flowleap patstat docs --section semantic-model` (the YAML is at `.yaml` in `--json`) |
+| One SELECT, with the user's question verbatim | `flowleap patstat query "<SQL>" --question "<question>"` |
+| The one retry | the same command plus `--retry-of <error code>` |
 
-For aggregate questions no typed command answers — technology landscapes by
-CPC ("who dominates solid-state electrolytes"), grant rates, citation-impact
-rankings, inventor analytics, family/jurisdiction coverage — write **one SQL
-SELECT** against the `flowleap.*` semantic views and run it through the
-deterministic backend gate (single-SELECT parse check, flowleap-only
-allowlist, EXPLAIN cost ceiling, 5,000-row/5 MB hard caps, 20 s timeout;
-budget 10 queries/min).
+```bash
+flowleap patstat docs --section examples
+flowleap patstat query "SELECT office, COUNT(DISTINCT family_id) AS inventions FROM flowleap.applications a JOIN flowleap.applicants ap ON ap.application_id = a.application_id WHERE UPPER(ap.name) LIKE 'SIEMENS%' GROUP BY office ORDER BY inventions DESC" --question "where does Siemens hold the most inventions?"
+```
 
-The mandatory workflow, in order:
+Read the semantic model from the served YAML each time, never from memory; this
+skill does not restate it. A LIMIT is not necessary: past the row cap the
+backend answers an error, never a truncated table.
 
-1. **Examples first — don't write SQL you don't need:**
+**You own the retry.** The CLI sends `patstat query` exactly once. It does not
+resend on a 5xx, a timeout or a connection failure, so every typed error reaches
+you with `error.code`, `error.message` and `error.details`:
 
-   ```bash
-   flowleap patstat docs --section examples
-   ```
+- `patstat_sql_timeout`: a cold cache fails like a heavy query. Send the
+  **same SQL** once more with `--retry-of patstat_sql_timeout`.
+- Every other `patstat_sql_*` error: rewrite the SQL once from the message and
+  details, then send it with `--retry-of <error code>`.
+- `patstat_busy` or `patstat_unreachable`: capacity, not a gate verdict
+  (backend ADR 0010). Wait `error.details.retry_after` seconds (the
+  Retry-After header), then resend the **same SQL** with
+  `--retry-of patstat_busy`. This resend does not count as the one retry.
+- A second gate failure after your one rewrite: stop and report the typed
+  error.
 
-   Verified question→SQL pairs. If one matches, reuse its SQL; if it carries
-   `promoted_to`, use that typed command/endpoint instead.
-
-2. **Fetch the schema and conventions — never work from memory:**
-
-   ```bash
-   flowleap patstat docs --section semantic-model
-   ```
-
-   The served YAML is the single authoritative source: logical views and
-   columns, metric formulas, join paths, caveats, and the
-   `interpretation_conventions` block (default counting units and year
-   bases, the ask-when-material rule). Apply it as served — this skill
-   deliberately does not restate it, so it can never drift.
-
-3. **Run, always sending the user's question verbatim** (it feeds the
-   query-review pipeline that turns good queries into verified examples):
-
-   ```bash
-   flowleap patstat query "SELECT office, COUNT(DISTINCT family_id) AS inventions FROM flowleap.applications a JOIN flowleap.applicants ap ON ap.application_id = a.application_id WHERE UPPER(ap.name) LIKE 'SIEMENS%' GROUP BY office ORDER BY inventions DESC" --question "where does Siemens hold the most inventions?"
-   ```
-
-   Schema-qualify every table as `flowleap.<view>`. No LIMIT needed — the
-   backend caps rows and errors (never truncates) past the cap.
-
-4. **On a `patstat_sql_*` error, fix ONCE, then stop.** The error message
-   carries the exact parser/Postgres detail plus the recovery instruction —
-   follow it, re-run with `--retry-of <code>`, and after a second failure
-   report the error instead of looping. `patstat_busy` is different: back
-   off a few seconds and retry the SAME SQL — it is load, not a SQL problem.
-
-5. **Present with the interpretation stated** ("counted as DOCDB families by
-   earliest filing year") and the `data_edition` named. Surface any
-   `patstat_sql_expensive` warning as a heaviness note. Full step-by-step:
-   `flowleap patstat docs --workflow guarded-sql`.
-
-Entity disambiguation in guarded SQL: no 422 here — probe candidates with a
-cheap `SELECT name … LIKE 'X%' GROUP BY name` query first, and apply the same
-never-auto-pick rule as the portfolio flow when candidates diverge.
+Entity disambiguation in guarded SQL has no 422. Probe the candidates first with
+a cheap `SELECT name … LIKE 'X%' GROUP BY name` query. When the candidates
+diverge, let the user pick, as in the portfolio flow.
 
 ## PATSTAT recipes — chains, legal events, text discovery, INPADOC coverage
 
@@ -178,14 +165,6 @@ Four rules decide whether the number is right:
 
 ## patstat_unavailable
 
-If the backend has no PATSTAT database configured, it returns a
-`patstat_unavailable` error. Say so plainly ("backend has no PATSTAT dataset
-configured") and stop — this is a deployment gap, not a transient failure; do
-not retry.
-
-Also available as `flowleap tools run patstat_portfolio …` once the backend
-tool-registry entry lands — see `flowleap-tools`.
-
-```bash
-flowleap --json tools run patstat_portfolio applicant="<applicant name>"
-```
+A backend with no PATSTAT database configured answers `patstat_unavailable`.
+Report it plainly ("backend has no PATSTAT dataset configured") and stop. It is
+a deployment gap, not a transient failure.

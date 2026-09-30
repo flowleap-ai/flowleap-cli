@@ -152,6 +152,32 @@ async fn sql_timeout_reaches_the_caller_after_exactly_one_request() {
     );
 }
 
+/// A cold `patstat_sql_timeout` is worth ONE identical resend (ADR 0010,
+/// backend #402), so the human hint must not tell the agent to rewrite the
+/// SQL the way it does for every other `patstat_sql_*` code.
+#[tokio::test]
+async fn sql_timeout_human_hint_says_resend_the_same_sql_once() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_query"))
+        .respond_with(ResponseTemplate::new(504).set_body_json(timeout_error()))
+        .mount(&server)
+        .await;
+
+    let output = run_cli(&server.uri(), &[API_KEY_ENV], &["patstat", "query", SQL]).await;
+
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(
+        stdout.contains(
+            "Cold timeout: re-run the SAME SQL once with --retry-of patstat_sql_timeout; \
+             only if it times out again, narrow it."
+        ),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Fix the SQL"), "{stdout}");
+}
+
 #[tokio::test]
 async fn typed_sql_error_keeps_code_message_and_details_in_both_modes() {
     let invalid = tool_error(

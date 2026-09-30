@@ -100,14 +100,14 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
 ## One surface for patent data
 
 Every data command — `patent`, `ops`, `uspto`, `citation`, `legal`, `npl`,
-`academic`, `analytics`, `ocr`, and the one-call verbs — runs on the **Tools
-facade**: named tools invoked through `/v1/tools`, one success envelope, one
+`academic`, `analytics`, `ocr`, `patstat`, and the one-call verbs — runs on the
+**Tools facade**: named tools invoked through `/v1/tools`, one success envelope, one
 error contract, a self-describing registry. The per-source **provider routes**
 they used to call are **retired endpoints** — permanently removed, answering
 `410 Gone` with a machine-readable successor, and never reused.
 
-Named non-facade exceptions: PATSTAT (`flowleap patstat …`), auth/OAuth, key
-validation, and the raw `api request` escape hatch.
+Only auth/OAuth, key validation and the raw `api request` escape hatch run
+outside the facade.
 
 Practical consequence: a command failing with exit **8** (`endpoint_gone`) means
 your CLI build is stale, not that the capability is gone. Read

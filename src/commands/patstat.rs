@@ -243,6 +243,13 @@ fn render_query_error(ctx: &Context, envelope: &Value) -> anyhow::Error {
                 println!(
                     "Back off and retry the SAME SQL — this is load, not a problem with the query."
                 );
+            } else if code == "patstat_sql_timeout" {
+                // A cold cache fails like a heavy query (backend #402): the
+                // one informed retry is the same SQL, not a rewrite.
+                println!(
+                    "Cold timeout: re-run the SAME SQL once with --retry-of patstat_sql_timeout; \
+                     only if it times out again, narrow it."
+                );
             } else {
                 println!(
                     "Fix the SQL once per the instruction above and re-run with --retry-of {code}; \

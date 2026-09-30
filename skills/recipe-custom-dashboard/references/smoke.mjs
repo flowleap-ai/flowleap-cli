@@ -105,7 +105,7 @@ r.cleanup();
 
 // 5: guardrail — an ambiguous (un-fixtured) applicant must exit non-zero, list
 // candidates, and write NO dashboard (rule 6: never auto-pick a 422 candidate).
-// Exercises the FLAT typed-error shape { ok:false, error:{ code, candidates } }.
+// Exercises the tool error shape { success:false, error:{ code, message, details:{ candidates } }, status }.
 console.log('\n[guardrail: ambiguous applicant]');
 const amb = runTemplate('template-portfolio.mjs', { applicantSwap: ["'Siemens AG'", "'Zzz Ambiguous Co'"] });
 check('ambiguous: exits non-zero', amb.status !== 0, `status=${amb.status}`);
@@ -114,7 +114,7 @@ check('ambiguous: lists candidates', /Zzz Ambiguous Co (HOLDING|TECH)/.test(amb.
 amb.cleanup();
 
 // 6: degrade — patstat_unavailable must exit non-zero, name the usable
-// dashboards, and write NO dashboard. Exercises the flat patstat_unavailable shape.
+// dashboards, and write NO dashboard. Exercises the patstat_unavailable tool error shape.
 console.log('\n[degrade: patstat unavailable]');
 const un = runTemplate('template-portfolio.mjs', { applicantSwap: ["'Siemens AG'", "'patstat unavailable'"] });
 check('unavailable: exits non-zero', un.status !== 0, `status=${un.status}`);

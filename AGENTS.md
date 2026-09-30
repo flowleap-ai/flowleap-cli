@@ -196,12 +196,12 @@ provider-specific routes they used to call are retired (backend ADR 0013).
 `flowleap tools list` discovers every tool with its JSON input schema and
 per-tool docs; `flowleap tools run <name>` executes one.
 
-Named non-facade exceptions: key validation (usable before subscribing),
-auth/OAuth, and `api request` (the raw escape hatch, which calls whatever path
-you give it). Every `patstat` command — `portfolio`, `docs`, `query` and the
-`graph` verbs — runs on the facade like every other data command. The
-backend still serves the `/v1/patstat/graph/*` routes; the CLI no longer
-calls them.
+Only these run outside the facade: key validation (usable before
+subscribing), auth/OAuth, and `api request` (the raw escape hatch, which calls
+whatever path you give it). Every `patstat` command — `portfolio`, `docs`,
+`query` and the `graph` verbs — runs on the facade like every other data
+command. The backend still serves the `/v1/patstat/*` routes; the CLI no
+longer calls them.
 
 | Endpoint | Method | Auth Required |
 |----------|--------|---------------|
@@ -212,6 +212,7 @@ calls them.
 | `/v1/tools` | GET | Yes |
 | `/v1/tools/openapi.json` | GET | Yes |
 | `/v1/tools/{tool_name}` | POST | Yes |
+| `/v1/patstat/*` | POST/GET | Served by the backend; not called by the CLI (every `patstat` command runs on the tools facade, #95/#96) |
 | `/api/profile` | GET | Yes |
 | `/api/usage` | GET | Yes |
 | `/api/tokens` (create/list) | POST/GET | Yes (create requires Clerk auth, not an API token) |
@@ -342,6 +343,10 @@ the *thin* passthrough first and put the workflow in a skill on top of it.
   forfeits caching, key handling, rate-limit protection, and uniform error
   envelopes. Missing data is the signal to add the thin tool, not to
   hand-roll HTTP in a skill.
+- **MCP resources and prompts are served doctrine, not skills.** `flowleap mcp`
+  mirrors them from the backend (the PATSTAT doctrine, through `patstat_docs`).
+  Change them in the backend; a skill points at `flowleap patstat docs` instead
+  of copying them.
 - **Distribution is release-gated.** CLI skills ship inside the binary (next
   tag) and reach the website marketplace via the `flowleap-plugins` re-sync
   (bump `sync.json` ref, add the entry, copy byte-for-byte). Budget the
