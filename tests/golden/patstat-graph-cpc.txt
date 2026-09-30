@@ -1,0 +1,11 @@
+CPC symbols matching "solid electrolyte"
+Showing 3 of 14 matching CPC symbols.
+
+  1. H01M10/0562 — Solid materials (35939 applications)
+  2. H01M10/056 — Accumulators characterised by the electrolytes, e.g. solid electrolytes (61220 applications)
+  3. H01B1/06 — Conductors mainly consisting of other non-metallic substances; solid electrolytes (8120 applications)
+
+Pass one symbol to `flowleap patstat graph technology <symbol>` for its landscape.
+
+Source: PATSTAT data edition PATSTAT 2026 Spring.
+This product contains data sourced from EPO databases, © European Patent Organisation

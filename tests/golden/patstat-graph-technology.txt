@@ -1,0 +1,87 @@
+Technology area: H01M10/0562 — Solid materials
+Families: 12909 · Applications: 35939
+
+Top Applicants
++----------+---------------------------------+----------+--------------+
+| PSN ID   | Name                            | Families | Active since |
++======================================================================+
+| 33067109 | TOYOTA MOTOR CORPORATION        | 610      | 2016         |
+|----------+---------------------------------+----------+--------------|
+| 24799563 | PANASONIC INTELLECTUAL PROPERTY | 507      | 2016         |
++----------+---------------------------------+----------+--------------+
+  Showing 2 of 3473 top applicants.
+
+Filing Trend
++------+----------+
+| Year | Families |
++=================+
+| 2001 | 27       |
+|------+----------|
+| 2002 | 45       |
++------+----------+
+
+Grant Rate by Office
++--------+--------------+---------+--------------+
+| Office | Applications | Granted | Grant rate % |
++================================================+
+| JP     | 2933         | 2382    | 81.2         |
+|--------+--------------+---------+--------------|
+| US     | 3882         | 2622    | 67.5         |
++--------+--------------+---------+--------------+
+
+New Entrants
++-----------+------------------+----------+--------------+
+| PSN ID    | Name             | Families | Active since |
++========================================================+
+| 183880853 | KIA MOTORS CORP. | 123      | 2021         |
++-----------+------------------+----------+--------------+
+
+Seminal Families
++-------------+----------------------------------------------------+-------+-----------------+
+| Publication | Title                                              | Filed | Citing families |
++============================================================================================+
+| WO0173957   | BATTERY-OPERATED WIRELESS-COMMUNICATION APPARAT... | 2000  | 620             |
++-------------+----------------------------------------------------+-------+-----------------+
+  Showing 1 of 12909 seminal families.
+
+Top Inventors
++----------+---------------+----------+
+| PSN ID   | Name          | Families |
++=====================================+
+| 28166147 | SAKAI AKIHIRO | 97       |
++----------+---------------+----------+
+  Showing 1 of 37529 top inventors.
+
+Inventor Countries (where the R&D is done)
++---------+----------+
+| Country | Families |
++====================+
+| JP      | 3993     |
++---------+----------+
+  Showing 1 of 60 inventor countries.
+
+Applicant Countries (where ownership sits)
++---------+----------+
+| Country | Families |
++====================+
+| JP      | 3918     |
++---------+----------+
+  Showing 1 of 45 applicant countries.
+
+Filing Offices (where protection is sought)
++---------+----------+
+| Country | Families |
++====================+
+| CN      | 8167     |
++---------+----------+
+  Showing 1 of 56 filing offices.
+
+Notes:
+  - Filing trend covers earliest filing years 2001–2026; the most recent ~24 months are incomplete (publication lag) — never read the tail as decline.
+
+Data quality flags:
+  - cpc:H01M10/0562: unknown_filing_date — 1 famil(ies) carry PATSTAT's 9999 unknown-date sentinel — excluded from filing_trend, the gap is real.
+
+Source: PATSTAT data edition PATSTAT 2026 Spring.
+This product contains data sourced from EPO databases, © European Patent Organisation
+This is PATSTAT snapshot data — for current legal status, use the live document tools (flowleap ops legal, flowleap uspto).

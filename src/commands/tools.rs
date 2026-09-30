@@ -275,7 +275,15 @@ mod tests {
             "patstat_portfolio",
             "patstat_docs",
             "get_bibliography",
+            // The eight graph tools keep the generic resend (#96).
+            "patstat_resolve",
+            "patstat_cpc",
+            "patstat_patent",
+            "patstat_applicant",
+            "patstat_technology",
+            "patstat_neighborhood",
             "patstat_path",
+            "patstat_explain",
         ] {
             assert_eq!(retry_policy_for(tool), RetryPolicy::Transient, "{tool}");
         }

@@ -5,10 +5,13 @@
 //! criteria are a Portfolio question (`patstat portfolio` / `patstat query`),
 //! and *a named node and the relationships around it* is a Graph question.
 //!
-//! Every verb is a thin 1:1 relay of one `GET /v1/patstat/graph/*` route:
-//! `--json` emits the backend body unmodified (including error bodies for the
-//! typed graph family), human mode renders it, and ambiguity is always an
-//! interaction step — candidates are printed, never auto-picked.
+//! Every verb is a thin 1:1 relay of one `patstat_<verb>` tool on the shared
+//! tool seam (`POST /v1/tools/patstat_<verb>`, #96) — the same engine call the
+//! `/v1/patstat/graph/*` routes make. `--json` emits the tool `data` verbatim
+//! (and error bodies for the typed graph family unmodified), human mode
+//! renders it, and ambiguity is always an interaction step — candidates are
+//! printed, never auto-picked. `cpc` and `technology` are the two entry ramps
+//! onto the technology landscape: keyword → CPC symbols → area card.
 //!
 //! **Which number is which** (flowleap-backend#419): every node the backend
 //! answers with carries a citable `publication` (first grant, else earliest
@@ -25,7 +28,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
-use crate::client::{encode_url_component, Context};
+use crate::client::Context;
 use crate::output;
 
 #[derive(Parser)]
@@ -40,6 +43,8 @@ use crate::output;
   flowleap --json patstat graph explain pat:56123456
   flowleap patstat graph patent US5960411
   flowleap patstat graph applicant 98765
+  flowleap patstat graph cpc \"solid electrolyte\"
+  flowleap patstat graph technology H01M10/0562
 
 Criteria shape picks the engine: a named node and its relationships (citations,
 family, co-applicants) is a graph question; aggregate counts by structured
@@ -74,6 +79,14 @@ enum GraphCommand {
     /// when you hold only a number or a company name.
     Resolve {
         /// Publication number (e.g. EP3477840, US5960411) or applicant name
+        query: String,
+    },
+
+    /// Map a technology keyword onto ranked CPC symbols — symbol, scheme
+    /// title, and how many applications carry it. Start here when you hold a
+    /// technology word, then pass one symbol to `graph technology`.
+    Cpc {
+        /// Technology keyword, 3–64 characters (e.g. "solid electrolyte")
         query: String,
     },
 
@@ -158,28 +171,34 @@ enum GraphCommand {
         /// `person:<psn_id>` node)
         psn_id: u64,
     },
+
+    /// One technology area's landscape: area card, top applicants, filing
+    /// trend, grant rate by office, new entrants, seminal families, top
+    /// inventors, and innovation geography. Takes a CPC symbol prefix (from
+    /// `graph cpc <keyword>`). Every capped section states its TRUE total.
+    Technology {
+        /// CPC symbol prefix, e.g. H01M10/0562, G06F, Y02E
+        cpc: String,
+    },
 }
 
 pub async fn run(ctx: &Context, args: GraphArgs) -> Result<()> {
     match args.command {
         GraphCommand::Resolve { query } => resolve(ctx, &query).await,
+        GraphCommand::Cpc { query } => cpc(ctx, &query).await,
         GraphCommand::Neighborhood {
             node,
             depth,
             edge_types,
             token_budget,
         } => {
-            verb(
-                ctx,
-                "neighborhood",
-                &[
-                    ("node", Some(node)),
-                    ("depth", depth.map(|depth| depth.to_string())),
-                    ("edge_types", edge_types),
-                    ("token_budget", token_budget.map(|n| n.to_string())),
-                ],
-            )
-            .await
+            let mut input = json!({ "node": node });
+            set(&mut input, "depth", depth);
+            if let Some(edge_types) = edge_types {
+                input["edge_types"] = json!(split_list(&edge_types));
+            }
+            set(&mut input, "token_budget", token_budget);
+            verb(ctx, "patstat_neighborhood", &input).await
         }
         GraphCommand::Path {
             a,
@@ -187,82 +206,78 @@ pub async fn run(ctx: &Context, args: GraphArgs) -> Result<()> {
             max_hops,
             token_budget,
         } => {
-            verb(
-                ctx,
-                "path",
-                &[
-                    ("a", Some(a)),
-                    ("b", Some(b)),
-                    ("max_hops", max_hops.map(|hops| hops.to_string())),
-                    ("token_budget", token_budget.map(|n| n.to_string())),
-                ],
-            )
-            .await
+            let mut input = json!({ "a": a, "b": b });
+            set(&mut input, "max_hops", max_hops);
+            set(&mut input, "token_budget", token_budget);
+            verb(ctx, "patstat_path", &input).await
         }
         GraphCommand::Explain { node, token_budget } => {
-            verb(
-                ctx,
-                "explain",
-                &[
-                    ("node", Some(node)),
-                    ("token_budget", token_budget.map(|n| n.to_string())),
-                ],
-            )
-            .await
+            let mut input = json!({ "node": node });
+            set(&mut input, "token_budget", token_budget);
+            verb(ctx, "patstat_explain", &input).await
         }
         GraphCommand::Patent { publication } => patent(ctx, &publication).await,
         GraphCommand::Applicant { psn_id } => applicant(ctx, psn_id).await,
+        GraphCommand::Technology { cpc } => technology(ctx, &cpc).await,
     }
 }
 
-/// Run one agent verb: `GET /v1/patstat/graph/<verb>` with the caller's
-/// parameters, then relay the result.
+/// Set an optional numeric input. Absent flags are omitted from the tool
+/// input entirely rather than sent as defaults, so the backend's documented
+/// defaults stay the single source of truth.
+fn set(input: &mut Value, key: &str, value: Option<i32>) {
+    if let Some(value) = value {
+        input[key] = json!(value);
+    }
+}
+
+/// `--edge-types cites,cited_by` → `["cites", "cited_by"]`. Items are trimmed
+/// and empty items dropped; the names themselves are the engine's to check.
+fn split_list(raw: &str) -> Vec<&str> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .collect()
+}
+
+/// Run one graph tool on the shared tool seam (`POST /v1/tools/<tool>`) and
+/// hand back its `data` — the route body the verb used to fetch, without the
+/// route's `success` flag. `None` means the run is fully handled already: a
+/// `--dry-run` description is printed, or a failure is rendered (the
+/// returned `Err` carries its exit code).
+async fn call_graph(ctx: &Context, tool: &str, input: &Value) -> Result<Option<Value>> {
+    match super::call(ctx, tool, input).await? {
+        super::Outcome::DryRun => Ok(None),
+        super::Outcome::Failed(envelope) => {
+            let body = super::error_body(&envelope);
+            Err(render_graph_error(ctx, &envelope, &body))
+        }
+        super::Outcome::Data(data) => Ok(Some(data)),
+    }
+}
+
+/// Run one text verb (`patstat_neighborhood`, `patstat_path`,
+/// `patstat_explain`) and relay the result.
 ///
-/// The three verbs differ only in which parameters they take — the response
-/// contract (`{ success, text, data }`), the error family, and the relay
-/// discipline are identical, so they share one execution path. Bounds
-/// (`depth` 1–2, `max_hops` 1–4, `token_budget` 100–20000) are deliberately
-/// NOT re-checked here: the backend owns them, and relaying its typed
-/// `patstat_invalid_request` keeps one source of truth instead of two that
-/// can drift.
-async fn verb(ctx: &Context, verb: &str, params: &[(&str, Option<String>)]) -> Result<()> {
-    let path = format!("/v1/patstat/graph/{verb}?{}", query_string(params));
-
-    let envelope = ctx.execute_json_envelope(ctx.get(&path)).await?;
-    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
-        output::print_json(&envelope);
+/// The three verbs differ only in which inputs they take — the result
+/// contract (`{ text, data, data_edition, attribution }`), the error family,
+/// and the relay discipline are identical, so they share one execution path.
+/// Bounds (`depth` 1–2, `max_hops` 1–4, `token_budget` 100–20000) are
+/// deliberately NOT re-checked here: the backend owns them, and relaying its
+/// typed `patstat_invalid_request` keeps one source of truth instead of two
+/// that can drift.
+async fn verb(ctx: &Context, tool: &str, input: &Value) -> Result<()> {
+    let Some(data) = call_graph(ctx, tool, input).await? else {
         return Ok(());
-    }
-
-    let http_ok = envelope.get("ok").and_then(Value::as_bool) == Some(true);
-    let resp_body = envelope.get("body").cloned().unwrap_or(Value::Null);
-
-    if !http_ok {
-        return Err(render_graph_error(ctx, &envelope, &resp_body));
-    }
+    };
 
     if ctx.output_format == "json" {
-        output::print_json(&resp_body);
+        output::print_json(&data);
     } else {
-        print_verb_text(&resp_body);
+        print_verb_text(&data);
     }
 
     Ok(())
-}
-
-/// Query string from the parameters that are actually set. Absent flags are
-/// omitted entirely rather than sent as defaults, so the backend's documented
-/// defaults stay the single source of truth.
-fn query_string(params: &[(&str, Option<String>)]) -> String {
-    params
-        .iter()
-        .filter_map(|(key, value)| {
-            value
-                .as_ref()
-                .map(|value| format!("{key}={}", encode_url_component(value)))
-        })
-        .collect::<Vec<_>>()
-        .join("&")
 }
 
 /// Human mode is the backend `text` field printed VERBATIM.
@@ -278,7 +293,7 @@ fn query_string(params: &[(&str, Option<String>)]) -> String {
 fn print_verb_text(body: &Value) {
     match body.get("text").and_then(Value::as_str) {
         Some(text) => println!("{text}"),
-        // No `text` field means this is not the response shape the verb
+        // No `text` field means this is not the result shape the verb
         // contract promises — show the caller what actually arrived rather
         // than printing nothing.
         None => output::print_json(body),
@@ -286,28 +301,14 @@ fn print_verb_text(body: &Value) {
 }
 
 async fn resolve(ctx: &Context, query: &str) -> Result<()> {
-    let path = format!(
-        "/v1/patstat/graph/resolve?q={}",
-        encode_url_component(query)
-    );
-
-    let envelope = ctx.execute_json_envelope(ctx.get(&path)).await?;
-    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
-        output::print_json(&envelope);
+    let Some(data) = call_graph(ctx, "patstat_resolve", &json!({ "q": query })).await? else {
         return Ok(());
-    }
-
-    let http_ok = envelope.get("ok").and_then(Value::as_bool) == Some(true);
-    let resp_body = envelope.get("body").cloned().unwrap_or(Value::Null);
-
-    if !http_ok {
-        return Err(render_graph_error(ctx, &envelope, &resp_body));
-    }
+    };
 
     if ctx.output_format == "json" {
-        output::print_json(&resp_body);
+        output::print_json(&data);
     } else {
-        print_resolve(&resp_body);
+        print_resolve(&data);
     }
 
     // One number behind several distinct applications is the same interaction
@@ -315,70 +316,81 @@ async fn resolve(ctx: &Context, query: &str) -> Result<()> {
     // 200. Reporting it through the 422 exit mapping keeps one contract for
     // the whole family: ambiguity never exits 0, so a script cannot mistake a
     // pick-one prompt for a resolved anchor.
-    if resp_body.get("kind").and_then(Value::as_str) == Some("ambiguous") {
+    if data.get("kind").and_then(Value::as_str) == Some("ambiguous") {
         return Err(crate::client::PrintedError::with_status(422).into());
     }
 
     Ok(())
 }
 
-/// The full citation picture of one patent: `GET /v1/patstat/graph/patent/{number}`.
-/// A publication number matching several distinct applications is reported by
-/// the backend as a real HTTP 422 `patstat_patent_ambiguous` — `render_graph_error`
-/// already renders it (candidates, never auto-picked) via `print_typed_error`.
-async fn patent(ctx: &Context, publication: &str) -> Result<()> {
-    let path = format!(
-        "/v1/patstat/graph/patent/{}",
-        encode_url_component(publication)
-    );
-
-    let envelope = ctx.execute_json_envelope(ctx.get(&path)).await?;
-    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
-        output::print_json(&envelope);
+/// Keyword → ranked CPC symbols: `patstat_cpc`. The entry ramp onto
+/// `graph technology` when the caller holds a technology word, not a symbol.
+async fn cpc(ctx: &Context, query: &str) -> Result<()> {
+    let Some(data) = call_graph(ctx, "patstat_cpc", &json!({ "q": query })).await? else {
         return Ok(());
-    }
-
-    let http_ok = envelope.get("ok").and_then(Value::as_bool) == Some(true);
-    let resp_body = envelope.get("body").cloned().unwrap_or(Value::Null);
-
-    if !http_ok {
-        return Err(render_graph_error(ctx, &envelope, &resp_body));
-    }
+    };
 
     if ctx.output_format == "json" {
-        output::print_json(&resp_body);
+        output::print_json(&data);
     } else {
-        print_patent_view(&resp_body);
+        print_cpc(&data);
     }
 
     Ok(())
 }
 
-/// One applicant's network: `GET /v1/patstat/graph/applicant/{psnId}`. `psn_id`
-/// is a strict integer anchor from `graph resolve <name>` — a non-integer
-/// value cannot be typed here (clap rejects it before any request is made);
-/// an integer with no matching entity still round-trips to the backend's
-/// typed `patstat_entity_not_found` (404).
-async fn applicant(ctx: &Context, psn_id: u64) -> Result<()> {
-    let path = format!("/v1/patstat/graph/applicant/{psn_id}");
-
-    let envelope = ctx.execute_json_envelope(ctx.get(&path)).await?;
-    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
-        output::print_json(&envelope);
+/// The full citation picture of one patent: `patstat_patent`. A publication
+/// number matching several distinct applications is reported by the backend
+/// as a real HTTP 422 `patstat_patent_ambiguous` with the candidates under
+/// `error.details` — `render_graph_error` renders it (candidates, never
+/// auto-picked) via `print_typed_error`.
+async fn patent(ctx: &Context, publication: &str) -> Result<()> {
+    let input = json!({ "number": publication });
+    let Some(data) = call_graph(ctx, "patstat_patent", &input).await? else {
         return Ok(());
-    }
-
-    let http_ok = envelope.get("ok").and_then(Value::as_bool) == Some(true);
-    let resp_body = envelope.get("body").cloned().unwrap_or(Value::Null);
-
-    if !http_ok {
-        return Err(render_graph_error(ctx, &envelope, &resp_body));
-    }
+    };
 
     if ctx.output_format == "json" {
-        output::print_json(&resp_body);
+        output::print_json(&data);
     } else {
-        print_applicant_view(&resp_body);
+        print_patent_view(&data);
+    }
+
+    Ok(())
+}
+
+/// One applicant's network: `patstat_applicant`. `psn_id` is a strict integer
+/// anchor from `graph resolve <name>` — a non-integer value cannot be typed
+/// here (clap rejects it before any request is made); an integer with no
+/// matching entity still round-trips to the backend's typed
+/// `patstat_entity_not_found` (404).
+async fn applicant(ctx: &Context, psn_id: u64) -> Result<()> {
+    let input = json!({ "psn_id": psn_id });
+    let Some(data) = call_graph(ctx, "patstat_applicant", &input).await? else {
+        return Ok(());
+    };
+
+    if ctx.output_format == "json" {
+        output::print_json(&data);
+    } else {
+        print_applicant_view(&data);
+    }
+
+    Ok(())
+}
+
+/// One technology area's landscape: `patstat_technology`. The CPC prefix is
+/// the engine's to validate — a malformed one answers its typed 400
+/// `patstat_invalid_request`, relayed like every other graph error.
+async fn technology(ctx: &Context, cpc: &str) -> Result<()> {
+    let Some(data) = call_graph(ctx, "patstat_technology", &json!({ "cpc": cpc })).await? else {
+        return Ok(());
+    };
+
+    if ctx.output_format == "json" {
+        output::print_json(&data);
+    } else {
+        print_technology_view(&data);
     }
 
     Ok(())
@@ -441,9 +453,13 @@ fn print_typed_error(ctx: &Context, body: &Value, code: &str) {
 
     match code {
         "patstat_unavailable" => super::render_unavailable(ctx, body),
-        "patstat_patent_ambiguous" => {
-            print_ambiguous(message, candidates(body, "/error/candidates"))
-        }
+        "patstat_patent_ambiguous" => print_ambiguous(
+            message,
+            super::error_field(body, "candidates")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+        ),
         "patstat_patent_not_found" => {
             println!("No such publication in the loaded PATSTAT edition.\n{message}")
         }
@@ -883,6 +899,161 @@ fn print_applicant_entity(entity: &Value) {
             .and_then(Value::as_str)
             .unwrap_or("?");
         println!("Name grouping: {tag} — {note}");
+    }
+}
+
+/// Ranked CPC candidates for a keyword: symbol, scheme title, application
+/// count. Truncation is stated with the TRUE total; `total: 0` is one clean
+/// line (a searched-and-empty answer, exit 0), never an empty list.
+fn print_cpc(body: &Value) {
+    let candidates = candidates(body, "/candidates");
+    let query = text(body, "query");
+
+    if candidates.is_empty() {
+        println!("No CPC candidates match \"{query}\" in the loaded PATSTAT edition.");
+        println!("Try a shorter or different technology keyword.");
+    } else {
+        println!("CPC symbols matching \"{query}\"");
+        let total = body.get("total").and_then(Value::as_u64);
+        let truncated = body.get("truncated").and_then(Value::as_bool) == Some(true);
+        match (truncated, total) {
+            (true, Some(total)) => println!(
+                "Showing {} of {total} matching CPC symbols.",
+                candidates.len()
+            ),
+            _ => println!("{} matching CPC symbols.", candidates.len()),
+        }
+        println!();
+        // A list, not a table: the shared table cuts strings at 50
+        // characters, and the full scheme title is what the caller reads to
+        // pick a symbol.
+        for (index, candidate) in candidates.iter().enumerate() {
+            println!(
+                "  {}. {} — {} ({} applications)",
+                index + 1,
+                text(candidate, "symbol"),
+                text(candidate, "title"),
+                text(candidate, "applications"),
+            );
+        }
+        println!(
+            "\nPass one symbol to `flowleap patstat graph technology <symbol>` for its landscape."
+        );
+    }
+
+    print_edition_and_attribution(body);
+}
+
+/// The technology screen, in the applicant screen's style: area card, top
+/// applicants, filing trend, grant rate by office, then new entrants,
+/// seminal families, top inventors and the three geography rankings — one
+/// section table at a time, each with its truncation notice.
+fn print_technology_view(body: &Value) {
+    let meta = body.get("meta").cloned().unwrap_or(Value::Null);
+    let geography = body.get("geography").cloned().unwrap_or(Value::Null);
+
+    let area = body.get("area").unwrap_or(&Value::Null);
+    match area.get("title").and_then(Value::as_str) {
+        Some(title) => println!("Technology area: {} — {title}", text(area, "cpc_prefix")),
+        None => println!("Technology area: {}", text(area, "cpc_prefix")),
+    }
+    println!(
+        "Families: {} · Applications: {}",
+        text(area, "families"),
+        text(area, "applications"),
+    );
+
+    let applicant_columns: &[(&str, &str)] = &[
+        ("psn_id", "PSN ID"),
+        ("name", "Name"),
+        ("families", "Families"),
+        ("active_since", "Active since"),
+    ];
+
+    println!("\nTop Applicants");
+    print_section_table(&candidates(body, "/top_applicants"), applicant_columns);
+    print_truncation_notice(&meta, "top_applicants", "top applicants");
+
+    println!("\nFiling Trend");
+    print_section_table(
+        &candidates(body, "/filing_trend"),
+        &[("year", "Year"), ("families", "Families")],
+    );
+
+    println!("\nGrant Rate by Office");
+    print_section_table(
+        &candidates(body, "/grant_rate"),
+        &[
+            ("office", "Office"),
+            ("applications", "Applications"),
+            ("granted", "Granted"),
+            ("grant_rate_pct", "Grant rate %"),
+        ],
+    );
+
+    println!("\nNew Entrants");
+    print_section_table(&candidates(body, "/new_entrants"), applicant_columns);
+    print_truncation_notice(&meta, "new_entrants", "new entrants");
+
+    println!("\nSeminal Families");
+    print_section_table(
+        &candidates(body, "/seminal_families"),
+        &[
+            ("publication", "Publication"),
+            ("title", "Title"),
+            ("filing_year", "Filed"),
+            ("citing_families", "Citing families"),
+        ],
+    );
+    print_truncation_notice(&meta, "seminal_families", "seminal families");
+
+    println!("\nTop Inventors");
+    print_section_table(
+        &candidates(body, "/top_inventors"),
+        &[
+            ("psn_id", "PSN ID"),
+            ("name", "Name"),
+            ("families", "Families"),
+        ],
+    );
+    print_truncation_notice(&meta, "top_inventors", "top inventors");
+
+    let country_columns: &[(&str, &str)] = &[("country", "Country"), ("families", "Families")];
+    for (key, heading, label) in [
+        (
+            "inventor_countries",
+            "Inventor Countries (where the R&D is done)",
+            "inventor countries",
+        ),
+        (
+            "applicant_countries",
+            "Applicant Countries (where ownership sits)",
+            "applicant countries",
+        ),
+        (
+            "offices",
+            "Filing Offices (where protection is sought)",
+            "filing offices",
+        ),
+    ] {
+        println!("\n{heading}");
+        print_section_table(&candidates(&geography, &format!("/{key}")), country_columns);
+        print_truncation_notice(&geography, key, label);
+    }
+
+    super::print_notes(&meta, "notes", "Notes");
+    print_data_quality(&meta);
+    print_provenance_footer(&meta);
+}
+
+/// The Data Edition and EPO attribution the non-composite tools carry at the
+/// top level of their data.
+fn print_edition_and_attribution(body: &Value) {
+    if let Some(edition) = body.get("data_edition").and_then(Value::as_str) {
+        println!("\nSource: PATSTAT data edition {edition}.");
+    }
+    if let Some(attribution) = body.get("attribution").and_then(Value::as_str) {
+        println!("{attribution}");
     }
 }
 
