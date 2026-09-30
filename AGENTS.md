@@ -31,6 +31,7 @@ before trusting `skills install` output or regenerating goldens.
 | `src/output/formatter.rs` | JSON, table, and human-readable output formatting |
 | `src/commands/auth.rs` | OAuth device flow, personal API tokens (create/list/revoke), status |
 | `src/commands/tools.rs` | Agent-first tool facade: list/describe/run `/v1/tools/*`, plus `call_tool_data` — the shared seam every data command runs on (unwraps the tool envelope to its `data` payload) |
+| `src/commands/mcp.rs` | `flowleap mcp` stdio bridge: `tools/list` mirrors the `/v1/tools` registry verbatim and `tools/call` runs a tool; it also serves the PATSTAT doctrine read at startup from `GET /v1/patstat/docs` as five resources (`flowleap://patstat/semantic-model`, `…/examples`, `…/workflow/{portfolio-analysis,guarded-sql,graph}`) and three prompts (`patstat-<workflow>`, a plain text rendering of the served workflow). It authors no tool and no doctrine; a document that fails to load is logged to stderr and skipped. `--check` reports tool, resource and prompt counts |
 | `src/commands/skills.rs` | Embedded agent-skill installer (`skills/` baked into binary): multi-harness targets (claude/claude-project/codex/cursor/gemini/--dir), version stamps, `skills update` |
 | `src/commands/patent.rs` | EPO patent search (caller-written CQL) |
 | `src/commands/uspto.rs` | USPTO ODP search, grants, applications, continuity, file wrapper (transactions/assignments/foreign-priority/adjustment/attorney/documents + OCR document text) |
