@@ -60,7 +60,7 @@ backend policy, so text matching is not a contract.
 | `RATE_LIMITED` / `rate_limit_exceeded` | 429 | Back off; carries `retryAfterSeconds` |
 | `INTERNAL_ERROR` | 500 | Unexpected tool failure |
 | `subscription_required` | 402 | A human must subscribe; carries `upgradeUrl` |
-| `data_keys_required` / `patent_provider_key_invalid` | 400 | Key gate, each carrying `provider`. While stored keys are enabled, `data_keys_required` also carries `keysPageUrl` and a human `nextStep` (`store-epo-keys` / `store-uspto-key`): give the human that FlowLeap "Patent-data keys" page link, and never ask for the key value in the chat — see `flowleap-keys` |
+| `data_keys_required` / `patent_provider_key_invalid` | 400 | Key gate, each carrying `provider`. While stored keys are enabled, `data_keys_required` (and `patent_provider_key_invalid` when the rejected key is the stored key) also carries `keysPageUrl` and a human `nextStep` (`store-epo-keys` / `store-uspto-key`): give the human that FlowLeap "Patent-data keys" page link, and never ask for the key value in the chat — see `flowleap-keys` |
 | `odp_api_key_missing` | 503 | USPTO ODP key gate |
 | `endpoint_gone` | 410 | Retired endpoint; the build is stale — see below |
 

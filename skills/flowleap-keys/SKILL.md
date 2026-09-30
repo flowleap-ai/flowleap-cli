@@ -47,17 +47,20 @@ the same patent-data-key code a gated data command returns.
 
 Doctor's `nextSteps` lists patent-data keys only when they actually **block**
 work: providers with a stored key or server coverage produce no steps (doctor
-reports the source per office in `keyValidation.providers`). A blocking provider appears
-as an obtain/store pair — `obtain-epo-keys` / `obtain-uspto-key` (`actor:
-"human"`, carries the signup `url` — relay it to the user) then
-`store-epo-keys` / `store-uspto-key` (`actor: "agent"`, carries the `run`
-command — execute it only when the user hands you the keys without being
-asked; otherwise the human adds the key on the Patent-data keys page) —
-followed by `verify-keys` (`actor: "agent"`, runs `keys test`). A
-`data_keys_required` error names the same step id with `actor: "human"`: that
-is the page route, and doctor shows no step once the stored key is present. When doctor cannot reach
-the validation endpoint (unauthenticated/offline) it falls back to local key
-presence and says so in `keyValidation.note`. See `flowleap-shared` for the
+reports the source per office in `keyValidation.providers`). A blocking
+provider appears as an obtain/store pair — `obtain-epo-keys` /
+`obtain-uspto-key` (`actor: "human"`, carries the signup `url` — relay it to
+the user) then `store-epo-keys` / `store-uspto-key` (`actor: "agent"`, carries
+the `run` command — execute it only when the user hands you the keys without
+being asked; otherwise the human adds the key on the Patent-data keys page) —
+followed by `verify-keys` (`actor: "agent"`, runs `keys test`). A stored key
+the office rejected is different: doctor gives one `store-*` step with
+`actor: "human"` and the page `url` ("Replace your … key"), then
+`verify-keys`. A key-gate error names the same step ids with `actor: "human"`:
+that is the page route, and doctor shows no step once the stored key is
+present. When doctor cannot reach the validation endpoint
+(unauthenticated/offline) it falls back to local key presence and says so in
+`keyValidation.note`. See `flowleap-shared` for the
 full `nextSteps`/`ready`/exit contract.
 
 ## Which codes mean gated
@@ -167,10 +170,12 @@ the request headers on the next invocation: no restart, no new session.
 
 Failed commands carry a `providerKeysHint` in the JSON error envelope, raised
 from the four backend codes above and from nothing else (a
-`trial_budget_exhausted` hint additionally carries `resetsAt`). While the
-backend keeps stored keys, a `provider_keys_required` hint also carries
-`keysPageUrl` and a `nextStep` with `actor: "human"` — the same shape and ids
-as doctor's `nextSteps`. Relay the step's `title` and `url` to the human:
+`trial_budget_exhausted` hint additionally carries `resetsAt`). Only while
+the backend keeps stored keys, a `provider_keys_required` hint, and a
+`provider_keys_invalid` hint when the rejected key is the stored key, also
+carry `keysPageUrl` and a `nextStep` with `actor: "human"` — the same shape and
+ids as doctor's `nextSteps`. A `trial_budget_exhausted` hint never carries
+them. Relay the step's `title` and `url` to the human:
 
 ```json
 "providerKeysHint": {
@@ -180,7 +185,7 @@ as doctor's `nextSteps`. Relay the step's `title` and `url` to the human:
   "nonInteractive": { "command": "flowleap keys set epo --key … --secret …",
                        "env": ["FLOWLEAP_EPO_KEY", "FLOWLEAP_EPO_SECRET"] },
   "signup": "https://developers.epo.org (free, 'My apps' → create app)",
-  "keysPageUrl": "https://www.flowleap.co/en/dashboard/keys",   // only while stored keys are enabled
+  "keysPageUrl": "https://www.flowleap.co/en/dashboard/keys",
   "nextStep": { "id": "store-epo-keys", "actor": "human",
                 "title": "Add your EPO OPS consumer key and secret on the FlowLeap Patent-data keys page",
                 "url": "https://www.flowleap.co/en/dashboard/keys" }

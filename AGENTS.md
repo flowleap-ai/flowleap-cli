@@ -132,10 +132,12 @@ the JSON error envelope carries a `providerKeysHint` object with
 `trial_budget_exhausted`), `provider`, and `requiresHumanIntervention: true`.
 Do NOT retry or invent keys — surface the hint and ask the user to run
 `flowleap setup` (or provide keys via env/flags). While the backend keeps
-stored keys, a `data_keys_required` hint also carries `keysPageUrl` and a
-`nextStep` (`{ id: store-epo-keys | store-uspto-key, actor: "human", title,
-url }`, copied verbatim from the error body, backend #516); relay that page
-link, and never ask for the key value in the chat. The `trial_budget_exhausted`
+stored keys, a `data_keys_required` hint (and a `patent_provider_key_invalid`
+hint when the rejected key is the stored key, backend #518) also carries
+`keysPageUrl` and a `nextStep` (`{ id: store-epo-keys | store-uspto-key, actor:
+"human", title, url }`, copied verbatim from the error body, backend #516);
+relay that page link, and never ask for the key value in the chat. The
+`trial_budget_exhausted` hint never takes them. The `trial_budget_exhausted`
 variant (backend ADR 0017: today's shared trial data budget is spent, 429) also
 carries `resetsAt` — it lifts on its own at the next UTC day, and the user's own
 free keys lift it permanently. Human/table output renders the same hint as an

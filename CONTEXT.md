@@ -65,8 +65,9 @@ A credential the USER holds at a patent office — the EPO OPS consumer
 key/secret pair, the USPTO ODP API key — that FlowLeap uses on the user's
 behalf so that office's data flows. Free at each office and obtained through a
 browser signup, so getting one is always a human step. Comes in two kinds, a
-**Forwarded key** and a **Stored key**; for one office a forwarded key wins,
-then a stored key, then (trial only) the server's own keys. `provider_keys_required` /
+**Forwarded key** and a **Stored key**. For one office a forwarded key wins,
+then a stored key, then (trial only) the **House keys**, FlowLeap's own
+credentials, which are not a Patent-Data Key. `provider_keys_required` /
 `provider_keys_invalid` / `trial_budget_exhausted` are the wire codes naming
 the concept in error envelopes, `providerKeysHint` the envelope field.
 _Avoid_: "provider keys" in prose (legacy CLI naming), and any wording that
@@ -88,9 +89,10 @@ the "Patent-data keys" page of the signed-in dashboard
 (https://www.flowleap.co/en/dashboard/keys). Validated against the office
 before save, encrypted at rest, write-only: no client can read the value back.
 Used on every surface when the request carries no Forwarded key for that
-office. `keys test` and `doctor` report it as `source: "stored"` and count it as
-a key present (backend ADR 0023). An agent never asks for its value in the
-chat: it gives the human the page link.
+office, and wins over the House keys. Enabled only when the operator has set
+the master key. `keys test` and `doctor` report it as `source: "stored"` and
+count it as a key present (backend ADR 0023). An agent never asks for its value
+in the chat: it gives the human the page link.
 _Avoid_: "saved key" or "remembered key" (say stored), "vault", and any wording
 that suggests FlowLeap can show the value back.
 
