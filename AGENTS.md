@@ -212,6 +212,7 @@ longer calls them.
 | `/v1/tools` | GET | Yes |
 | `/v1/tools/openapi.json` | GET | Yes |
 | `/v1/tools/{tool_name}` | POST | Yes |
+| `/v1/patstat/*` | POST/GET | Served by the backend; not called by the CLI (every `patstat` command runs on the tools facade, #95/#96) |
 | `/api/profile` | GET | Yes |
 | `/api/usage` | GET | Yes |
 | `/api/tokens` (create/list) | POST/GET | Yes (create requires Clerk auth, not an API token) |

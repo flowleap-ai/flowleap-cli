@@ -1,6 +1,6 @@
 ---
 name: flowleap-patstat-graph
-description: Graph Analytics over the PATSTAT snapshot — a named node and the relationships around it. Worldwide DOCDB citation networks (who cites a patent, examiner vs applicant origin), citation/family paths between two patents, family coverage, and an applicant's co-applicant network with top CPC and jurisdictions, every edge carrying a confidence tag (EXTRACTED/INFERRED/AMBIGUOUS) and a PATSTAT row provenance ref. Trigger when an agent needs a traversal answer about a specific patent or applicant — "who cites EP3477840", "how are patent X and patent Y connected", "why does this patent matter", "who does this company file with", where a family has coverage — as opposed to corpus aggregate counts (flowleap-patstat), free-text keyword analytics (flowleap analytics), or document retrieval (flowleap-patent/flowleap-ops).
+description: Graph Analytics over the PATSTAT snapshot — a named node and the relationships around it. Worldwide DOCDB citation networks (who cites a patent, examiner vs applicant origin), citation/family paths between two patents, family coverage, an applicant's co-applicant network with top CPC and jurisdictions, the CPC codes that cover a technology keyword (`graph cpc`), and one CPC area's landscape (`graph technology`: top applicants, filing trend, grant rate, new entrants), every edge carrying a confidence tag (EXTRACTED/INFERRED/AMBIGUOUS) and a PATSTAT row provenance ref. Trigger when an agent needs a traversal answer about a specific patent or applicant — "who cites EP3477840", "how are patent X and patent Y connected", "why does this patent matter", "who does this company file with", where a family has coverage — or asks "which CPC codes cover X", "who dominates <technology area>", or wants the technology landscape for a CPC area; as opposed to other corpus aggregate counts (flowleap-patstat), free-text keyword analytics (flowleap analytics), or document retrieval (flowleap-patent/flowleap-ops).
 ---
 
 # FlowLeap Patstat Graph (Graph Analytics)
@@ -10,21 +10,21 @@ Auth and global flags: see `flowleap-shared`.
 Eight native commands under `flowleap patstat graph`. Each one runs one
 **PATSTAT tool** on the Tools facade, the same tool `flowleap mcp` serves under
 the same name. The graph tools need sign-in only: no plan and no patent-data
-key. They share a 30 requests/minute limit.
+key.
 
 ## Routing: which engine answers this?
 
-| The question's essential criterion | Engine | Skill |
-|---|---|---|
-| Free-text keywords over title/abstract | Topic Analytics | `flowleap analytics` |
-| Structured criteria giving a table of counts | Portfolio Analytics | `flowleap-patstat` |
-| **A named node and its relationships** | **Graph Analytics** | **this skill** |
+The routing table between Topic, Portfolio and Graph Analytics lives in
+`flowleap-patstat` ("Which engine?"). The served statement is step 1 of every
+served workflow (`flowleap patstat docs --workflow <portfolio-analysis|guarded-sql|graph>`);
+`--workflow graph` is the served procedure for this skill. A *connection* (who
+cites what, what links two patents, who co-files with whom) is here. One known
+document's text, claims or legal status is not: use `flowleap-patent`,
+`flowleap-ops` or `flowleap-uspto`.
 
-A count goes to `flowleap-patstat`. A *connection* (who cites what, what links
-two patents, who co-files with whom) is here. One known document's text, claims
-or legal status is neither: use `flowleap-patent`, `flowleap-ops` or
-`flowleap-uspto`. The served procedure, routing first, then resolve, is
-`flowleap patstat docs --workflow graph`.
+A CPC/IPC-class landscape is Portfolio Analytics.
+`flowleap patstat graph technology <cpc>` is its fast path: find the code with
+`graph cpc` first. Use `patstat query` when the composite does not answer.
 
 ## The eight commands
 
@@ -39,16 +39,16 @@ flowleap patstat graph path EP3477840 US5960411 --max-hops 3
 flowleap patstat graph explain EP3477840 --token-budget 4000
 ```
 
-| Command | Tool | Answers |
-|---|---|---|
-| `resolve <query>` | `patstat_resolve` | Number → its `pat:<appln_id>` anchor; free text → ranked applicant entities with `psn_id`, largest portfolio first |
-| `cpc <keyword>` | `patstat_cpc` | Technology keyword → ranked CPC symbols with scheme title and application count |
-| `patent <number>` | `patstat_patent` | The whole patent picture in one call: anchor, backward/forward citations, family, applicants/inventors/CPC, priorities |
-| `applicant <psn_id>` | `patstat_applicant` | One harmonized entity: filings by year, top CPC, jurisdictions, co-applicants |
-| `technology <cpc>` | `patstat_technology` | One CPC area: top applicants, filing trend, grant rate by office, new entrants, seminal families, top inventors, geography |
-| `neighborhood <node>` | `patstat_neighborhood` | Bounded 1–2 hop expansion, examiner citations ranked first |
-| `path <a> <b>` | `patstat_path` | Shortest citation/family path between two patents |
-| `explain <node>` | `patstat_explain` | Node card + top connections, the remainder grouped with TRUE counts |
+| Command | Tool | Gate | Answers |
+|---|---|---|---|
+| `resolve <query>` | `patstat_resolve` | sign-in, 30/min shared | Number → its `pat:<appln_id>` anchor; free text → ranked applicant entities with `psn_id`, largest portfolio first |
+| `cpc <keyword>` | `patstat_cpc` | sign-in, 30/min shared | Technology keyword → ranked CPC symbols with scheme title and application count |
+| `patent <number>` | `patstat_patent` | sign-in, 30/min shared | The whole patent picture in one call: anchor, backward/forward citations, family, applicants/inventors/CPC, priorities |
+| `applicant <psn_id>` | `patstat_applicant` | sign-in, 30/min shared | One harmonized entity: filings by year, top CPC, jurisdictions, co-applicants |
+| `technology <cpc>` | `patstat_technology` | sign-in, 30/min shared | Portfolio-shaped composite, served by the graph engine. One CPC area: top applicants, filing trend, grant rate by office, new entrants, seminal families, top inventors, geography |
+| `neighborhood <node>` | `patstat_neighborhood` | sign-in, 30/min shared | Bounded 1–2 hop expansion, examiner citations ranked first |
+| `path <a> <b>` | `patstat_path` | sign-in, 30/min shared | Shortest citation/family path between two patents |
+| `explain <node>` | `patstat_explain` | sign-in, 30/min shared | Node card + top connections, the remainder grouped with TRUE counts |
 
 Node ids are `pat:<appln_id>`, `person:<psn_id>`, `family:<docdb_family_id>`,
 `cpc:<symbol>`. Through `tools run` the inputs are snake_case: `q`, `number`,
@@ -116,8 +116,8 @@ incomplete: never read that tail as a decline.
 **`--json`, every command** — the tool data verbatim, with no CLI envelope and
 no `success` flag. `neighborhood`, `path` and `explain` answer
 `{ text, data, data_edition, attribution }`; the other verbs answer their own
-fields with `data_edition` and `attribution` beside them. A typed error prints
-as `{ error: { code, message, details } }`.
+fields with `data_edition` and `attribution` beside them. A typed error
+carries an `error` object with `code`, `message` and `details`.
 
 **Which number is which.** Every node the backend answers with carries a
 citable `publication` — the first grant where one exists, else the earliest

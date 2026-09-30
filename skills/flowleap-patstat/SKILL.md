@@ -42,8 +42,13 @@ A **concept** that must become identifiers, CPC codes or a candidate set for a
 structured aggregate comes here too, through text discovery (see the recipes
 below): the text is the way in, never the answer. One known document is none
 of the three engines: use `flowleap-patent`, `flowleap-uspto` or `flowleap-ops`.
-The served statement of the rule is step 1 of
-`flowleap patstat docs --workflow graph`.
+
+A CPC/IPC-class landscape is Portfolio Analytics.
+`flowleap patstat graph technology <cpc>` is its fast path: find the code with
+`graph cpc` first. Use `patstat query` when the composite does not answer.
+
+The served statement of the rule is step 1 of every served workflow
+(`flowleap patstat docs --workflow <portfolio-analysis|guarded-sql|graph>`).
 
 **Keyless, but not a stand-in.** PATSTAT stays live when EPO OPS or USPTO ODP
 answers `provider_keys_required`. You may offer it to keep work moving, framed
@@ -86,8 +91,7 @@ the user picks once.
 
 Grant rates, citation-impact rankings, inventor analytics, jurisdiction
 coverage and other aggregates that no typed command answers take **one SQL
-SELECT** against the `flowleap.*` semantic views. For "who dominates a CPC
-area", try `patstat graph technology <cpc>` first.
+SELECT** against the `flowleap.*` semantic views.
 
 The procedure is served, and it is the source of truth:
 `flowleap patstat docs --workflow guarded-sql`. Its steps map to these commands:
@@ -116,9 +120,12 @@ you with `error.code`, `error.message` and `error.details`:
   **same SQL** once more with `--retry-of patstat_sql_timeout`.
 - Every other `patstat_sql_*` error: rewrite the SQL once from the message and
   details, then send it with `--retry-of <error code>`.
-- `patstat_busy` (429, exit 6): load, not SQL. Wait `retryAfterSeconds`, then
-  send the same SQL.
-- A second failure: stop and report the typed error.
+- `patstat_busy` or `patstat_unreachable`: capacity, not a gate verdict
+  (backend ADR 0010). Wait `error.details.retry_after` seconds (the
+  Retry-After header), then resend the **same SQL** with
+  `--retry-of patstat_busy`. This resend does not count as the one retry.
+- A second gate failure after your one rewrite: stop and report the typed
+  error.
 
 Entity disambiguation in guarded SQL has no 422. Probe the candidates first with
 a cheap `SELECT name … LIKE 'X%' GROUP BY name` query. When the candidates
