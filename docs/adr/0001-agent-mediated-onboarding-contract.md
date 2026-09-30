@@ -63,6 +63,11 @@ the human — needed a first-class contract.
    (`keyValidation.source: "local"`) and never errors — diagnosis works
    offline.
 
+   **Amended (#117, 2026-09-30):** a stored key (validate `source:
+   "stored"`, backend ADR 0023) is a key present: it produces no steps unless
+   the office rejected it (`valid: false`). `keyValidation.providers` reports
+   the validate `source` per office (null on the local fallback).
+
 4. **Structured sign-in is one blocking NDJSON process** (#41): `--json auth
    login` emits `device_authorization` (URL + user code) immediately, then
    exactly one terminal `authorized`/`failed` event, with no browser or

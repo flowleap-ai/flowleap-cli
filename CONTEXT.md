@@ -62,14 +62,37 @@ one actor; a task needing both is two steps.
 
 **Patent-Data Key**:
 A credential the USER holds at a patent office — the EPO OPS consumer
-key/secret pair, the USPTO ODP API key — that FlowLeap forwards per request so
-that office's data flows. Free at each office and obtained through a browser
-signup, so getting one is always a human step. `provider_keys_required` /
+key/secret pair, the USPTO ODP API key — that FlowLeap uses on the user's
+behalf so that office's data flows. Free at each office and obtained through a
+browser signup, so getting one is always a human step. Comes in two kinds, a
+**Forwarded key** and a **Stored key**; for one office a forwarded key wins,
+then a stored key, then (trial only) the server's own keys. `provider_keys_required` /
 `provider_keys_invalid` / `trial_budget_exhausted` are the wire codes naming
 the concept in error envelopes, `providerKeysHint` the envelope field.
 _Avoid_: "provider keys" in prose (legacy CLI naming), and any wording that
 reads as a FlowLeap paywall — the office issues the key, FlowLeap only carries
 it.
+
+**Forwarded key**:
+A Patent-Data Key the client keeps on the user's machine and sends in the
+request headers (`x-epo-ops-key` / `x-epo-ops-secret`, `x-uspto-odp-key`): for
+this CLI, the keys in `credentials.toml` or the `FLOWLEAP_*_KEY` env vars. It
+lives only for the request on the backend, is never logged, and always wins
+over a Stored key for that office. `keys test` reports it as `source: "user"`
+(the legacy wire name).
+_Avoid_: "user key" alone (a stored key is the user's key too), "header key".
+
+**Stored key**:
+A Patent-Data Key the user asked FlowLeap to keep, entered once by the human on
+the "Patent-data keys" page of the signed-in dashboard
+(https://www.flowleap.co/en/dashboard/keys). Validated against the office
+before save, encrypted at rest, write-only: no client can read the value back.
+Used on every surface when the request carries no Forwarded key for that
+office. `keys test` and `doctor` report it as `source: "stored"` and count it as
+a key present (backend ADR 0023). An agent never asks for its value in the
+chat: it gives the human the page link.
+_Avoid_: "saved key" or "remembered key" (say stored), "vault", and any wording
+that suggests FlowLeap can show the value back.
 
 **Key gate**:
 One office being unreachable because its Patent-Data Key is missing. A
@@ -102,8 +125,8 @@ period is a clock, the budget is an allowance.
 
 **Next step**:
 A pending onboarding action that blocks work. Steps whose need is already
-covered (e.g. a provider the server has its own keys for) are not next
-steps — the list means "what blocks you," not "what could be configured."
+covered (e.g. a provider with a Stored key, or one the server has its own keys
+for) are not next steps — the list means "what blocks you," not "what could be configured."
 
 **Ready**:
 Nothing blocks work: backend reachable, authenticated, no next steps.
