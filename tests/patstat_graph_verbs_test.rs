@@ -6,24 +6,27 @@
 //! backend `text` byte-for-byte (it already carries the confidence tags,
 //! `at=` provenance refs, Data Edition, and truncation notices), and `--json`
 //! is the whole body including the typed `data` twin.
+//!
+//! Since #96 the verbs run on the shared tool seam: `POST
+//! /v1/tools/patstat_<verb>` with snake_case JSON input, and the success
+//! body is the tool's `data` (the route body without its `success` flag).
 
 mod support;
 
 use serde_json::json;
-use support::{run_cli, stdout_json};
-use wiremock::matchers::{method, path, query_param};
+use support::{run_cli, stdout_json, tool_ok};
+use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const API_KEY_ENV: (&str, &str) = ("FLOWLEAP_API_KEY", "fl_pat_test_key");
 
-/// A verb response, shaped like the real backend
-/// (flowleap-backend src/routes/patstat.ts → `{ success, text, data }`).
+/// A verb's tool data, shaped like the real backend
+/// (flowleap-backend src/tools/patstat-graph.ts → `{ text, data }`).
 /// The `text` here mirrors the real serialization closely enough to prove it
 /// survives the relay unaltered: header with Data Edition, fact lines with
 /// confidence tags and provenance, then a truncation notice.
 fn neighborhood_body() -> serde_json::Value {
     json!({
-        "success": true,
         "text": "# neighborhood pat:56123456 (EP3477840B1) depth=1 — 2024 Autumn\n\
                  # \"Method for operating a wind turbine\"\n\
                  EP3477840 --cites [EXTRACTED 1.0]--> DE4302443 at=tls212:530028653\n\
@@ -45,7 +48,6 @@ fn neighborhood_body() -> serde_json::Value {
 
 fn path_found_body() -> serde_json::Value {
     json!({
-        "success": true,
         "text": "# path EP3477840B1 → US5960411A (max_hops=4) — 2024 Autumn\n\
                  FOUND: 2 hops: EP3477840B1 → DE4302443 → US5960411A\n\
                  EP3477840 --cites [EXTRACTED 1.0]--> DE4302443 at=tls212:1\n\
@@ -66,7 +68,6 @@ fn path_found_body() -> serde_json::Value {
 /// path within the limit". A successful answer, not a failure.
 fn path_not_found_body() -> serde_json::Value {
     json!({
-        "success": true,
         "text": "# path EP3477840B1 → US5960411A (max_hops=4) — 2024 Autumn\n\
                  NOT FOUND within the hop limit.\n\
                  TRUNCATED: frontier capped at 500 nodes — a found path is still valid, \
@@ -85,7 +86,6 @@ fn path_not_found_body() -> serde_json::Value {
 
 fn explain_body() -> serde_json::Value {
     json!({
-        "success": true,
         "text": "# explain pat:56123456 — 2024 Autumn\n\
                  EP18000829 (A) \"Method for operating a wind turbine\"\n\
                  filed 2018-01-15 granted=true family:65432100 publications: EP3477840A1, \
@@ -111,8 +111,8 @@ fn error_body(code: &str, message: &str, status: u16) -> serde_json::Value {
 }
 
 async fn mount(server: &MockServer, verb: &str, template: ResponseTemplate) {
-    Mock::given(method("GET"))
-        .and(path(format!("/v1/patstat/graph/{verb}")))
+    Mock::given(method("POST"))
+        .and(path(format!("/v1/tools/patstat_{verb}")))
         .respond_with(template)
         .mount(server)
         .await;
@@ -125,13 +125,18 @@ async fn mount(server: &MockServer, verb: &str, template: ResponseTemplate) {
 #[tokio::test]
 async fn neighborhood_sends_every_parameter_it_was_given() {
     let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/graph/neighborhood"))
-        .and(query_param("node", "pat:56123456"))
-        .and(query_param("depth", "2"))
-        .and(query_param("edge_types", "cites,cited_by"))
-        .and(query_param("token_budget", "4000"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(neighborhood_body()))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_neighborhood"))
+        .and(body_json(json!({
+            "node": "pat:56123456",
+            "depth": 2,
+            "edge_types": ["cites", "cited_by"],
+            "token_budget": 4000,
+        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(tool_ok("patstat_neighborhood", neighborhood_body())),
+        )
         .mount(&server)
         .await;
 
@@ -161,41 +166,17 @@ async fn neighborhood_sends_every_parameter_it_was_given() {
     );
 }
 
-/// Absent flags are omitted from the query entirely, so the backend applies
-/// its own documented defaults rather than the CLI pinning them.
-#[tokio::test]
-async fn absent_flags_are_omitted_from_the_query_string() {
-    let output = run_cli(
-        "http://127.0.0.1:9",
-        &[API_KEY_ENV],
-        &[
-            "--json",
-            "--dry-run",
-            "patstat",
-            "graph",
-            "neighborhood",
-            "EP3477840",
-        ],
-    )
-    .await;
-
-    assert!(output.status.success());
-    let value = stdout_json(&output);
-    assert_eq!(
-        value["url"],
-        "http://127.0.0.1:9/v1/patstat/graph/neighborhood?node=EP3477840"
-    );
-}
-
 #[tokio::test]
 async fn path_sends_both_endpoints_and_max_hops() {
     let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/graph/path"))
-        .and(query_param("a", "EP3477840"))
-        .and(query_param("b", "US5960411"))
-        .and(query_param("max_hops", "3"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(path_found_body()))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_path"))
+        .and(body_json(
+            json!({ "a": "EP3477840", "b": "US5960411", "max_hops": 3 }),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(tool_ok("patstat_path", path_found_body())),
+        )
         .mount(&server)
         .await;
 
@@ -225,11 +206,14 @@ async fn path_sends_both_endpoints_and_max_hops() {
 #[tokio::test]
 async fn explain_sends_node_and_token_budget() {
     let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/graph/explain"))
-        .and(query_param("node", "pat:56123456"))
-        .and(query_param("token_budget", "8000"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(explain_body()))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_explain"))
+        .and(body_json(
+            json!({ "node": "pat:56123456", "token_budget": 8000 }),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(tool_ok("patstat_explain", explain_body())),
+        )
         .mount(&server)
         .await;
 
@@ -268,7 +252,8 @@ async fn human_mode_prints_the_backend_text_verbatim() {
     mount(
         &server,
         "neighborhood",
-        ResponseTemplate::new(200).set_body_json(neighborhood_body()),
+        ResponseTemplate::new(200)
+            .set_body_json(tool_ok("patstat_neighborhood", neighborhood_body())),
     )
     .await;
 
@@ -295,7 +280,7 @@ async fn json_mode_emits_the_whole_body_including_the_typed_data_twin() {
     mount(
         &server,
         "explain",
-        ResponseTemplate::new(200).set_body_json(explain_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_explain", explain_body())),
     )
     .await;
 
@@ -320,7 +305,7 @@ async fn path_found_prints_the_path_line_verbatim() {
     mount(
         &server,
         "path",
-        ResponseTemplate::new(200).set_body_json(path_found_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_path", path_found_body())),
     )
     .await;
 
@@ -345,7 +330,7 @@ async fn path_not_found_renders_cleanly_and_exits_zero() {
     mount(
         &server,
         "path",
-        ResponseTemplate::new(200).set_body_json(path_not_found_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_path", path_not_found_body())),
     )
     .await;
 
@@ -368,7 +353,7 @@ async fn path_not_found_json_mode_keeps_found_false_in_the_data_twin() {
     mount(
         &server,
         "path",
-        ResponseTemplate::new(200).set_body_json(path_not_found_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_path", path_not_found_body())),
     )
     .await;
 
@@ -477,10 +462,14 @@ async fn out_of_range_max_hops_relays_the_backend_message_verbatim() {
 #[tokio::test]
 async fn out_of_range_token_budget_is_clamped_not_refused() {
     let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/graph/explain"))
-        .and(query_param("token_budget", "999999"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(explain_body()))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_explain"))
+        .and(body_json(
+            json!({ "node": "pat:56123456", "token_budget": 999999 }),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(tool_ok("patstat_explain", explain_body())),
+        )
         .mount(&server)
         .await;
 
@@ -651,4 +640,46 @@ async fn untyped_failure_falls_back_to_the_shared_envelope() {
     let value = stdout_json(&output);
     assert_eq!(value["ok"], false);
     assert_eq!(value["status"], 401);
+}
+
+/// A bad value is the route's 400 `patstat_invalid_request` on the facade
+/// too. `--json` relays the error body verbatim — `code`, `message` and the
+/// `details` the facade nests the route's extra fields under — and the exit
+/// code stays the 400 mapping.
+#[tokio::test]
+async fn invalid_request_json_mode_relays_code_message_and_details_verbatim() {
+    let server = MockServer::start().await;
+    let body = json!({
+        "success": false,
+        "error": {
+            "code": "patstat_invalid_request",
+            "message": "`edge_types` has an unknown edge type: \"cited\". Valid: cites, cited_by, in_family, has_applicant, has_inventor, classified_as, claims_priority.",
+            "details": { "field": "edge_types", "value": ["cited"] },
+        },
+        "status": 400,
+    });
+    mount(
+        &server,
+        "neighborhood",
+        ResponseTemplate::new(400).set_body_json(body.clone()),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &[
+            "--json",
+            "patstat",
+            "graph",
+            "neighborhood",
+            "EP3477840",
+            "--edge-types",
+            "cited",
+        ],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout_json(&output), body);
 }

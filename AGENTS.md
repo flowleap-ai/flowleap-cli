@@ -196,11 +196,12 @@ provider-specific routes they used to call are retired (backend ADR 0013).
 `flowleap tools list` discovers every tool with its JSON input schema and
 per-tool docs; `flowleap tools run <name>` executes one.
 
-Named non-facade exceptions: key validation (usable before subscribing), the
-`patstat graph` verbs (on the `/v1/patstat/graph/*` routes until #96),
+Named non-facade exceptions: key validation (usable before subscribing),
 auth/OAuth, and `api request` (the raw escape hatch, which calls whatever path
-you give it). `patstat portfolio`, `docs` and `query` run on the facade like
-every other data command.
+you give it). Every `patstat` command — `portfolio`, `docs`, `query` and the
+`graph` verbs — runs on the facade like every other data command. The
+backend still serves the `/v1/patstat/graph/*` routes; the CLI no longer
+calls them.
 
 | Endpoint | Method | Auth Required |
 |----------|--------|---------------|
@@ -211,7 +212,6 @@ every other data command.
 | `/v1/tools` | GET | Yes |
 | `/v1/tools/openapi.json` | GET | Yes |
 | `/v1/tools/{tool_name}` | POST | Yes |
-| `/v1/patstat/graph/*` (graph verbs only, until #96) | GET | Yes |
 | `/api/profile` | GET | Yes |
 | `/api/usage` | GET | Yes |
 | `/api/tokens` (create/list) | POST/GET | Yes (create requires Clerk auth, not an API token) |
@@ -238,6 +238,14 @@ every other data command.
 | `patstat portfolio` | `patstat_portfolio` (`--from-year`/`--to-year` → `from_year`/`to_year`) |
 | `patstat docs` | `patstat_docs` (`--section`/`--workflow`/`--endpoint`; no flag sends `compact: false` for the full docs, `--compact` sends `compact: true`). `flowleap mcp` loads its five doctrine resources through this tool too (free at sign-in, backend ADR 0021) |
 | `patstat query` | `patstat_query` (`--retry-of` → `retry_of`) — **never resent by the client**, see below |
+| `patstat graph resolve` | `patstat_resolve` (`<query>` → `q`) |
+| `patstat graph cpc` | `patstat_cpc` (`<query>` → `q`) |
+| `patstat graph patent` | `patstat_patent` (`<publication>` → `number`) |
+| `patstat graph applicant` | `patstat_applicant` (`<psn_id>` → `psn_id`, a number) |
+| `patstat graph technology` | `patstat_technology` (`<cpc>` → `cpc`) |
+| `patstat graph neighborhood` | `patstat_neighborhood` (`--depth` → `depth`, `--edge-types a,b` → `edge_types: ["a","b"]`, `--token-budget` → `token_budget`) |
+| `patstat graph path` | `patstat_path` (`<a> <b>` → `a`/`b`, `--max-hops` → `max_hops`, `--token-budget` → `token_budget`) |
+| `patstat graph explain` | `patstat_explain` (`--token-budget` → `token_budget`) |
 
 **No hidden retry on guarded SQL.** The client resends a request on its own
 after a 5xx, a connection failure or a short 429 (twice by default,
@@ -254,7 +262,11 @@ top-level `success` and gain `attribution`. `docs` prints the tool data
 itself, so the semantic model is `.yaml`, not `.data.yaml`. Typed errors carry
 their extra fields under `error.details` (for example
 `error.details.candidates` on `patstat_applicant_ambiguous`). The tool inputs
-are `from_year`, `to_year` and `retry_of`.
+are `from_year`, `to_year` and `retry_of`. The `patstat graph` verbs (#96)
+follow the same rule: every result loses the top-level `success`;
+`resolve`, `neighborhood`, `path` and `explain` gain top-level `data_edition`
+and `attribution` (the new `cpc` carries both at the top level too); and the `graph patent` 422 carries its candidates at
+`error.details.candidates`.
 
 Tool parameters are `snake_case`. `figures --out` fetches image bytes from
 `get_patent_image` itself (`include_images: true` returns base64 pages) — there

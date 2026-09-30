@@ -6,12 +6,17 @@
 //! Two invariants this file locks for the whole graph family (#55, #56 copy
 //! them): `--json` is ALWAYS the backend body unmodified — success kinds and
 //! typed error bodies alike — and ambiguity never exits 0.
+//!
+//! Since #96 every verb runs on the shared tool seam: it POSTs
+//! `/v1/tools/patstat_<verb>` and the success body is the tool's `data`
+//! (the route body without its `success` flag), so the fixtures below are
+//! tool data and the mocks wrap them in the facade envelope.
 
 mod support;
 
 use serde_json::{json, Value};
-use support::{run_cli, stdout_json};
-use wiremock::matchers::{method, path, query_param};
+use support::{run_cli, stdout_json, tool_ok};
+use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const API_KEY_ENV: (&str, &str) = ("FLOWLEAP_API_KEY", "fl_pat_test_key");
@@ -23,7 +28,6 @@ const API_KEY_ENV: (&str, &str) = ("FLOWLEAP_API_KEY", "fl_pat_test_key");
 /// happens to equal the application number (the case that hid the bug).
 fn patent_body() -> serde_json::Value {
     json!({
-        "success": true,
         "kind": "patent",
         "input": "EP3477840",
         "anchor": {
@@ -62,7 +66,6 @@ fn patent_body() -> serde_json::Value {
 /// applications. HTTP 200: the backend resolved fine, the caller must pick.
 fn ambiguous_body() -> serde_json::Value {
     json!({
-        "success": true,
         "kind": "ambiguous",
         "input": "US5960411",
         "candidates": [
@@ -104,7 +107,6 @@ fn ambiguous_body() -> serde_json::Value {
 /// truncated against a larger true total.
 fn entities_body() -> serde_json::Value {
     json!({
-        "success": true,
         "kind": "entities",
         "input": "Siemens",
         "candidates": [
@@ -132,8 +134,9 @@ fn entities_body() -> serde_json::Value {
     })
 }
 
-/// Canned typed graph error body (unified FlowLeap envelope: the backend
-/// spreads `details` into `error`, so candidates ride at `error.candidates`).
+/// Canned typed graph error body (the facade error envelope: the route's
+/// code, message and status; extra fields such as `candidates` ride under
+/// `error.details`).
 fn error_body(code: &str, message: &str, status: u16) -> serde_json::Value {
     json!({
         "success": false,
@@ -143,20 +146,22 @@ fn error_body(code: &str, message: &str, status: u16) -> serde_json::Value {
 }
 
 async fn mount_resolve(server: &MockServer, template: ResponseTemplate) {
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/graph/resolve"))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_resolve"))
         .respond_with(template)
         .mount(server)
         .await;
 }
 
 #[tokio::test]
-async fn resolve_sends_the_query_as_the_q_parameter() {
+async fn resolve_sends_the_query_as_the_q_input() {
     let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/graph/resolve"))
-        .and(query_param("q", "EP3477840"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(patent_body()))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_resolve"))
+        .and(body_json(json!({ "q": "EP3477840" })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(tool_ok("patstat_resolve", patent_body())),
+        )
         .mount(&server)
         .await;
 
@@ -174,41 +179,12 @@ async fn resolve_sends_the_query_as_the_q_parameter() {
     );
 }
 
-/// A company name carries spaces and punctuation — it must reach the backend
-/// percent-encoded, not as a broken query string. Asserted through `--dry-run`
-/// so the encoding is checked without depending on a server's own parsing.
-#[tokio::test]
-async fn resolve_url_encodes_free_text_queries() {
-    let output = run_cli(
-        "http://127.0.0.1:9",
-        &[API_KEY_ENV],
-        &[
-            "--json",
-            "--dry-run",
-            "patstat",
-            "graph",
-            "resolve",
-            "Kia Motors & Co",
-        ],
-    )
-    .await;
-
-    assert!(output.status.success());
-    let value = stdout_json(&output);
-    assert_eq!(value["dryRun"], true);
-    assert_eq!(value["method"], "GET");
-    assert_eq!(
-        value["url"],
-        "http://127.0.0.1:9/v1/patstat/graph/resolve?q=Kia%20Motors%20%26%20Co"
-    );
-}
-
 #[tokio::test]
 async fn patent_kind_renders_the_anchor_in_human_mode() {
     let server = MockServer::start().await;
     mount_resolve(
         &server,
-        ResponseTemplate::new(200).set_body_json(patent_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_resolve", patent_body())),
     )
     .await;
 
@@ -250,7 +226,11 @@ async fn patent_kind_with_no_publication_falls_back_to_a_labeled_docdb_number() 
     body["anchor"]["publication"] = Value::Null;
     body["anchor"]["docdb_application"] = json!("US10374408 (A)");
     body["anchor"]["application"] = json!("US10374408 (A)");
-    mount_resolve(&server, ResponseTemplate::new(200).set_body_json(body)).await;
+    mount_resolve(
+        &server,
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_resolve", body)),
+    )
+    .await;
 
     let output = run_cli(
         &server.uri(),
@@ -270,7 +250,7 @@ async fn patent_kind_json_mode_emits_the_backend_body_untouched() {
     let server = MockServer::start().await;
     mount_resolve(
         &server,
-        ResponseTemplate::new(200).set_body_json(patent_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_resolve", patent_body())),
     )
     .await;
 
@@ -297,7 +277,7 @@ async fn entities_kind_ranks_candidates_and_states_the_true_total() {
     let server = MockServer::start().await;
     mount_resolve(
         &server,
-        ResponseTemplate::new(200).set_body_json(entities_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_resolve", entities_body())),
     )
     .await;
 
@@ -326,7 +306,7 @@ async fn entities_kind_json_mode_emits_the_backend_body_untouched() {
     let server = MockServer::start().await;
     mount_resolve(
         &server,
-        ResponseTemplate::new(200).set_body_json(entities_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_resolve", entities_body())),
     )
     .await;
 
@@ -349,7 +329,7 @@ async fn ambiguous_kind_prints_candidates_and_exits_non_zero() {
     let server = MockServer::start().await;
     mount_resolve(
         &server,
-        ResponseTemplate::new(200).set_body_json(ambiguous_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_resolve", ambiguous_body())),
     )
     .await;
 
@@ -382,7 +362,7 @@ async fn ambiguous_kind_json_mode_emits_the_body_untouched_and_exits_non_zero() 
     let server = MockServer::start().await;
     mount_resolve(
         &server,
-        ResponseTemplate::new(200).set_body_json(ambiguous_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_resolve", ambiguous_body())),
     )
     .await;
 
@@ -463,7 +443,7 @@ async fn patent_ambiguous_422_renders_the_error_candidates() {
          kind code (e.g. A1 vs B1) or use a fuller number form to disambiguate.",
         422,
     );
-    body["error"]["candidates"] = ambiguous_body()["candidates"].clone();
+    body["error"]["details"] = json!({ "candidates": ambiguous_body()["candidates"] });
     mount_resolve(&server, ResponseTemplate::new(422).set_body_json(body)).await;
 
     let output = run_cli(
@@ -586,7 +566,6 @@ async fn missing_credentials_fails_locally_without_a_network_call() {
 
 fn patent_view_body() -> serde_json::Value {
     json!({
-        "success": true,
         "meta": {
             "composite": "patent_view",
             "data_edition": "PATSTAT 2026 Spring",
@@ -721,8 +700,9 @@ fn patent_error_body(code: &str, message: &str, status: u16) -> serde_json::Valu
 }
 
 async fn mount_patent_view(server: &MockServer, number: &str, template: ResponseTemplate) {
-    Mock::given(method("GET"))
-        .and(path(format!("/v1/patstat/graph/patent/{number}")))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_patent"))
+        .and(body_json(json!({ "number": number })))
         .respond_with(template)
         .mount(server)
         .await;
@@ -734,7 +714,7 @@ async fn patent_view_renders_all_sections_in_human_mode() {
     mount_patent_view(
         &server,
         "US5960411",
-        ResponseTemplate::new(200).set_body_json(patent_view_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_patent", patent_view_body())),
     )
     .await;
 
@@ -803,7 +783,7 @@ async fn patent_view_json_mode_emits_the_backend_body_untouched() {
     mount_patent_view(
         &server,
         "US5960411",
-        ResponseTemplate::new(200).set_body_json(patent_view_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok("patstat_patent", patent_view_body())),
     )
     .await;
 
@@ -826,7 +806,8 @@ async fn patent_view_truncated_hub_patent_shows_true_totals() {
     mount_patent_view(
         &server,
         "US5960411",
-        ResponseTemplate::new(200).set_body_json(patent_view_truncated_hub_body()),
+        ResponseTemplate::new(200)
+            .set_body_json(tool_ok("patstat_patent", patent_view_truncated_hub_body())),
     )
     .await;
 
@@ -860,7 +841,6 @@ async fn patent_view_truncated_hub_patent_shows_true_totals() {
 /// "Priority: US application 10374408" — names the same citable grant.
 fn ep2110298_family_view_body() -> serde_json::Value {
     json!({
-        "success": true,
         "meta": {},
         "anchor": {
             "node": "pat:56549757",
@@ -917,7 +897,8 @@ async fn patent_view_family_and_priorities_show_citable_publications_not_docdb_n
     mount_patent_view(
         &server,
         "EP2110298",
-        ResponseTemplate::new(200).set_body_json(ep2110298_family_view_body()),
+        ResponseTemplate::new(200)
+            .set_body_json(tool_ok("patstat_patent", ep2110298_family_view_body())),
     )
     .await;
 
@@ -1002,7 +983,7 @@ async fn patent_view_422_ambiguous_prints_candidates_and_exits_with_the_mapped_c
          kind code (e.g. A1 vs B1) or use a fuller number form to disambiguate.",
         422,
     );
-    body["error"]["candidates"] = ambiguous_body()["candidates"].clone();
+    body["error"]["details"] = json!({ "candidates": ambiguous_body()["candidates"] });
     mount_patent_view(
         &server,
         "US5960411",
@@ -1025,35 +1006,6 @@ async fn patent_view_422_ambiguous_prints_candidates_and_exits_with_the_mapped_c
     assert!(stdout.contains("None is picked automatically."));
 }
 
-/// A publication number that needs percent-encoding to survive as one URL
-/// path segment — asserted through `--dry-run` so the encoding is checked
-/// without depending on a server's own path parsing.
-#[tokio::test]
-async fn patent_view_url_encodes_the_publication_path_segment() {
-    let output = run_cli(
-        "http://127.0.0.1:9",
-        &[API_KEY_ENV],
-        &[
-            "--json",
-            "--dry-run",
-            "patstat",
-            "graph",
-            "patent",
-            "EP 3477840/A1",
-        ],
-    )
-    .await;
-
-    assert!(output.status.success());
-    let value = stdout_json(&output);
-    assert_eq!(value["dryRun"], true);
-    assert_eq!(value["method"], "GET");
-    assert_eq!(
-        value["url"],
-        "http://127.0.0.1:9/v1/patstat/graph/patent/EP%203477840%2FA1"
-    );
-}
-
 /*
  * ── graph applicant (issue #56) ──────────────────────────────────────────
  * Shaped against ApplicantView: meta (caps/truncation/sources/data_quality),
@@ -1063,7 +1015,6 @@ async fn patent_view_url_encodes_the_publication_path_segment() {
 
 fn applicant_view_body() -> serde_json::Value {
     json!({
-        "success": true,
         "meta": {
             "composite": "applicant_view",
             "data_edition": "PATSTAT 2026 Spring",
@@ -1125,8 +1076,9 @@ fn applicant_view_truncated_body() -> serde_json::Value {
 }
 
 async fn mount_applicant_view(server: &MockServer, psn_id: u64, template: ResponseTemplate) {
-    Mock::given(method("GET"))
-        .and(path(format!("/v1/patstat/graph/applicant/{psn_id}")))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_applicant"))
+        .and(body_json(json!({ "psn_id": psn_id })))
         .respond_with(template)
         .mount(server)
         .await;
@@ -1138,7 +1090,8 @@ async fn applicant_view_renders_all_sections_in_human_mode() {
     mount_applicant_view(
         &server,
         84210,
-        ResponseTemplate::new(200).set_body_json(applicant_view_body()),
+        ResponseTemplate::new(200)
+            .set_body_json(tool_ok("patstat_applicant", applicant_view_body())),
     )
     .await;
 
@@ -1180,7 +1133,8 @@ async fn applicant_view_json_mode_emits_the_backend_body_untouched() {
     mount_applicant_view(
         &server,
         84210,
-        ResponseTemplate::new(200).set_body_json(applicant_view_body()),
+        ResponseTemplate::new(200)
+            .set_body_json(tool_ok("patstat_applicant", applicant_view_body())),
     )
     .await;
 
@@ -1201,7 +1155,10 @@ async fn applicant_view_truncated_sections_show_true_totals() {
     mount_applicant_view(
         &server,
         84210,
-        ResponseTemplate::new(200).set_body_json(applicant_view_truncated_body()),
+        ResponseTemplate::new(200).set_body_json(tool_ok(
+            "patstat_applicant",
+            applicant_view_truncated_body(),
+        )),
     )
     .await;
 

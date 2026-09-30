@@ -9,7 +9,7 @@
 mod support;
 
 use serde_json::{json, Value};
-use support::{frame, initialize_frame, run_cli, run_mcp, stdout_json};
+use support::{frame, initialize_frame, run_cli, run_mcp, stdout_json, tool_ok};
 use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -17,10 +17,6 @@ const API_KEY_ENV: (&str, &str) = ("FLOWLEAP_API_KEY", "fl_pat_test_key");
 const ATTRIBUTION: &str =
     "This product contains data sourced from EPO databases, © European Patent Organisation";
 const SQL: &str = "SELECT office, COUNT(DISTINCT family_id) AS inventions FROM flowleap.applications GROUP BY office";
-
-fn envelope(tool: &str, data: Value) -> Value {
-    json!({ "success": true, "tool": tool, "data": data, "executionTimeMs": 40 })
-}
 
 fn query_data() -> Value {
     json!({
@@ -77,7 +73,7 @@ async fn query_json_mode_prints_the_tool_data_verbatim() {
             json!({ "sql": SQL, "question": "filings by office" }),
         ))
         .respond_with(
-            ResponseTemplate::new(200).set_body_json(envelope("patstat_query", query_data())),
+            ResponseTemplate::new(200).set_body_json(tool_ok("patstat_query", query_data())),
         )
         .expect(1)
         .mount(&server)
@@ -111,7 +107,7 @@ async fn query_human_mode_renders_rows_count_and_edition() {
     Mock::given(method("POST"))
         .and(path("/v1/tools/patstat_query"))
         .respond_with(
-            ResponseTemplate::new(200).set_body_json(envelope("patstat_query", query_data())),
+            ResponseTemplate::new(200).set_body_json(tool_ok("patstat_query", query_data())),
         )
         .mount(&server)
         .await;
@@ -303,7 +299,7 @@ async fn docs_selectors_map_to_the_tool_input() {
             .and(path("/v1/tools/patstat_docs"))
             .and(body_json(input.clone()))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(envelope("patstat_docs", data.clone())),
+                ResponseTemplate::new(200).set_body_json(tool_ok("patstat_docs", data.clone())),
             )
             .expect(1)
             .mount(&server)
@@ -327,7 +323,7 @@ async fn docs_semantic_model_prints_the_yaml_raw_in_human_mode() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/tools/patstat_docs"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(envelope(
+        .respond_with(ResponseTemplate::new(200).set_body_json(tool_ok(
             "patstat_docs",
             json!({
                 "yaml": "views:\n  applications: {}\n",

@@ -3,8 +3,8 @@
 //! assert the tool name (URL) and the tool-input JSON shape without a live
 //! backend — the same seam `facade_test.rs` uses for the ergonomic verbs.
 //!
-//! `keys test`/`keys set` and the `patstat graph` verbs (until #96) are the
-//! named non-facade exceptions and are deliberately absent here.
+//! `keys test`/`keys set` are the named non-facade exception and are
+//! deliberately absent here. Since #96 no command calls a `/v1/patstat` route.
 
 use std::process::Command;
 
@@ -380,6 +380,107 @@ fn patstat_commands_map_onto_the_patstat_tools() {
 
     for (args, tool, body) in cases {
         let value = dry_run(args);
+        assert_eq!(value["method"], "POST", "{args:?}");
+        assert_eq!(
+            value["url"],
+            format!("https://api.flowleap.co/v1/tools/{tool}"),
+            "{args:?}"
+        );
+        assert_eq!(value["body"], body, "{args:?}");
+    }
+}
+
+/// Every `patstat graph` verb — the six relays and the two native entry
+/// ramps — is a POST to its `patstat_<verb>` tool (#96), with the flags
+/// mapped to snake_case input. Free text and a number with a space or a slash
+/// travel as one JSON string, and absent flags are left out so the backend
+/// defaults apply.
+#[test]
+fn patstat_graph_verbs_map_onto_the_graph_tools() {
+    let cases: [(&[&str], &str, Value); 11] = [
+        (
+            &["resolve", "EP3477840"],
+            "patstat_resolve",
+            json!({ "q": "EP3477840" }),
+        ),
+        (
+            &["resolve", "Kia Motors & Co"],
+            "patstat_resolve",
+            json!({ "q": "Kia Motors & Co" }),
+        ),
+        (
+            &["cpc", "solid state battery"],
+            "patstat_cpc",
+            json!({ "q": "solid state battery" }),
+        ),
+        (
+            &["patent", "US5960411"],
+            "patstat_patent",
+            json!({ "number": "US5960411" }),
+        ),
+        (
+            &["patent", "EP 3477840/A1"],
+            "patstat_patent",
+            json!({ "number": "EP 3477840/A1" }),
+        ),
+        (
+            &["applicant", "30138991"],
+            "patstat_applicant",
+            json!({ "psn_id": 30138991 }),
+        ),
+        (
+            &["technology", "H01M10/0562"],
+            "patstat_technology",
+            json!({ "cpc": "H01M10/0562" }),
+        ),
+        (
+            &["neighborhood", "EP3477840"],
+            "patstat_neighborhood",
+            json!({ "node": "EP3477840" }),
+        ),
+        (
+            &[
+                "neighborhood",
+                "EP3477840",
+                "--depth",
+                "2",
+                "--edge-types",
+                "cites, cited_by",
+                "--token-budget",
+                "500",
+            ],
+            "patstat_neighborhood",
+            json!({
+                "node": "EP3477840",
+                "depth": 2,
+                "edge_types": ["cites", "cited_by"],
+                "token_budget": 500,
+            }),
+        ),
+        (
+            &[
+                "path",
+                "EP3477840",
+                "US5960411",
+                "--max-hops",
+                "3",
+                "--token-budget",
+                "900",
+            ],
+            "patstat_path",
+            json!({ "a": "EP3477840", "b": "US5960411", "max_hops": 3, "token_budget": 900 }),
+        ),
+        (
+            &["explain", "pat:56123456", "--token-budget", "4000"],
+            "patstat_explain",
+            json!({ "node": "pat:56123456", "token_budget": 4000 }),
+        ),
+    ];
+
+    for (args, tool, body) in cases {
+        let mut argv = vec!["patstat", "graph"];
+        argv.extend_from_slice(args);
+        let value = dry_run(&argv);
         assert_eq!(value["method"], "POST", "{args:?}");
         assert_eq!(
             value["url"],
