@@ -265,7 +265,7 @@ their extra fields under `error.details` (for example
 are `from_year`, `to_year` and `retry_of`. The `patstat graph` verbs (#96)
 follow the same rule: every result loses the top-level `success`;
 `resolve`, `neighborhood`, `path` and `explain` gain top-level `data_edition`
-and `attribution`; and the `graph patent` 422 carries its candidates at
+and `attribution` (the new `cpc` carries both at the top level too); and the `graph patent` 422 carries its candidates at
 `error.details.candidates`.
 
 Tool parameters are `snake_case`. `figures --out` fetches image bytes from

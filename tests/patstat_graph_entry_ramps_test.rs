@@ -205,10 +205,11 @@ async fn cpc_json_mode_prints_the_tool_data_verbatim() {
     assert_eq!(stdout_json(&output), cpc_data());
 }
 
-/// `total: 0` is a searched-and-empty answer, not a failure: one clean line,
-/// exit 0, no empty table.
+/// The issue's own example, `graph cpc "solid state battery"`, answers
+/// `total: 0` on the live edition today (backend #477). A searched-and-empty
+/// answer is not a failure: one clean line, exit 0, no empty list.
 #[tokio::test]
-async fn cpc_with_no_candidates_says_so_cleanly_and_exits_zero() {
+async fn cpc_solid_state_battery_with_no_candidates_says_so_cleanly_and_exits_zero() {
     let server = MockServer::start().await;
     mount(
         &server,

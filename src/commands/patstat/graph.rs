@@ -193,11 +193,11 @@ pub async fn run(ctx: &Context, args: GraphArgs) -> Result<()> {
             token_budget,
         } => {
             let mut input = json!({ "node": node });
-            set(&mut input, "depth", depth);
+            set_if_some(&mut input, "depth", depth);
             if let Some(edge_types) = edge_types {
                 input["edge_types"] = json!(split_list(&edge_types));
             }
-            set(&mut input, "token_budget", token_budget);
+            set_if_some(&mut input, "token_budget", token_budget);
             verb(ctx, "patstat_neighborhood", &input).await
         }
         GraphCommand::Path {
@@ -207,13 +207,13 @@ pub async fn run(ctx: &Context, args: GraphArgs) -> Result<()> {
             token_budget,
         } => {
             let mut input = json!({ "a": a, "b": b });
-            set(&mut input, "max_hops", max_hops);
-            set(&mut input, "token_budget", token_budget);
+            set_if_some(&mut input, "max_hops", max_hops);
+            set_if_some(&mut input, "token_budget", token_budget);
             verb(ctx, "patstat_path", &input).await
         }
         GraphCommand::Explain { node, token_budget } => {
             let mut input = json!({ "node": node });
-            set(&mut input, "token_budget", token_budget);
+            set_if_some(&mut input, "token_budget", token_budget);
             verb(ctx, "patstat_explain", &input).await
         }
         GraphCommand::Patent { publication } => patent(ctx, &publication).await,
@@ -225,7 +225,7 @@ pub async fn run(ctx: &Context, args: GraphArgs) -> Result<()> {
 /// Set an optional numeric input. Absent flags are omitted from the tool
 /// input entirely rather than sent as defaults, so the backend's documented
 /// defaults stay the single source of truth.
-fn set(input: &mut Value, key: &str, value: Option<i32>) {
+fn set_if_some(input: &mut Value, key: &str, value: Option<i32>) {
     if let Some(value) = value {
         input[key] = json!(value);
     }
@@ -480,9 +480,9 @@ fn print_resolve(body: &Value) {
             &format!(
                 "\"{}\" matches {} distinct applications.",
                 text(body, "input"),
-                candidates(body, "/candidates").len()
+                array_at(body, "/candidates").len()
             ),
-            candidates(body, "/candidates"),
+            array_at(body, "/candidates"),
         ),
         Some("entities") => print_entities(body),
         _ => output::print_json(body),
@@ -599,7 +599,7 @@ fn print_ambiguous(message: &str, candidates: Vec<Value>) {
 /// stated with the TRUE total — a shown count read as a total is the failure
 /// mode this rendering exists to prevent.
 fn print_entities(body: &Value) {
-    let candidates = candidates(body, "/candidates");
+    let candidates = array_at(body, "/candidates");
     let total = body.get("total").and_then(Value::as_u64);
     let truncated = body.get("truncated").and_then(Value::as_bool) == Some(true);
 
@@ -642,7 +642,7 @@ fn print_patent_view(body: &Value) {
 
     println!("\nApplicants");
     print_section_table(
-        &flatten_confidence(&candidates(body, "/header/applicants")),
+        &flatten_confidence(&array_at(body, "/header/applicants")),
         &[
             ("name", "Name"),
             ("country", "Country"),
@@ -653,7 +653,7 @@ fn print_patent_view(body: &Value) {
 
     println!("\nInventors");
     print_section_table(
-        &flatten_confidence(&candidates(body, "/header/inventors")),
+        &flatten_confidence(&array_at(body, "/header/inventors")),
         &[
             ("name", "Name"),
             ("country", "Country"),
@@ -671,7 +671,7 @@ fn print_patent_view(body: &Value) {
 
     println!("\nCPC Classifications");
     print_section_table(
-        &flatten_confidence(&candidates(body, "/header/cpc")),
+        &flatten_confidence(&array_at(body, "/header/cpc")),
         &[
             ("symbol", "CPC Symbol"),
             ("confidence", "Confidence"),
@@ -682,7 +682,7 @@ fn print_patent_view(body: &Value) {
 
     println!("\nBackward Citations — Patents");
     print_section_table(
-        &flatten_confidence(&candidates(body, "/citations/backward_patent")),
+        &flatten_confidence(&array_at(body, "/citations/backward_patent")),
         &[
             ("cited", "Cited"),
             ("title", "Title"),
@@ -700,7 +700,7 @@ fn print_patent_view(body: &Value) {
     // exactly as the backend returned it, never rewritten here.
     println!("\nBackward Citations — Non-Patent Literature");
     print_section_table(
-        &flatten_confidence(&candidates(body, "/citations/backward_npl")),
+        &flatten_confidence(&array_at(body, "/citations/backward_npl")),
         &[
             ("biblio", "Reference"),
             ("origin", "Origin"),
@@ -712,7 +712,7 @@ fn print_patent_view(body: &Value) {
 
     println!("\nBackward Citations — Unresolved (flagged, not dropped)");
     print_section_table(
-        &flatten_confidence(&candidates(body, "/citations/backward_unresolved")),
+        &flatten_confidence(&array_at(body, "/citations/backward_unresolved")),
         &[
             ("node", "Node"),
             ("origin", "Origin"),
@@ -729,7 +729,7 @@ fn print_patent_view(body: &Value) {
 
     println!("\nForward Citations");
     print_section_table(
-        &flatten_confidence(&candidates(body, "/citations/forward")),
+        &flatten_confidence(&array_at(body, "/citations/forward")),
         &[
             ("citing", "Citing"),
             ("title", "Title"),
@@ -746,7 +746,7 @@ fn print_patent_view(body: &Value) {
 
     println!("\nDOCDB Family");
     print_section_table(
-        &flatten_family(&candidates(body, "/family")),
+        &flatten_family(&array_at(body, "/family")),
         &[
             ("publication", "Publication"),
             ("office", "Office"),
@@ -760,7 +760,7 @@ fn print_patent_view(body: &Value) {
 
     println!("\nPriority Claims");
     print_section_table(
-        &flatten_priorities(&candidates(body, "/priorities")),
+        &flatten_priorities(&array_at(body, "/priorities")),
         &[
             ("prior_publication", "Prior Publication"),
             ("prior_filing_date", "Prior Filing Date"),
@@ -798,7 +798,7 @@ fn print_patent_anchor(anchor: &Value) {
         println!("Earliest publication: {earliest}");
     }
 
-    let publications = candidates(anchor, "/publications");
+    let publications = array_at(anchor, "/publications");
     if !publications.is_empty() {
         println!("\nPublications:");
         for publication in &publications {
@@ -830,27 +830,27 @@ fn print_applicant_view(body: &Value) {
 
     println!("\nFilings by Year");
     print_section_table(
-        &candidates(body, "/filings_by_year"),
+        &array_at(body, "/filings_by_year"),
         &[("year", "Year"), ("applications", "Applications")],
     );
 
     println!("\nTop CPC");
     print_section_table(
-        &candidates(body, "/top_cpc"),
+        &array_at(body, "/top_cpc"),
         &[("symbol", "CPC Symbol"), ("applications", "Applications")],
     );
     print_truncation_notice(&meta, "top_cpc", "top CPC classes");
 
     println!("\nJurisdictions");
     print_section_table(
-        &candidates(body, "/jurisdictions"),
+        &array_at(body, "/jurisdictions"),
         &[("office", "Office"), ("applications", "Applications")],
     );
     print_truncation_notice(&meta, "jurisdictions", "jurisdictions");
 
     println!("\nCo-Applicants");
     print_section_table(
-        &flatten_confidence(&candidates(body, "/co_applicants")),
+        &flatten_confidence(&array_at(body, "/co_applicants")),
         &[
             ("name", "Name"),
             ("shared_applications", "Shared Applications"),
@@ -906,7 +906,7 @@ fn print_applicant_entity(entity: &Value) {
 /// count. Truncation is stated with the TRUE total; `total: 0` is one clean
 /// line (a searched-and-empty answer, exit 0), never an empty list.
 fn print_cpc(body: &Value) {
-    let candidates = candidates(body, "/candidates");
+    let candidates = array_at(body, "/candidates");
     let query = text(body, "query");
 
     if candidates.is_empty() {
@@ -971,18 +971,18 @@ fn print_technology_view(body: &Value) {
     ];
 
     println!("\nTop Applicants");
-    print_section_table(&candidates(body, "/top_applicants"), applicant_columns);
+    print_section_table(&array_at(body, "/top_applicants"), applicant_columns);
     print_truncation_notice(&meta, "top_applicants", "top applicants");
 
     println!("\nFiling Trend");
     print_section_table(
-        &candidates(body, "/filing_trend"),
+        &array_at(body, "/filing_trend"),
         &[("year", "Year"), ("families", "Families")],
     );
 
     println!("\nGrant Rate by Office");
     print_section_table(
-        &candidates(body, "/grant_rate"),
+        &array_at(body, "/grant_rate"),
         &[
             ("office", "Office"),
             ("applications", "Applications"),
@@ -992,12 +992,12 @@ fn print_technology_view(body: &Value) {
     );
 
     println!("\nNew Entrants");
-    print_section_table(&candidates(body, "/new_entrants"), applicant_columns);
+    print_section_table(&array_at(body, "/new_entrants"), applicant_columns);
     print_truncation_notice(&meta, "new_entrants", "new entrants");
 
     println!("\nSeminal Families");
     print_section_table(
-        &candidates(body, "/seminal_families"),
+        &array_at(body, "/seminal_families"),
         &[
             ("publication", "Publication"),
             ("title", "Title"),
@@ -1009,7 +1009,7 @@ fn print_technology_view(body: &Value) {
 
     println!("\nTop Inventors");
     print_section_table(
-        &candidates(body, "/top_inventors"),
+        &array_at(body, "/top_inventors"),
         &[
             ("psn_id", "PSN ID"),
             ("name", "Name"),
@@ -1037,7 +1037,7 @@ fn print_technology_view(body: &Value) {
         ),
     ] {
         println!("\n{heading}");
-        print_section_table(&candidates(&geography, &format!("/{key}")), country_columns);
+        print_section_table(&array_at(&geography, &format!("/{key}")), country_columns);
         print_truncation_notice(&geography, key, label);
     }
 
@@ -1046,8 +1046,8 @@ fn print_technology_view(body: &Value) {
     print_provenance_footer(&meta);
 }
 
-/// The Data Edition and EPO attribution the non-composite tools carry at the
-/// top level of their data.
+/// The Data Edition and EPO attribution lines: at the top level of the
+/// non-composite tools' data, under `meta` for the composites.
 fn print_edition_and_attribution(body: &Value) {
     if let Some(edition) = body.get("data_edition").and_then(Value::as_str) {
         println!("\nSource: PATSTAT data edition {edition}.");
@@ -1158,7 +1158,7 @@ fn print_truncation_notice(meta: &Value, section: &str, label: &str) {
 /// `meta.data_quality` flags (e.g. a 9999-sentinel filing date) render as
 /// flags, never silently dropped — a data gap stays visible as a gap.
 fn print_data_quality(meta: &Value) {
-    let flags = candidates(meta, "/data_quality");
+    let flags = array_at(meta, "/data_quality");
     if flags.is_empty() {
         return;
     }
@@ -1177,19 +1177,15 @@ fn print_data_quality(meta: &Value) {
 /// line, and the snapshot-honesty caveat — current legal status is a live
 /// document tools question, never a PATSTAT one.
 fn print_provenance_footer(meta: &Value) {
-    if let Some(edition) = meta.get("data_edition").and_then(Value::as_str) {
-        println!("\nSource: PATSTAT data edition {edition}.");
-    }
-    if let Some(attribution) = meta.get("attribution").and_then(Value::as_str) {
-        println!("{attribution}");
-    }
+    print_edition_and_attribution(meta);
     println!(
         "This is PATSTAT snapshot data — for current legal status, use the live document \
          tools (flowleap ops legal, flowleap uspto)."
     );
 }
 
-fn candidates(body: &Value, pointer: &str) -> Vec<Value> {
+/// The array at a JSON pointer, cloned; empty when absent or not an array.
+fn array_at(body: &Value, pointer: &str) -> Vec<Value> {
     body.pointer(pointer)
         .and_then(Value::as_array)
         .cloned()
