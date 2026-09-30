@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::{json, Value};
 
 use crate::client::Context;
@@ -29,6 +29,24 @@ pub struct PatstatArgs {
     command: PatstatCommand,
 }
 
+/// How much of the year-by-office matrix `patstat_portfolio` returns.
+#[derive(Clone, Copy, ValueEnum)]
+enum Offices {
+    /// The 8 largest offices plus one OTHER row per year (the tool default)
+    Top,
+    /// Every office
+    All,
+}
+
+impl Offices {
+    fn as_str(self) -> &'static str {
+        match self {
+            Offices::Top => "top",
+            Offices::All => "all",
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum PatstatCommand {
     /// Aggregate patent portfolio for one applicant: filings by year, office,
@@ -45,6 +63,12 @@ enum PatstatCommand {
         /// Latest filing year, inclusive (default: current year)
         #[arg(long)]
         to_year: Option<i32>,
+
+        /// Offices in the year-by-office matrix: `all` keeps every office;
+        /// `top` keeps the 8 largest plus one OTHER row per year, the compact
+        /// form MCP clients get by default
+        #[arg(long, value_enum, default_value_t = Offices::All)]
+        offices: Offices,
     },
 
     /// Run ONE guarded SQL SELECT against the flowleap.* semantic views
@@ -103,7 +127,8 @@ pub async fn run(ctx: &Context, args: PatstatArgs) -> Result<()> {
             applicant,
             from_year,
             to_year,
-        } => portfolio(ctx, &applicant, from_year, to_year).await,
+            offices,
+        } => portfolio(ctx, &applicant, from_year, to_year, offices).await,
         PatstatCommand::Query {
             sql,
             question,
@@ -378,8 +403,11 @@ async fn portfolio(
     applicant: &str,
     from_year: Option<i32>,
     to_year: Option<i32>,
+    offices: Offices,
 ) -> Result<()> {
-    let mut input = json!({ "applicant": applicant });
+    // The tool defaults to `top` so MCP replies stay small; the CLI is not
+    // size-limited, so it asks for every office unless told otherwise (#107).
+    let mut input = json!({ "applicant": applicant, "offices": offices.as_str() });
     if let Some(from_year) = from_year {
         input["from_year"] = json!(from_year);
     }
@@ -548,12 +576,61 @@ fn print_portfolio(result: &Value) {
             ("granted", "Granted"),
         ],
     );
+    print_office_scope(result);
+    print_other_matches(result);
 
     print_notes(result, "grant_status_caveats", "Grant status caveats");
     print_notes(result, "notes", "Notes");
 
     if let Some(edition) = result.get("data_edition").and_then(Value::as_str) {
         println!("\nSource: PATSTAT data edition {edition}");
+    }
+}
+
+/// One line when the tool cut the year-by-office matrix (`offices: "top"`).
+fn print_office_scope(result: &Value) {
+    let Some(scope) = result.get("by_year_office_scope") else {
+        return;
+    };
+    if scope.get("truncated").and_then(Value::as_bool) != Some(true) {
+        return;
+    }
+    let shown = scope.get("offices_shown").and_then(Value::as_u64);
+    let total = scope.get("offices_total").and_then(Value::as_u64);
+    if let (Some(shown), Some(total)) = (shown, total) {
+        println!(
+            "\nShowing {shown} of {total} offices in the year-by-office matrix \
+             (--offices all for every office)"
+        );
+    }
+}
+
+/// The other applicant entities that matched the name but were not merged,
+/// with the count the tool's cap of 10 leaves out.
+fn print_other_matches(result: &Value) {
+    let applicant = result.get("applicant");
+    let matches = applicant
+        .and_then(|a| a.get("other_matches"))
+        .and_then(Value::as_array);
+    let Some(matches) = matches.filter(|m| !m.is_empty()) else {
+        return;
+    };
+    println!("\nOther matching applicants (not merged)");
+    output::print_table(
+        matches,
+        &[("name", "Name"), ("applications", "Applications")],
+    );
+    let total = applicant
+        .and_then(|a| a.get("other_matches_total"))
+        .and_then(Value::as_u64);
+    if let Some(total) = total {
+        let shown = matches.len() as u64;
+        if total > shown {
+            println!(
+                "  … and {} more (the tool caps the list at 10)",
+                total - shown
+            );
+        }
     }
 }
 

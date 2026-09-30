@@ -15,14 +15,19 @@ key; each one publishes its own gate and rate limit in the registry
 
 | Command | Tool | Gate |
 |---|---|---|
-| `patstat portfolio <applicant> [--from-year Y] [--to-year Y]` | `patstat_portfolio` | plan |
+| `patstat portfolio <applicant> [--from-year Y] [--to-year Y] [--offices top\|all]` | `patstat_portfolio` | plan |
 | `patstat query "<SQL>" --question "<question>" [--retry-of <code>]` | `patstat_query` | plan, 10/min |
 | `patstat docs` with one of `--section S`, `--workflow W`, `--endpoint E`, `--compact` | `patstat_docs` | sign-in |
 | `patstat graph <verb> …` | `patstat_resolve`, `patstat_cpc`, `patstat_patent`, `patstat_applicant`, `patstat_technology`, `patstat_neighborhood`, `patstat_path`, `patstat_explain` | sign-in; see `flowleap-patstat-graph` |
 
 `--json` prints the tool data verbatim. There is no top-level `success`; every
 result carries `data_edition` and `attribution`. Through `tools run` the inputs
-are snake_case (`from_year`, `to_year`, `retry_of`):
+are snake_case (`from_year`, `to_year`, `retry_of`). `patstat portfolio`
+sends `offices: "all"` for every office in `by_year_office`; the tool itself
+defaults to `top` (the 8 largest offices plus one `OTHER` row per year), and
+`by_year_office_scope.truncated` says when the matrix is cut. The tool caps
+`applicant.other_matches` at 10; `applicant.other_matches_total` is the full
+count:
 
 ```bash
 flowleap --json tools run patstat_portfolio applicant="<applicant name>"

@@ -117,6 +117,7 @@ async fn portfolio_sends_the_documented_request_shape() {
             "applicant": "Siemens",
             "from_year": 2015,
             "to_year": 2024,
+            "offices": "all",
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(success_body()))
         .mount(&server)
@@ -150,7 +151,9 @@ async fn portfolio_omits_absent_year_bounds() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/tools/patstat_portfolio"))
-        .and(body_json(json!({ "applicant": "Siemens" })))
+        .and(body_json(
+            json!({ "applicant": "Siemens", "offices": "all" }),
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(success_body()))
         .mount(&server)
         .await;
@@ -387,4 +390,88 @@ async fn missing_credentials_fails_locally_without_a_network_call() {
         stderr.contains("Not authenticated") || stdout.contains("Not authenticated"),
         "stdout: {stdout}\nstderr: {stderr}"
     );
+}
+
+/// A compact reply (`offices: "top"`, backend #484) tells the reader the
+/// year-by-office matrix is cut and how to get every office, and a capped
+/// sibling list tells how many other entities matched (#107).
+#[tokio::test]
+async fn truncated_scope_and_capped_siblings_print_their_footers() {
+    let mut data = portfolio_data();
+    data["by_year_office_scope"] = json!({
+        "offices_shown": 8,
+        "offices_total": 49,
+        "truncated": true,
+    });
+    data["applicant"]["other_matches"] = json!([
+        { "name": "SIEMENS-SCHUCKERTWERKE", "applications": 51309 },
+        { "name": "SIEMENS HEALTHCARE", "applications": 8975 },
+    ]);
+    data["applicant"]["other_matches_total"] = json!(188);
+    let server = MockServer::start().await;
+    mount_portfolio(
+        &server,
+        ResponseTemplate::new(200).set_body_json(json!({
+            "success": true,
+            "tool": "patstat_portfolio",
+            "data": data,
+        })),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &["patstat", "portfolio", "Siemens", "--offices", "top"],
+    )
+    .await;
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(
+        stdout.contains(
+            "Showing 8 of 49 offices in the year-by-office matrix (--offices all for every office)"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("SIEMENS-SCHUCKERTWERKE"), "{stdout}");
+    assert!(
+        stdout.contains("… and 186 more (the tool caps the list at 10)"),
+        "{stdout}"
+    );
+}
+
+/// A complete reply prints neither footer.
+#[tokio::test]
+async fn complete_scope_prints_no_footer() {
+    let mut data = portfolio_data();
+    data["by_year_office_scope"] = json!({
+        "offices_shown": 2,
+        "offices_total": 2,
+        "truncated": false,
+    });
+    data["applicant"]["other_matches_total"] = json!(0);
+    let server = MockServer::start().await;
+    mount_portfolio(
+        &server,
+        ResponseTemplate::new(200).set_body_json(json!({
+            "success": true,
+            "tool": "patstat_portfolio",
+            "data": data,
+        })),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &["patstat", "portfolio", "Siemens"],
+    )
+    .await;
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(!stdout.contains("Showing"), "{stdout}");
+    assert!(!stdout.contains("more (the tool caps"), "{stdout}");
+    assert!(!stdout.contains("Other matching applicants"), "{stdout}");
 }
