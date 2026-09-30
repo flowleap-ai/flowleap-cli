@@ -1,8 +1,10 @@
-//! `flowleap patstat portfolio` (issue #32, PRD 0011): success rendering in
-//! both output modes, the 422 ambiguous-applicant interaction step, the
-//! typed `patstat_unavailable` unavailability, and an auth failure — driven
-//! through the real binary against a wiremock backend, matching the
-//! exit-code contract's test harness (see tests/exit_codes_test.rs).
+//! `flowleap patstat portfolio` (issue #32, PRD 0011; on the tool seam since
+//! #95): success rendering in both output modes, the 422 ambiguous-applicant
+//! interaction step, the typed `patstat_unavailable` unavailability, and an
+//! auth failure — driven through the real binary against a wiremock backend
+//! answering `POST /v1/tools/patstat_portfolio` with facade envelopes,
+//! matching the exit-code contract's test harness (see
+//! tests/exit_codes_test.rs).
 
 mod support;
 
@@ -13,11 +15,11 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const API_KEY_ENV: (&str, &str) = ("FLOWLEAP_API_KEY", "fl_pat_test_key");
 
-/// Canned successful /v1/patstat/portfolio body, shaped like the real
-/// backend response (see flowleap-backend src/lib/patstat/portfolio.ts).
-fn success_body() -> serde_json::Value {
+/// The `patstat_portfolio` tool's `data` payload, shaped like the real
+/// backend result (see flowleap-backend src/lib/patstat/portfolio.ts): the
+/// route's data plus the EPO attribution.
+fn portfolio_data() -> serde_json::Value {
     json!({
-        "success": true,
         "applicant": {
             "query": "Siemens",
             "matched_name": "SIEMENS AG",
@@ -46,10 +48,23 @@ fn success_body() -> serde_json::Value {
                      (top: EP 70, WO 50); 80 granted among offices with reliable grant status. \
                      Source: 2024 Autumn.",
         "data_edition": "2024 Autumn",
+        "attribution": "This product contains data sourced from EPO databases, © European Patent Organisation",
     })
 }
 
-/// Canned 422 ambiguous-applicant error body (unified FlowLeap envelope).
+/// The facade success envelope around [`portfolio_data`].
+fn success_body() -> serde_json::Value {
+    json!({
+        "success": true,
+        "tool": "patstat_portfolio",
+        "data": portfolio_data(),
+        "executionTimeMs": 12,
+    })
+}
+
+/// Canned 422 ambiguous-applicant facade error envelope: the facade nests
+/// the candidates under `error.details` (the route flattened them into
+/// `error`).
 fn ambiguous_body() -> serde_json::Value {
     json!({
         "success": false,
@@ -59,10 +74,12 @@ fn ambiguous_body() -> serde_json::Value {
                          applications), KIA CORPORATION (10 applications). These may be \
                          separate companies, so they are not merged automatically — retry \
                          with a more specific name (one of the entities listed).",
-            "candidates": [
-                { "name": "KIA MOTORS", "applications": 500 },
-                { "name": "KIA CORPORATION", "applications": 10 },
-            ],
+            "details": {
+                "candidates": [
+                    { "name": "KIA MOTORS", "applications": 500 },
+                    { "name": "KIA CORPORATION", "applications": 10 },
+                ],
+            },
         },
         "status": 422,
     })
@@ -85,7 +102,7 @@ fn unavailable_body() -> serde_json::Value {
 
 async fn mount_portfolio(server: &MockServer, template: ResponseTemplate) {
     Mock::given(method("POST"))
-        .and(path("/v1/patstat/portfolio"))
+        .and(path("/v1/tools/patstat_portfolio"))
         .respond_with(template)
         .mount(server)
         .await;
@@ -95,11 +112,11 @@ async fn mount_portfolio(server: &MockServer, template: ResponseTemplate) {
 async fn portfolio_sends_the_documented_request_shape() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/v1/patstat/portfolio"))
+        .and(path("/v1/tools/patstat_portfolio"))
         .and(body_json(json!({
             "applicant": "Siemens",
-            "fromYear": 2015,
-            "toYear": 2024,
+            "from_year": 2015,
+            "to_year": 2024,
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(success_body()))
         .mount(&server)
@@ -132,7 +149,7 @@ async fn portfolio_sends_the_documented_request_shape() {
 async fn portfolio_omits_absent_year_bounds() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/v1/patstat/portfolio"))
+        .and(path("/v1/tools/patstat_portfolio"))
         .and(body_json(json!({ "applicant": "Siemens" })))
         .respond_with(ResponseTemplate::new(200).set_body_json(success_body()))
         .mount(&server)
@@ -183,7 +200,7 @@ async fn success_human_mode_renders_summary_tables_and_provenance() {
 }
 
 #[tokio::test]
-async fn success_json_mode_emits_the_endpoint_body_untouched() {
+async fn success_json_mode_emits_the_tool_data_verbatim() {
     let server = MockServer::start().await;
     mount_portfolio(
         &server,
@@ -201,16 +218,17 @@ async fn success_json_mode_emits_the_endpoint_body_untouched() {
     assert!(output.status.success());
     let value = stdout_json(&output);
 
-    assert_eq!(value["success"], true);
+    // The verbatim-JSON convention: `--json` prints the tool's `data`
+    // payload exactly, never the facade envelope around it.
+    assert_eq!(value, portfolio_data());
     assert_eq!(value["applicant"]["matched_name"], "SIEMENS AG");
     assert_eq!(value["totals"]["applications"], 120);
     assert_eq!(value["by_year"][0]["year"], 2015);
     assert_eq!(value["by_office"][1]["office"], "WO");
     assert!(value["by_office"][1]["granted"].is_null());
     assert_eq!(value["data_edition"], "2024 Autumn");
-    // json mode passes the endpoint envelope through untouched — no CLI
-    // wrapper fields.
     assert!(value.get("ok").is_none());
+    assert!(value.get("success").is_none());
 }
 
 #[tokio::test]
@@ -264,9 +282,16 @@ async fn ambiguous_422_renders_candidates_in_json_mode() {
 
     assert_eq!(value["ok"], false);
     assert_eq!(value["error"]["code"], "patstat_applicant_ambiguous");
-    assert_eq!(value["error"]["candidates"][0]["name"], "KIA MOTORS");
-    assert_eq!(value["error"]["candidates"][0]["applications"], 500);
-    assert_eq!(value["error"]["candidates"][1]["name"], "KIA CORPORATION");
+    let candidates = &value["error"]["details"]["candidates"];
+    assert_eq!(candidates[0]["name"], "KIA MOTORS");
+    assert_eq!(candidates[0]["applications"], 500);
+    assert_eq!(candidates[1]["name"], "KIA CORPORATION");
+    // The backend details ride along verbatim.
+    assert_eq!(
+        value["error"]["details"],
+        ambiguous_body()["error"]["details"]
+    );
+    assert_eq!(output.status.code(), Some(1));
 }
 
 #[tokio::test]

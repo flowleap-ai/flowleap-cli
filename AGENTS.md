@@ -30,8 +30,8 @@ before trusting `skills install` output or regenerating goldens.
 | `src/output.rs` | Output module (re-exports formatter) |
 | `src/output/formatter.rs` | JSON, table, and human-readable output formatting |
 | `src/commands/auth.rs` | OAuth device flow, personal API tokens (create/list/revoke), status |
-| `src/commands/tools.rs` | Agent-first tool facade: list/describe/run `/v1/tools/*`, plus `call_tool_data` — the shared seam every data command runs on (unwraps the tool envelope to its `data` payload) |
-| `src/commands/mcp.rs` | `flowleap mcp` stdio bridge: `tools/list` mirrors the `/v1/tools` registry verbatim and `tools/call` runs a tool; it also serves the PATSTAT doctrine read at startup from `GET /v1/patstat/docs` as five resources (`flowleap://patstat/semantic-model`, `…/examples`, `…/workflow/{portfolio-analysis,guarded-sql,graph}`) and three prompts (`patstat-<workflow>`, a plain text rendering of the served workflow). It authors no tool and no doctrine; a document that fails to load is logged to stderr and skipped. `--check` reports tool, resource and prompt counts |
+| `src/commands/tools.rs` | Agent-first tool facade: list/describe/run `/v1/tools/*`, plus `call_tool_data` — the shared seam every data command runs on (unwraps the tool envelope to its `data` payload). The exception: the `patstat` commands call `call_tool_envelope` so their typed errors come back unprinted and render their own way; both paths share `unwrap_tool_result` and `retry_policy_for` |
+| `src/commands/mcp.rs` | `flowleap mcp` stdio bridge: `tools/list` mirrors the `/v1/tools` registry verbatim and `tools/call` runs a tool; it also serves the PATSTAT doctrine read at startup through the `patstat_docs` tool as five resources (`flowleap://patstat/semantic-model`, `…/examples`, `…/workflow/{portfolio-analysis,guarded-sql,graph}`) and three prompts (`patstat-<workflow>`, a plain text rendering of the served workflow). It authors no tool and no doctrine; a document that fails to load is logged to stderr and skipped. `--check` reports tool, resource and prompt counts |
 | `src/commands/skills.rs` | Embedded agent-skill installer (`skills/` baked into binary): multi-harness targets (claude/claude-project/codex/cursor/gemini/--dir), version stamps, `skills update` |
 | `src/commands/patent.rs` | EPO patent search (caller-written CQL) |
 | `src/commands/uspto.rs` | USPTO ODP search, grants, applications, continuity, file wrapper (transactions/assignments/foreign-priority/adjustment/attorney/documents + OCR document text) |
@@ -197,8 +197,10 @@ provider-specific routes they used to call are retired (backend ADR 0013).
 per-tool docs; `flowleap tools run <name>` executes one.
 
 Named non-facade exceptions: key validation (usable before subscribing), the
-PATSTAT surface, auth/OAuth, and `api request` (the raw escape hatch, which
-calls whatever path you give it).
+`patstat graph` verbs (on the `/v1/patstat/graph/*` routes until #96),
+auth/OAuth, and `api request` (the raw escape hatch, which calls whatever path
+you give it). `patstat portfolio`, `docs` and `query` run on the facade like
+every other data command.
 
 | Endpoint | Method | Auth Required |
 |----------|--------|---------------|
@@ -209,7 +211,7 @@ calls whatever path you give it).
 | `/v1/tools` | GET | Yes |
 | `/v1/tools/openapi.json` | GET | Yes |
 | `/v1/tools/{tool_name}` | POST | Yes |
-| `/v1/patstat/*` | POST/GET | Yes |
+| `/v1/patstat/graph/*` (graph verbs only, until #96) | GET | Yes |
 | `/api/profile` | GET | Yes |
 | `/api/usage` | GET | Yes |
 | `/api/tokens` (create/list) | POST/GET | Yes (create requires Clerk auth, not an API token) |
@@ -233,6 +235,26 @@ calls whatever path you give it).
 | `academic search`, `npl` | `search_academic` / `search_npl` |
 | `analytics`, `ocr` | `patent_analytics` / `ocr` |
 | `compare` / `figures` / `summary` / `timeline` / `convert-number` | `compare_patents` / `get_patent_image` / `get_patent_summary` / `get_prosecution_timeline` / `convert_patent_number` |
+| `patstat portfolio` | `patstat_portfolio` (`--from-year`/`--to-year` → `from_year`/`to_year`) |
+| `patstat docs` | `patstat_docs` (`--section`/`--workflow`/`--endpoint`; no flag sends `compact: false` for the full docs, `--compact` sends `compact: true`). `flowleap mcp` loads its five doctrine resources through this tool too (free at sign-in, backend ADR 0021) |
+| `patstat query` | `patstat_query` (`--retry-of` → `retry_of`) — **never resent by the client**, see below |
+
+**No hidden retry on guarded SQL.** The client resends a request on its own
+after a 5xx, a connection failure or a short 429 (twice by default,
+`FLOWLEAP_MAX_RETRIES`). `patstat_query` is the one exception: it is sent
+exactly once, on `patstat query`, `tools run` and the MCP `tools/call` path
+alike (`tools::retry_policy_for`, the one place the policy is chosen). Backend
+ADR 0010 gives the agent the one informed retry; a client resend would swallow
+the cold-timeout signal. Its typed errors (`patstat_sql_*`, `patstat_busy`, …)
+reach the caller with the backend `code`, `message` and `details` verbatim.
+
+**Breaking for `--json` consumers (next release).** The three `patstat`
+commands print the tool `data` verbatim. `portfolio` and `query` lose the
+top-level `success` and gain `attribution`. `docs` prints the tool data
+itself, so the semantic model is `.yaml`, not `.data.yaml`. Typed errors carry
+their extra fields under `error.details` (for example
+`error.details.candidates` on `patstat_applicant_ambiguous`). The tool inputs
+are `from_year`, `to_year` and `retry_of`.
 
 Tool parameters are `snake_case`. `figures --out` fetches image bytes from
 `get_patent_image` itself (`include_images: true` returns base64 pages) — there
