@@ -113,6 +113,48 @@ async fn trial_budget_exhaustion_is_a_key_gate_with_a_reset() {
     assert_eq!(output.status.code(), Some(9));
 }
 
+/// With stored keys enabled (backend #516) a `data_keys_required` body also
+/// carries `keysPageUrl` and a human `nextStep`: the JSON hint carries both
+/// verbatim, and the human box renders the step like doctor's next steps.
+#[tokio::test]
+async fn the_keys_page_and_the_human_next_step_reach_the_hint_and_the_box() {
+    let url = "https://www.flowleap.co/en/dashboard/keys";
+    let body = json!({ "error": {
+        "message": MISLEADING_MESSAGE,
+        "code": "data_keys_required",
+        "provider": "epo",
+        "keysPageUrl": url,
+        "nextStep": {
+            "id": "store-epo-keys",
+            "actor": "human",
+            "title": "Add your EPO OPS consumer key and secret on the FlowLeap Patent-data keys page",
+            "url": url,
+        },
+    }});
+
+    let (output, value) = error_envelope(400, body.clone()).await;
+    let hint = &value["providerKeysHint"];
+    assert_eq!(hint["code"], "provider_keys_required");
+    assert_eq!(hint["keysPageUrl"], url);
+    assert_eq!(hint["nextStep"], body["error"]["nextStep"]);
+    assert_eq!(output.status.code(), Some(9));
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/thing"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(body))
+        .mount(&server)
+        .await;
+    let output = run_cli(&server.uri(), &[], &["api", "request", "get", "/v1/thing"]).await;
+    assert_eq!(output.status.code(), Some(9));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("Next step (human): Add your EPO OPS consumer key"),
+        "{stderr}"
+    );
+    assert!(stderr.contains(url), "{stderr}");
+}
+
 /// The inverse, and the whole point of the change: an error whose MESSAGE
 /// names the provider env vars but whose CODE is unrelated is not a key gate.
 /// A backend reword can no longer invent — or destroy — a gate.

@@ -9,9 +9,16 @@ Patent data flows through provider APIs that may need the USER's own
 credentials: EPO OPS (consumer key + secret — always a pair) and USPTO ODP
 (single API key). The concept is **patent-data keys**; `provider_keys_required`
 and `provider_keys_invalid` are the wire codes that name it in error envelopes.
-Keys live in `credentials.toml` (0600) and are forwarded per-request as
-`x-epo-ops-key` / `x-epo-ops-secret` / `x-uspto-odp-key`; the CLI never prints
-them (verbose/dry-run redact).
+A key reaches the backend in one of two ways:
+
+- **Forwarded key** — kept on this machine in `credentials.toml` (0600) and
+  sent with each request as `x-epo-ops-key` / `x-epo-ops-secret` /
+  `x-uspto-odp-key`. The CLI never prints it (verbose/dry-run redact). A
+  forwarded key always wins for its office.
+- **Stored key** — the human adds it once on the FlowLeap "Patent-data keys"
+  page (https://www.flowleap.co/en/dashboard/keys). FlowLeap keeps it
+  encrypted and never shows the value again. It is used when the request
+  carries no forwarded key for that office.
 
 The gate applies wherever patent data is read — the commands and the Tools
 facade alike, since the commands run on the facade. Key validation
@@ -22,12 +29,14 @@ subscription exists, so setup can always be diagnosed.
 
 ```bash
 flowleap --json keys list    # what's configured locally (masked); alias: keys status
-flowleap --json keys test    # live verdicts: source user|server|none, valid true|false|null
+flowleap --json keys test    # live verdicts: source user|stored|server|none, valid true|false|null
 flowleap --json doctor       # providerKeys section + pending steps in nextSteps
 ```
 
-`keys test` needing nothing locally is fine when `source` is `server` — the
-backend has its own keys and commands work without BYOK.
+`source` names the key a data call uses for that office: `user` (a forwarded
+key), `stored` (the user's stored key), `server` (the backend's own keys) or
+`none`. `keys test` needing nothing locally is fine when `source` is `stored`
+or `server` — commands work without a local key.
 
 `source` is that closed union and nothing else. When a provider was never
 reached — an EPO failure short-circuits the USPTO check — its verdict carries
@@ -37,14 +46,21 @@ provider that is invalid or missing everywhere makes `keys test` exit **9**,
 the same patent-data-key code a gated data command returns.
 
 Doctor's `nextSteps` lists patent-data keys only when they actually **block**
-work: server-covered providers produce no steps. A blocking provider appears
-as an obtain/store pair — `obtain-epo-keys` / `obtain-uspto-key` (`actor:
-"human"`, carries the signup `url` — relay it to the user) then
-`store-epo-keys` / `store-uspto-key` (`actor: "agent"`, carries the `run`
-command — execute it once the user hands you the keys) — followed by
-`verify-keys` (`actor: "agent"`, runs `keys test`). When doctor cannot reach
-the validation endpoint (unauthenticated/offline) it falls back to local key
-presence and says so in `keyValidation.note`. See `flowleap-shared` for the
+work: providers with a stored key or server coverage produce no steps (doctor
+reports the source per office in `keyValidation.providers`). A blocking
+provider appears as an obtain/store pair — `obtain-epo-keys` /
+`obtain-uspto-key` (`actor: "human"`, carries the signup `url` — relay it to
+the user) then `store-epo-keys` / `store-uspto-key` (`actor: "agent"`, carries
+the `run` command — execute it only when the user hands you the keys without
+being asked; otherwise the human adds the key on the Patent-data keys page) —
+followed by `verify-keys` (`actor: "agent"`, runs `keys test`). A stored key
+the office rejected is different: doctor gives one `store-*` step with
+`actor: "human"` and the page `url` ("Replace your … key"), then
+`verify-keys`. A key-gate error names the same step ids with `actor: "human"`:
+that is the page route, and doctor shows no step once the stored key is
+present. When doctor cannot reach the validation endpoint
+(unauthenticated/offline) it falls back to local key presence and says so in
+`keyValidation.note`. See `flowleap-shared` for the
 full `nextSteps`/`ready`/exit contract.
 
 ## Which codes mean gated
@@ -104,6 +120,17 @@ not a zero-result, and not a route you have exhausted. So for the gated office:
   Offices with no backend route at all (CN/JP/KR) and routes that are genuinely
   dead or empty *with a working key* keep their existing fallbacks unchanged.
 
+**Where the human adds the key.** The human adds the key on the FlowLeap
+"Patent-data keys" page (https://www.flowleap.co/en/dashboard/keys) or in the
+client's own key setting (`flowleap setup` / `flowleap keys set` for this CLI).
+A stored key from that page is used whenever no forwarded key is present, so
+one visit to the page opens the office on every surface. When the hint carries
+`keysPageUrl` or a `nextStep`, give the human that link.
+
+**Never ask for the key value in the chat.** A key typed into a chat reaches
+the transcript and every log that keeps it. Give the human the page link or
+the local setup command instead; the human types the key there.
+
 **Proceed, then ask.** When one provider is live and the other is gated:
 
 1. Complete the LIVE office fully — every search, read, and analysis the task
@@ -143,7 +170,12 @@ the request headers on the next invocation: no restart, no new session.
 
 Failed commands carry a `providerKeysHint` in the JSON error envelope, raised
 from the four backend codes above and from nothing else (a
-`trial_budget_exhausted` hint additionally carries `resetsAt`):
+`trial_budget_exhausted` hint additionally carries `resetsAt`). Only while
+the backend keeps stored keys, a `provider_keys_required` hint, and a
+`provider_keys_invalid` hint when the rejected key is the stored key, also
+carry `keysPageUrl` and a `nextStep` with `actor: "human"` — the same shape and
+ids as doctor's `nextSteps`. A `trial_budget_exhausted` hint never carries
+them. Relay the step's `title` and `url` to the human:
 
 ```json
 "providerKeysHint": {
@@ -152,19 +184,25 @@ from the four backend codes above and from nothing else (a
   "requiresHumanIntervention": true,
   "nonInteractive": { "command": "flowleap keys set epo --key … --secret …",
                        "env": ["FLOWLEAP_EPO_KEY", "FLOWLEAP_EPO_SECRET"] },
-  "signup": "https://developers.epo.org (free, 'My apps' → create app)"
+  "signup": "https://developers.epo.org (free, 'My apps' → create app)",
+  "keysPageUrl": "https://www.flowleap.co/en/dashboard/keys",
+  "nextStep": { "id": "store-epo-keys", "actor": "human",
+                "title": "Add your EPO OPS consumer key and secret on the FlowLeap Patent-data keys page",
+                "url": "https://www.flowleap.co/en/dashboard/keys" }
 }
 ```
 
 **Getting keys requires a browser signup — an agent cannot complete this
 alone. Do not retry, do not invent keys.** Tell the user:
 
-> This command needs EPO OPS credentials. Please run `flowleap setup` in a
-> terminal (guided, ~2 minutes; free keys from https://developers.epo.org),
-> then I'll continue.
+> This command needs EPO OPS credentials (free from https://developers.epo.org).
+> Please add them on the FlowLeap Patent-data keys page
+> (https://www.flowleap.co/en/dashboard/keys), or run `flowleap setup` in a
+> terminal (guided, ~2 minutes), then I'll continue.
 
-If the user hands you keys directly, apply them non-interactively — they are
-validated live before saving, and rejected keys are NOT saved:
+Do not ask the user to paste the key into the chat. If the user hands you keys
+without being asked, apply them non-interactively — they are validated live
+before saving, and rejected keys are NOT saved:
 
 ```bash
 flowleap --json keys set epo --key <consumer-key> --secret <consumer-secret>

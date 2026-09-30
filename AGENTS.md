@@ -109,7 +109,13 @@ Patent data may require the user's own provider credentials — EPO OPS
 `trial_budget_exhausted` are the wire codes. The CLI stores them in
 `credentials.toml` (0600) and forwards them per-request as
 `x-epo-ops-key`/`x-epo-ops-secret`/`x-uspto-odp-key` headers; they are never
-logged (verbose/dry-run output redacts them).
+logged (verbose/dry-run output redacts them). That is a **forwarded key**. A
+**stored key** is one the human added on the FlowLeap "Patent-data keys" page
+(https://www.flowleap.co/en/dashboard/keys, backend ADR 0023); the backend uses
+it when no forwarded key is present. `keys test` reports the key in use per
+office as `source` `user` (forwarded) | `stored` | `server` | `none`, and
+`doctor` counts `stored` as a key present (no key next step) and shows the
+source in `keyValidation.providers`.
 
 - `flowleap setup` / `flowleap keys setup` — interactive wizard (**human-only**:
   keys come from browser signups; refuses to run without a TTY)
@@ -125,7 +131,13 @@ the JSON error envelope carries a `providerKeysHint` object with
 `code` (`provider_keys_required` | `provider_keys_invalid` |
 `trial_budget_exhausted`), `provider`, and `requiresHumanIntervention: true`.
 Do NOT retry or invent keys — surface the hint and ask the user to run
-`flowleap setup` (or provide keys via env/flags). The `trial_budget_exhausted`
+`flowleap setup` (or provide keys via env/flags). While the backend keeps
+stored keys, a `data_keys_required` hint (and a `patent_provider_key_invalid`
+hint when the rejected key is the stored key, backend #518) also carries
+`keysPageUrl` and a `nextStep` (`{ id: store-epo-keys | store-uspto-key, actor:
+"human", title, url }`, copied verbatim from the error body, backend #516);
+relay that page link, and never ask for the key value in the chat. The
+`trial_budget_exhausted` hint never takes them. The `trial_budget_exhausted`
 variant (backend ADR 0017: today's shared trial data budget is spent, 429) also
 carries `resetsAt` — it lifts on its own at the next UTC day, and the user's own
 free keys lift it permanently. Human/table output renders the same hint as an

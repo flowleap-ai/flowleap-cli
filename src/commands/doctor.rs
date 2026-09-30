@@ -42,9 +42,10 @@ pub async fn run(ctx: &Context) -> Result<()> {
     let authenticated = ctx.credentials.auth_header().is_some();
 
     // Best-effort server verdicts (POST /v1/keys/validate) so "key missing
-    // locally but covered by the server" produces no next step. Any failure —
-    // unauthenticated, unreachable, HTTP error — falls back to local key
-    // presence; doctor never errors because of this call.
+    // locally but stored on FlowLeap or covered by the server" produces no
+    // next step. Any failure — unauthenticated, unreachable, HTTP error —
+    // falls back to local key presence; doctor never errors because of this
+    // call.
     let verdicts: Option<Value> = if reachable && authenticated && !ctx.dry_run {
         crate::commands::keys::validate(ctx, ctx.credentials.clone())
             .await
@@ -60,11 +61,23 @@ pub async fn run(ctx: &Context) -> Result<()> {
     // that can run every command must exit 0 even with one pending.
     let ready = reachable && authenticated && !next_steps.iter().any(is_blocking);
 
+    // `providers` names, per office, the key a data call would use — the
+    // validate reply's `source` verbatim (user | stored | server | none, or
+    // null when that office was never checked). Null throughout on the
+    // local-presence fallback: no server verdict, no source.
     let key_validation = match &verdicts {
-        Some(_) => json!({ "source": "server", "note": Value::Null }),
+        Some(verdicts) => json!({
+            "source": "server",
+            "providers": {
+                "epo": verdicts["epo"]["source"].clone(),
+                "uspto": verdicts["uspto"]["source"].clone(),
+            },
+            "note": Value::Null,
+        }),
         None => json!({
             "source": "local",
-            "note": "Server key validation was unavailable (unauthenticated, unreachable, or the call failed) — provider verdicts reflect local key presence only. Missing keys may still be covered by the server; check with 'flowleap keys test' once authenticated.",
+            "providers": { "epo": Value::Null, "uspto": Value::Null },
+            "note": "Server key validation was unavailable (unauthenticated, unreachable, or the call failed) — provider verdicts reflect local key presence only. Missing keys may still be covered by a stored key or the server; check with 'flowleap keys test' once authenticated.",
         }),
     };
 
@@ -240,8 +253,9 @@ fn human_command(run: &str) -> String {
 
 /// One provider checklist line, derived from the report alone. Blocking is
 /// "this provider has a pending store step in nextSteps": ✗ when blocking,
-/// ✓ when keys are set locally, and • when neither — the only way to be
-/// non-blocking without local keys is server coverage (informational, not a
+/// ✓ when keys are set locally or stored on FlowLeap (the user's own key,
+/// `keyValidation.providers.<office>: "stored"`), and • when neither — the
+/// only other way to be non-blocking is server coverage (informational, not a
 /// gap to chase).
 fn provider_line(report: &Value, provider: &str, label: &str, store_step_id: &str) {
     use colored::Colorize;
@@ -251,12 +265,21 @@ fn provider_line(report: &Value, provider: &str, label: &str, store_step_id: &st
         .as_array()
         .is_some_and(|steps| steps.iter().any(|s| s["id"] == store_step_id));
     let server_checked = report["keyValidation"]["source"] == "server";
+    let stored = report["keyValidation"]["providers"][provider] == "stored";
 
     match (pending, local) {
         (false, true) => println!("  {} {label}: set locally", "✓".green()),
+        (false, false) if stored => println!(
+            "  {} {label}: none locally — stored key on FlowLeap",
+            "✓".green()
+        ),
         (false, false) => println!(
             "  {} {label}: none locally — covered by server",
             "•".yellow()
+        ),
+        (true, false) if stored => println!(
+            "  {} {label}: stored key on FlowLeap rejected by the office",
+            "✗".red()
         ),
         (true, true) => println!("  {} {label}: set locally, rejected by server", "✗".red()),
         // With a server verdict we know coverage is absent; on the
@@ -288,9 +311,15 @@ fn is_blocking(step: &Value) -> bool {
 /// contract (see docs/adr/0001): `auth-login`, `mint-personal-token`,
 /// `obtain-epo-keys`, `store-epo-keys`, `obtain-uspto-key`, `store-uspto-key`,
 /// `verify-keys`, `refresh-skills`. Steps whose need is already covered (e.g. a
-/// provider the server has its own keys for) are omitted — the list means "what
-/// is pending", not "what could be configured". Every step is blocking unless
-/// it carries `advisory: true` (see [`ADVISORY_STEPS`]).
+/// provider with a stored key, or one the server has its own keys for) are
+/// omitted — the list means "what is pending", not "what could be
+/// configured". Every step is blocking unless it carries `advisory: true`
+/// (see [`ADVISORY_STEPS`]).
+///
+/// A stored key the office rejected is the one exception to the obtain/store
+/// pair: the key lives on the FlowLeap Patent-data keys page, so the fix is one
+/// human `store-*` step that replaces it there (a `stored` source proves the
+/// page is enabled), then `verify-keys`.
 fn next_steps(
     ctx: &Context,
     authenticated: bool,
@@ -320,7 +349,15 @@ fn next_steps(
     let epo_pending = provider_pending(verdicts, "epo", ctx.credentials.epo_pair().is_some());
     let uspto_pending = provider_pending(verdicts, "uspto", ctx.credentials.uspto_key.is_some());
 
-    if epo_pending {
+    if epo_pending && stored_rejected(verdicts, "epo") {
+        steps.push(step(
+            "store-epo-keys",
+            "human",
+            "Replace your EPO OPS consumer key and secret on the FlowLeap Patent-data keys page — the office rejected the stored key",
+            None,
+            Some(crate::commands::keys::KEYS_PAGE),
+        ));
+    } else if epo_pending {
         steps.push(step(
             "obtain-epo-keys",
             "human",
@@ -336,7 +373,15 @@ fn next_steps(
             None,
         ));
     }
-    if uspto_pending {
+    if uspto_pending && stored_rejected(verdicts, "uspto") {
+        steps.push(step(
+            "store-uspto-key",
+            "human",
+            "Replace your USPTO ODP API key on the FlowLeap Patent-data keys page — the office rejected the stored key",
+            None,
+            Some(crate::commands::keys::KEYS_PAGE),
+        ));
+    } else if uspto_pending {
         steps.push(step(
             "obtain-uspto-key",
             "human",
@@ -395,9 +440,12 @@ fn session_only(creds: &Credentials) -> bool {
 }
 
 /// Whether a provider blocks work. With server verdicts (source
-/// user|server|none, valid true|false|null): server-covered providers never
-/// block, and — mirroring `keys test` — a provider blocks only when provably
-/// absent everywhere (`source: "none"`) or provably invalid (`valid: false`).
+/// user|stored|server|none, valid true|false|null): server-covered providers
+/// never block, and — mirroring `keys test` — a provider blocks only when
+/// provably absent everywhere (`source: "none"`) or provably invalid
+/// (`valid: false`). A stored key (backend ADR 0023, kept on FlowLeap and used
+/// when no forwarded key is present) is a key present: it blocks only when the
+/// office rejected it.
 /// A null source means the provider was never reached, which proves nothing and
 /// so blocks nothing. Without verdicts (unauthenticated / call failed), fall
 /// back to local key presence.
@@ -410,6 +458,15 @@ fn provider_pending(verdicts: Option<&Value>, provider: &str, local_present: boo
         }
         None => !local_present,
     }
+}
+
+/// Whether the key a data call uses for `provider` is the user's stored key
+/// and the office rejected it.
+fn stored_rejected(verdicts: Option<&Value>, provider: &str) -> bool {
+    verdicts.is_some_and(|verdicts| {
+        verdicts[provider]["source"] == "stored"
+            && verdicts[provider]["valid"] == Value::Bool(false)
+    })
 }
 
 /// One next step: stable kebab-case id, exactly one actor ("human" |

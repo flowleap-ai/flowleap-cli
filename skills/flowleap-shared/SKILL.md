@@ -149,8 +149,9 @@ Doctor is the machine-readable onboarding contract. Its JSON always carries:
 - `ready: bool` — backend reachable AND authenticated AND no **blocking** next
   step pending. Stricter than `ok`, which keeps its reachability-only meaning.
 - `nextSteps` — the pending onboarding steps in dependency order (empty array
-  when complete). Steps already covered — e.g. a provider the server has its
-  own keys for — are omitted. Each step:
+  when complete). Steps already covered — e.g. a provider with a stored key
+  (validate `source: "stored"`), or one the server has its own keys for — are
+  omitted. Each step:
 
 ```json
 { "id": "store-epo-keys", "actor": "agent",
@@ -161,7 +162,8 @@ Doctor is the machine-readable onboarding contract. Its JSON always carries:
 Stable step ids (public contract): `auth-login` (human), `mint-personal-token`
 (agent — pending while auth is only a session token with no `fl_pat_` personal
 token), `obtain-epo-keys` (human), `store-epo-keys` (agent),
-`obtain-uspto-key` (human), `store-uspto-key` (agent), `verify-keys` (agent),
+`obtain-uspto-key` (human), `store-uspto-key` (agent; human, with the keys page
+`url`, when the office rejected the stored key), `verify-keys` (agent),
 `refresh-skills` (agent — installed skill files were written by an older CLI
 and still teach retired commands).
 
@@ -176,12 +178,19 @@ JSON always fully emitted first, so `flowleap doctor && <work>` gates
 pipelines without parsing. An unreachable backend still emits the checklist
 from local state (offline diagnosis works); `keyValidation.source` says
 whether provider verdicts came from the server (`"server"`) or fell back to
-local key presence (`"local"`, with a `note`).
+local key presence (`"local"`, with a `note`). `keyValidation.providers`
+(`{ epo, uspto }`) gives, per office, the validate `source` verbatim — `user`
+(forwarded key), `stored`, `server` or `none`; null when that office was not
+checked, and null for both on the local fallback.
 
 **Agent-mediated sequence**: run `flowleap --json doctor`; for each step in
 `nextSteps`, execute `actor: "agent"` steps yourself via their `run` command,
 and relay `actor: "human"` steps (title + `url`) to the user; re-run doctor
-until `ready` is true.
+until `ready` is true. One exception: run a `store-epo-keys` /
+`store-uspto-key` agent step only with keys the user gave you without being
+asked. Otherwise relay the FlowLeap Patent-data keys page
+(https://www.flowleap.co/en/dashboard/keys) — never ask for the key value in
+the chat (see `flowleap-keys`).
 
 ## Updating the CLI
 
