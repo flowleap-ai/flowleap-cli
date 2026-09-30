@@ -12,7 +12,8 @@ mod graph;
 #[command(after_help = "Examples:
   flowleap patstat portfolio Siemens
   flowleap patstat portfolio \"Kia Motors\" --from-year 2015 --to-year 2024
-  flowleap patstat docs --section semantic-model
+  flowleap patstat docs --section semantic-model --part index
+  flowleap patstat docs --section semantic-model --view applications
   flowleap patstat docs --section examples
   flowleap patstat query \"SELECT office, COUNT(DISTINCT family_id) AS inventions FROM flowleap.applications GROUP BY office\" --question \"filings by office\"
   flowleap patstat graph resolve EP3477840
@@ -92,12 +93,25 @@ enum PatstatCommand {
     },
 
     /// PATSTAT analytics docs and served sections. --section semantic-model
-    /// is the full schema + interpretation-conventions YAML (read BEFORE
-    /// writing query SQL); --section examples is verified question→SQL pairs.
+    /// is the full schema + interpretation-conventions YAML; read it in parts
+    /// BEFORE writing query SQL: --part index first, then --view <name> for
+    /// each view you will query. --section examples is verified
+    /// question→SQL pairs.
     Docs {
         /// Served data section: semantic-model | examples
         #[arg(long, conflicts_with_all = ["workflow", "endpoint", "compact"])]
         section: Option<String>,
+
+        /// One part of the semantic model: index (the catalog of views,
+        /// conventions and metrics). Only with --section semantic-model.
+        #[arg(long, conflicts_with_all = ["view", "workflow", "endpoint", "compact"])]
+        part: Option<String>,
+
+        /// One logical table (view) of the semantic model in full, with its
+        /// conventions and join paths; names come from --part index. Only
+        /// with --section semantic-model.
+        #[arg(long, conflicts_with_all = ["workflow", "endpoint", "compact"])]
+        view: Option<String>,
 
         /// Workflow guide by name (e.g. guarded-sql)
         #[arg(long, conflicts_with_all = ["endpoint", "compact"])]
@@ -120,6 +134,15 @@ enum PatstatCommand {
 }
 
 pub async fn run(ctx: &Context, args: PatstatArgs) -> Result<()> {
+    if let PatstatCommand::Docs {
+        section,
+        part,
+        view,
+        ..
+    } = &args.command
+    {
+        check_semantic_model_part(ctx, section.as_deref(), part.is_some() || view.is_some())?;
+    }
     ctx.require_auth()?;
 
     match args.command {
@@ -136,10 +159,22 @@ pub async fn run(ctx: &Context, args: PatstatArgs) -> Result<()> {
         } => query(ctx, &sql, question, retry_of).await,
         PatstatCommand::Docs {
             section,
+            part,
+            view,
             workflow,
             endpoint,
             compact,
-        } => docs(ctx, section, workflow, endpoint, compact).await,
+        } => {
+            let selector = DocsSelector {
+                section,
+                part,
+                view,
+                workflow,
+                endpoint,
+                compact,
+            };
+            docs(ctx, selector).await
+        }
         PatstatCommand::Graph(args) => graph::run(ctx, args).await,
     }
 }
@@ -335,25 +370,58 @@ Rows: {row_count}"
     }
 }
 
-async fn docs(
-    ctx: &Context,
+/// The docs selector flags, as parsed (clap keeps the families exclusive).
+struct DocsSelector {
     section: Option<String>,
+    part: Option<String>,
+    view: Option<String>,
     workflow: Option<String>,
     endpoint: Option<String>,
     compact: bool,
+}
+
+/// The one flag rule clap cannot state: `--part` and `--view` select inside
+/// the semantic model, so they need `--section semantic-model` exactly. A
+/// broken combination is a usage error, rendered the way `main` renders a
+/// clap parse error (JSON envelope on stdout in JSON mode, stderr otherwise)
+/// and exiting 2, before any credential check or request.
+fn check_semantic_model_part(
+    ctx: &Context,
+    section: Option<&str>,
+    selects_part: bool,
 ) -> Result<()> {
-    let data = match call(
-        ctx,
-        "patstat_docs",
-        &docs_input(section, workflow, endpoint, compact),
-    )
-    .await?
-    {
+    if !selects_part || section == Some("semantic-model") {
+        return Ok(());
+    }
+    let (kind, message) = match section {
+        None => (
+            clap::error::ErrorKind::MissingRequiredArgument,
+            "--part and --view need --section semantic-model",
+        ),
+        Some(_) => (
+            clap::error::ErrorKind::ArgumentConflict,
+            "--part and --view need --section semantic-model (not another section)",
+        ),
+    };
+    let err = clap::Error::raw(kind, format!("{message}\n"));
+    if ctx.output_format == "json" {
+        output::print_usage_error_json(&err);
+    } else {
+        eprint!("{err}");
+    }
+    Err(crate::client::PrintedError::with_exit_code(err.exit_code()).into())
+}
+
+async fn docs(ctx: &Context, selector: DocsSelector) -> Result<()> {
+    let data = match call(ctx, "patstat_docs", &docs_input(&selector)).await? {
         Outcome::DryRun => return Ok(()),
         Outcome::Failed(envelope) => {
             let body = error_body(&envelope);
+            let available = error_field(&body, "availableViews").and_then(Value::as_array);
             if body.pointer("/error/code").and_then(Value::as_str) == Some("patstat_unavailable") {
                 render_unavailable(ctx, &body);
+            } else if let (Some(views), false) = (available, ctx.output_format == "json") {
+                print_unknown_view(ctx, &body, views);
             } else {
                 render_generic_error(ctx, &envelope);
             }
@@ -362,14 +430,21 @@ async fn docs(
         Outcome::Data(data) => data,
     };
 
-    // The semantic model ships as verbatim YAML — print it raw in human mode
-    // so nothing is lost between the backend's single source and the agent.
     if ctx.output_format != "json" {
+        // The semantic model ships as verbatim YAML — print it raw in human
+        // mode so nothing is lost between the backend's single source and
+        // the agent.
         if let Some(yaml) = data.get("yaml").and_then(Value::as_str) {
-            if let Some(edition) = data.get("data_edition").and_then(Value::as_str) {
-                println!("# Loaded edition: {edition}");
-            }
+            print_edition(&data);
             println!("{yaml}");
+            return Ok(());
+        }
+        if selector.part.is_some() && data.get("logical_tables").is_some() {
+            print_model_index(&data);
+            return Ok(());
+        }
+        if selector.view.is_some() && data.get("view").is_some() {
+            print_model_view(&data);
             return Ok(());
         }
     }
@@ -381,21 +456,167 @@ async fn docs(
 /// The `patstat_docs` input for the docs selectors (clap keeps them mutually
 /// exclusive). The tool answers an empty input with the compact manifest, so
 /// the no-flag run asks for `compact: false` — the full docs, as before.
-fn docs_input(
-    section: Option<String>,
-    workflow: Option<String>,
-    endpoint: Option<String>,
-    compact: bool,
-) -> Value {
-    if let Some(section) = section {
-        json!({ "section": section })
-    } else if let Some(workflow) = workflow {
+fn docs_input(selector: &DocsSelector) -> Value {
+    if let Some(section) = &selector.section {
+        let mut input = json!({ "section": section });
+        if let Some(part) = &selector.part {
+            input["part"] = json!(part);
+        }
+        if let Some(view) = &selector.view {
+            input["view"] = json!(view);
+        }
+        input
+    } else if let Some(workflow) = &selector.workflow {
         json!({ "workflow": workflow })
-    } else if let Some(endpoint) = endpoint {
+    } else if let Some(endpoint) = &selector.endpoint {
         json!({ "endpoint": endpoint })
     } else {
-        json!({ "compact": compact })
+        json!({ "compact": selector.compact })
     }
+}
+
+fn print_edition(data: &Value) {
+    if let Some(edition) = data.get("data_edition").and_then(Value::as_str) {
+        println!("# Loaded edition: {edition}");
+    }
+}
+
+/// The index for human output: the served note, the general interpretation
+/// conventions as short sections, then one table row per logical table.
+/// Glossary, metrics and global caveats stay in the JSON output.
+fn print_model_index(data: &Value) {
+    print_edition(data);
+    if let Some(note) = data.get("note").and_then(Value::as_str) {
+        println!("{note}");
+    }
+    print_topics("Conventions", data.get("interpretation_conventions"));
+
+    let rows: Vec<Value> = data
+        .get("logical_tables")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .map(|table| {
+            json!({
+                "view": table.get("name"),
+                "description": table.get("description"),
+                "columns": table.get("columns"),
+            })
+        })
+        .collect();
+    println!("\nViews");
+    output::print_table_whole(
+        &rows,
+        &[
+            ("view", "View"),
+            ("description", "Description"),
+            ("columns", "Columns"),
+        ],
+    );
+    println!(
+        "\nRead one view in full: flowleap patstat docs --section semantic-model --view <name>"
+    );
+    println!("Glossary, metrics and global caveats: add --output json.");
+}
+
+/// One view for human output: its columns table, then the conventions topics
+/// it names, then the join paths that name it.
+fn print_model_view(data: &Value) {
+    print_edition(data);
+    let view = &data["view"];
+    let name = view.get("name").and_then(Value::as_str).unwrap_or("view");
+    match view.get("description").and_then(Value::as_str) {
+        Some(description) => println!("{name}: {description}"),
+        None => println!("{name}"),
+    }
+    if let Some(physical) = view.get("physical").and_then(Value::as_str) {
+        println!("Physical: {physical}");
+    }
+
+    let rows: Vec<Value> = view
+        .get("columns")
+        .and_then(Value::as_object)
+        .map(|columns| {
+            columns
+                .iter()
+                .map(|(column, spec)| {
+                    json!({
+                        "column": column,
+                        "type": spec.get("type"),
+                        "description": spec.get("description"),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    println!("\nColumns");
+    output::print_table_whole(
+        &rows,
+        &[
+            ("column", "Column"),
+            ("type", "Type"),
+            ("description", "Description"),
+        ],
+    );
+
+    print_topics("Conventions", data.get("interpretation_conventions"));
+    // The view answer's top-level global_caveats are already the ones that
+    // bear on this view (backend #485); the view object carries none.
+    print_topics("Caveats", data.get("global_caveats"));
+
+    let paths = data
+        .get("join_paths")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    if !paths.is_empty() {
+        println!("\nJoin paths");
+        for path in paths {
+            match path.as_str() {
+                Some(text) => println!("  - {text}"),
+                None => println!("  - {path}"),
+            }
+        }
+    }
+}
+
+/// A `{ topic: text | { key: text } }` map as short sections. Values that
+/// are neither a string nor a map print as compact JSON.
+fn print_topics(label: &str, topics: Option<&Value>) {
+    let Some(topics) = topics.and_then(Value::as_object).filter(|t| !t.is_empty()) else {
+        return;
+    };
+    println!("\n{label}");
+    for (topic, value) in topics {
+        match value {
+            Value::String(text) => println!("  {topic}: {text}"),
+            Value::Object(entries) => {
+                println!("  {topic}:");
+                for (key, entry) in entries {
+                    match entry.as_str() {
+                        Some(text) => println!("    {key}: {text}"),
+                        None => println!("    {key}: {entry}"),
+                    }
+                }
+            }
+            other => println!("  {topic}: {other}"),
+        }
+    }
+}
+
+/// An unknown `--view`, in human mode: the backend's message and the views
+/// it offers, through the shared value printer like other human errors.
+fn print_unknown_view(ctx: &Context, body: &Value, views: &[Value]) {
+    let message = body
+        .pointer("/error/message")
+        .and_then(Value::as_str)
+        .unwrap_or("Unknown view");
+    output::print_value(
+        &ctx.output_format,
+        &json!({ "error": message, "availableViews": views }),
+        &[("error", "Error"), ("availableViews", "Available views")],
+    );
 }
 
 async fn portfolio(

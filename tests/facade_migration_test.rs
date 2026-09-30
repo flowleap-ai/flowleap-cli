@@ -341,7 +341,7 @@ fn literature_commands_map_onto_their_search_tools() {
 #[test]
 fn patstat_commands_map_onto_the_patstat_tools() {
     let sql = "SELECT office, COUNT(*) AS n FROM flowleap.applications GROUP BY office";
-    let cases: [(&[&str], &str, Value); 5] = [
+    let cases: [(&[&str], &str, Value); 7] = [
         (
             &[
                 "patstat",
@@ -382,6 +382,30 @@ fn patstat_commands_map_onto_the_patstat_tools() {
             &["patstat", "docs"],
             "patstat_docs",
             json!({ "compact": false }),
+        ),
+        (
+            &[
+                "patstat",
+                "docs",
+                "--section",
+                "semantic-model",
+                "--part",
+                "index",
+            ],
+            "patstat_docs",
+            json!({ "section": "semantic-model", "part": "index" }),
+        ),
+        (
+            &[
+                "patstat",
+                "docs",
+                "--section",
+                "semantic-model",
+                "--view",
+                "applications",
+            ],
+            "patstat_docs",
+            json!({ "section": "semantic-model", "view": "applications" }),
         ),
     ];
 

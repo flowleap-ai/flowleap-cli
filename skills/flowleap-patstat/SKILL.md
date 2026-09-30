@@ -104,17 +104,21 @@ The procedure is served, and it is the source of truth:
 | Served step | Command |
 |---|---|
 | Verified examples first; reuse a match, or use its `promoted_to` command | `flowleap patstat docs --section examples` |
-| Semantic model and interpretation conventions, applied as served | `flowleap patstat docs --section semantic-model` (the YAML is at `.yaml` in `--json`) |
+| Semantic model and interpretation conventions, applied as served | `flowleap patstat docs --section semantic-model --part index`, then `flowleap patstat docs --section semantic-model --view <name>` for each view |
 | One SELECT, with the user's question verbatim | `flowleap patstat query "<SQL>" --question "<question>"` |
 | The one retry | the same command plus `--retry-of <error code>` |
 
 ```bash
 flowleap patstat docs --section examples
+flowleap patstat docs --section semantic-model --part index
+flowleap patstat docs --section semantic-model --view applications
 flowleap patstat query "SELECT office, COUNT(DISTINCT family_id) AS inventions FROM flowleap.applications a JOIN flowleap.applicants ap ON ap.application_id = a.application_id WHERE UPPER(ap.name) LIKE 'SIEMENS%' GROUP BY office ORDER BY inventions DESC" --question "where does Siemens hold the most inventions?"
 ```
 
-Read the semantic model from the served YAML each time, never from memory; this
-skill does not restate it. A LIMIT is not necessary: past the row cap the
+Read the index first, then --view for each view you will query. Read them from
+the served docs each time, never from memory; this skill does not restate them.
+The full model (`--section semantic-model` alone, the YAML at `.yaml` in
+`--json`) is too large for most tool-output limits. A LIMIT is not necessary: past the row cap the
 backend answers an error, never a truncated table.
 
 **You own the retry.** The CLI sends `patstat query` exactly once. It does not
