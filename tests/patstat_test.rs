@@ -282,9 +282,10 @@ async fn ambiguous_422_renders_candidates_in_json_mode() {
 
     assert_eq!(value["ok"], false);
     assert_eq!(value["error"]["code"], "patstat_applicant_ambiguous");
-    assert_eq!(value["error"]["candidates"][0]["name"], "KIA MOTORS");
-    assert_eq!(value["error"]["candidates"][0]["applications"], 500);
-    assert_eq!(value["error"]["candidates"][1]["name"], "KIA CORPORATION");
+    let candidates = &value["error"]["details"]["candidates"];
+    assert_eq!(candidates[0]["name"], "KIA MOTORS");
+    assert_eq!(candidates[0]["applications"], 500);
+    assert_eq!(candidates[1]["name"], "KIA CORPORATION");
     // The backend details ride along verbatim.
     assert_eq!(
         value["error"]["details"],

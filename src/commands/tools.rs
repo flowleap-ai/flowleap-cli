@@ -147,9 +147,17 @@ pub async fn call_tool(ctx: &Context, name: &str, input: &Value) -> Result<Value
 /// hints) and return the typed error, exactly as [`call_tool`] does.
 pub async fn call_tool_data(ctx: &Context, name: &str, input: &Value) -> Result<Option<Value>> {
     let result = call_tool(ctx, name, input).await?;
+    Ok(unwrap_tool_result(ctx, result))
+}
+
+/// The one unwrap every data command shares: given a successful tool
+/// envelope (`{ success, tool, data, executionTimeMs, cached? }`) or a
+/// `--dry-run` description, print the dry run and return `None`, or log
+/// `cached` / `executionTimeMs` under `--verbose` and return `data`.
+pub fn unwrap_tool_result(ctx: &Context, result: Value) -> Option<Value> {
     if result.get("dryRun").and_then(|v| v.as_bool()) == Some(true) {
         output::print_json(&result);
-        return Ok(None);
+        return None;
     }
     if ctx.verbose {
         if let Some(cached) = result.get("cached").and_then(|v| v.as_bool()) {
@@ -162,7 +170,7 @@ pub async fn call_tool_data(ctx: &Context, name: &str, input: &Value) -> Result<
     // A tool that returns a bare value (rather than an object) still lands
     // under `data`; falling back to the whole envelope keeps a hypothetical
     // envelope-less response printable instead of empty.
-    Ok(Some(result.get("data").cloned().unwrap_or(result)))
+    Some(result.get("data").cloned().unwrap_or(result))
 }
 
 /// Execute a backend tool and return the raw response envelope

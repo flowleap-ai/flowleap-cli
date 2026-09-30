@@ -167,23 +167,20 @@ enum Outcome {
 /// ambiguity, guarded-SQL and unavailability errors render their own way.
 async fn call(ctx: &Context, tool: &str, input: &Value) -> Result<Outcome> {
     let envelope = tools::call_tool_envelope(ctx, tool, input).await?;
-    if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
-        output::print_json(&envelope);
-        return Ok(Outcome::DryRun);
-    }
-    if envelope.get("ok").and_then(Value::as_bool) != Some(true) {
+    let dry_run = envelope.get("dryRun").and_then(Value::as_bool) == Some(true);
+    if !dry_run && envelope.get("ok").and_then(Value::as_bool) != Some(true) {
         return Ok(Outcome::Failed(envelope));
     }
-    let body = envelope.get("body").cloned().unwrap_or(Value::Null);
-    if ctx.verbose {
-        if let Some(cached) = body.get("cached").and_then(Value::as_bool) {
-            eprintln!("  cached: {cached}");
-        }
-        if let Some(ms) = body.get("executionTimeMs").and_then(Value::as_u64) {
-            eprintln!("  executionTimeMs: {ms}");
-        }
-    }
-    Ok(Outcome::Data(body.get("data").cloned().unwrap_or(body)))
+    // A dry run is the envelope itself; a success is its body.
+    let result = if dry_run {
+        envelope
+    } else {
+        envelope.get("body").cloned().unwrap_or(Value::Null)
+    };
+    Ok(match tools::unwrap_tool_result(ctx, result) {
+        Some(data) => Outcome::Data(data),
+        None => Outcome::DryRun,
+    })
 }
 
 /// The backend error envelope of a failed call (`{ success: false, error }`).
@@ -191,12 +188,10 @@ fn error_body(envelope: &Value) -> Value {
     envelope.get("body").cloned().unwrap_or(Value::Null)
 }
 
-/// One extra field of a typed PATSTAT error. The facade nests the route's
-/// extra fields under `error.details`; the flat route shape is still read so
-/// an older backend renders the same.
+/// One extra field of a typed PATSTAT error: the facade nests the route's
+/// extra fields under `error.details`.
 fn error_field<'a>(body: &'a Value, key: &str) -> Option<&'a Value> {
     body.pointer(&format!("/error/details/{key}"))
-        .or_else(|| body.pointer(&format!("/error/{key}")))
 }
 
 /// The documented exit code for a failed call's HTTP status.
@@ -442,17 +437,14 @@ fn render_ambiguous(ctx: &Context, body: &Value) {
         .unwrap_or_default();
 
     if ctx.output_format == "json" {
-        let mut error = json!({
-            "code": "patstat_applicant_ambiguous",
-            "message": message,
-            "candidates": candidates,
-        });
-        // The backend's details ride along verbatim, next to the flattened
-        // candidate list existing consumers read.
-        if let Some(details) = body.pointer("/error/details") {
-            error["details"] = details.clone();
-        }
-        output::print_json(&json!({ "ok": false, "error": error }));
+        output::print_json(&json!({
+            "ok": false,
+            "error": {
+                "code": "patstat_applicant_ambiguous",
+                "message": message,
+                "details": body.pointer("/error/details").cloned().unwrap_or_else(|| json!({})),
+            },
+        }));
         return;
     }
 

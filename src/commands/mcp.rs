@@ -14,9 +14,10 @@
 //! transport errors, so the calling agent can read the hint and act.
 //!
 //! Doctrine: at startup the bridge fetches the backend's PATSTAT documents
-//! (`GET /v1/patstat/docs`: the semantic model, the verified examples and
-//! three workflows) and serves them verbatim as MCP resources, plus one MCP
-//! prompt per workflow. The bridge authors no doctrine: a prompt is a plain
+//! through the `patstat_docs` tool (the semantic model, the verified examples
+//! and three workflows) and serves them verbatim as MCP resources, plus one
+//! MCP prompt per workflow. The tool, not the plan-gated docs route: it is
+//! free at sign-in (backend ADR 0021), so every signed-in user gets them. The bridge authors no doctrine: a prompt is a plain
 //! text rendering of the served workflow JSON. A document that fails to load
 //! is logged to stderr and skipped; the rest keep serving.
 
@@ -527,8 +528,8 @@ fn tool_error(id: Value, payload: Value) -> Value {
 struct DocSpec {
     /// Short key, used in logs and in the resource URI after `patstat/`.
     key: &'static str,
-    /// Query string for `GET /v1/patstat/docs`.
-    query: &'static str,
+    /// The `patstat_docs` selector: one `(field, value)` input pair.
+    selector: (&'static str, &'static str),
     /// Workflow documents also become a prompt of this name.
     prompt: Option<&'static str>,
     /// Neutral labels used when the payload carries no name or description.
@@ -539,21 +540,21 @@ struct DocSpec {
 const DOC_SPECS: [DocSpec; 5] = [
     DocSpec {
         key: "semantic-model",
-        query: "section=semantic-model",
+        selector: ("section", "semantic-model"),
         prompt: None,
         fallback_title: "PATSTAT semantic model",
         fallback_description: "The PATSTAT semantic model, as served by the FlowLeap backend.",
     },
     DocSpec {
         key: "examples",
-        query: "section=examples",
+        selector: ("section", "examples"),
         prompt: None,
         fallback_title: "PATSTAT examples",
         fallback_description: "The PATSTAT verified examples, as served by the FlowLeap backend.",
     },
     DocSpec {
         key: "workflow/portfolio-analysis",
-        query: "workflow=portfolio-analysis",
+        selector: ("workflow", "portfolio-analysis"),
         prompt: Some("patstat-portfolio-analysis"),
         fallback_title: "PATSTAT workflow: portfolio-analysis",
         fallback_description:
@@ -561,7 +562,7 @@ const DOC_SPECS: [DocSpec; 5] = [
     },
     DocSpec {
         key: "workflow/guarded-sql",
-        query: "workflow=guarded-sql",
+        selector: ("workflow", "guarded-sql"),
         prompt: Some("patstat-guarded-sql"),
         fallback_title: "PATSTAT workflow: guarded-sql",
         fallback_description:
@@ -569,7 +570,7 @@ const DOC_SPECS: [DocSpec; 5] = [
     },
     DocSpec {
         key: "workflow/graph",
-        query: "workflow=graph",
+        selector: ("workflow", "graph"),
         prompt: Some("patstat-graph"),
         fallback_title: "PATSTAT workflow: graph",
         fallback_description: "The PATSTAT graph workflow, as served by the FlowLeap backend.",
@@ -608,9 +609,9 @@ struct Doctrine {
 /// Answers one resources/* or prompts/* request from the loaded doctrine.
 type DoctrineHandler = fn(&Doctrine, Value, &Value) -> Value;
 
-/// Fetch the five documents concurrently (a fixed set of five small GETs is
-/// its own bound) through the shared client, so credentials, base URL,
-/// dry-run and redaction all apply. Failures are logged and skipped.
+/// Fetch the five documents concurrently (a fixed set of five small tool
+/// calls is its own bound) through the shared tool seam, so credentials, base
+/// URL, dry-run, redaction and the generic retry all apply. Failures are logged and skipped.
 async fn load_doctrine(ctx: &Context) -> Doctrine {
     let mut doctrine = Doctrine::default();
     if ctx.credentials.auth_header().is_none() && !ctx.dry_run {
@@ -677,8 +678,9 @@ enum Fetched {
 }
 
 async fn fetch_doc(ctx: &Context, spec: &DocSpec) -> Fetched {
-    let path = format!("/v1/patstat/docs?{}", spec.query);
-    let envelope = match ctx.execute_json_envelope(ctx.get(&path)).await {
+    let (field, value) = spec.selector;
+    let input = json!({ field: value });
+    let envelope = match tools::call_tool_envelope(ctx, "patstat_docs", &input).await {
         Ok(envelope) => envelope,
         Err(err) => return Fetched::Failed(err.to_string()),
     };

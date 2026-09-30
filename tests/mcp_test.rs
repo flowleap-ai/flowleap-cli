@@ -5,96 +5,15 @@
 //! Every stdout line is parsed as a JSON frame — any stray output fails the
 //! test, which is exactly the "nothing but protocol frames on stdout" rule.
 
-use std::io::Write;
-use std::process::{Command, Stdio};
+mod support;
+
+use std::process::Command;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use wiremock::matchers::{body_json, method, path, query_param};
+use support::{frame, initialize_frame, run_mcp, run_mcp_with_stderr};
+use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
-
-/// Run `flowleap mcp` against `base_url` in an isolated environment (temp
-/// `HOME`, no ambient credentials, update check disabled), feed it `lines` on
-/// stdin, and return the parsed JSON-RPC response frames from stdout.
-async fn run_mcp(base_url: &str, envs: &[(&str, &str)], lines: &[String]) -> Vec<Value> {
-    run_mcp_with_stderr(base_url, envs, &[], lines).await.0
-}
-
-/// [`run_mcp`] with extra global flags placed before `mcp` (e.g.
-/// `--dry-run`), also returning everything the server wrote to stderr.
-async fn run_mcp_with_stderr(
-    base_url: &str,
-    envs: &[(&str, &str)],
-    flags: &[&str],
-    lines: &[String],
-) -> (Vec<Value>, String) {
-    let flags: Vec<String> = flags.iter().map(|flag| flag.to_string()).collect();
-    let base_url = base_url.to_string();
-    let envs: Vec<(String, String)> = envs
-        .iter()
-        .map(|(key, value)| (key.to_string(), value.to_string()))
-        .collect();
-    let input = format!("{}\n", lines.join("\n"));
-
-    tokio::task::spawn_blocking(move || {
-        let home = tempfile::tempdir().expect("create temp home");
-        let mut child = Command::new(env!("CARGO_BIN_EXE_flowleap"))
-            .env("HOME", home.path())
-            .env("XDG_CONFIG_HOME", home.path().join(".config"))
-            .env_remove("FLOWLEAP_BASE_URL")
-            .env("FLOWLEAP_BASE_URL", &base_url)
-            .env("FLOWLEAP_NO_UPDATE_CHECK", "1")
-            .env_remove("FLOWLEAP_TOKEN")
-            .env_remove("FLOWLEAP_API_KEY")
-            .envs(envs)
-            .args(&flags)
-            .arg("mcp")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn flowleap mcp");
-
-        let mut stdin = child.stdin.take().expect("child stdin");
-        stdin.write_all(input.as_bytes()).expect("write stdin");
-        drop(stdin); // EOF ends the server loop
-
-        let output = child.wait_with_output().expect("wait for flowleap mcp");
-        assert!(
-            output.status.success(),
-            "mcp exited nonzero: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let frames = String::from_utf8(output.stdout)
-            .expect("stdout is utf8")
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .map(|line| {
-                serde_json::from_str(line)
-                    .unwrap_or_else(|_| panic!("stdout line was not a JSON frame: {line}"))
-            })
-            .collect();
-        let stderr = String::from_utf8(output.stderr).expect("stderr is utf8");
-        (frames, stderr)
-    })
-    .await
-    .expect("join flowleap mcp subprocess")
-}
-
-fn frame(value: Value) -> String {
-    value.to_string()
-}
-
-fn initialize_frame(id: u64, protocol_version: &str) -> String {
-    frame(json!({
-        "jsonrpc": "2.0", "id": id, "method": "initialize",
-        "params": {
-            "protocolVersion": protocol_version,
-            "capabilities": {},
-            "clientInfo": { "name": "test-harness", "version": "0.0.0" },
-        },
-    }))
-}
 
 const AUTH_ENV: &[(&str, &str)] = &[("FLOWLEAP_API_KEY", "fl_pat_test_key")];
 
@@ -486,20 +405,20 @@ fn workflow_doc(name: &str, description: &str) -> Value {
     })
 }
 
-/// Mount the five doctrine documents at `GET /v1/patstat/docs?…`.
+/// Mount the five doctrine documents as `POST /v1/tools/patstat_docs` answers.
 async fn mount_doctrine(server: &MockServer) {
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/docs"))
-        .and(query_param("section", "semantic-model"))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_docs"))
+        .and(body_json(json!({ "section": "semantic-model" })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "success": true,
             "data": { "data_edition": "PATSTAT 2026 Spring", "yaml": SEMANTIC_MODEL_YAML },
         })))
         .mount(server)
         .await;
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/docs"))
-        .and(query_param("section", "examples"))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_docs"))
+        .and(body_json(json!({ "section": "examples" })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "success": true,
             "data": { "examples": [{ "question": "Q?", "logical_sql": "SELECT 1" }] },
@@ -511,9 +430,9 @@ async fn mount_doctrine(server: &MockServer) {
         ("guarded-sql", "Guarded SQL (Layer 2)"),
         ("graph", "Graph Analytics"),
     ] {
-        Mock::given(method("GET"))
-            .and(path("/v1/patstat/docs"))
-            .and(query_param("workflow", workflow))
+        Mock::given(method("POST"))
+            .and(path("/v1/tools/patstat_docs"))
+            .and(body_json(json!({ "workflow": workflow })))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(workflow_doc(name, &format!("The {workflow} workflow."))),
@@ -706,10 +625,10 @@ async fn prompts_list_and_get_render_the_served_workflows() {
 #[tokio::test]
 async fn a_document_that_fails_to_load_is_skipped_and_logged() {
     let server = MockServer::start().await;
-    // The docs route is plan-gated: a plan-less user gets 402 for one doc.
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/docs"))
-        .and(query_param("workflow", "graph"))
+    // One document failing (a 402 here) is skipped, the rest keep serving.
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_docs"))
+        .and(body_json(json!({ "workflow": "graph" })))
         .respond_with(ResponseTemplate::new(402).set_body_json(json!({
             "error": { "code": "subscription_required", "message": "subscribe" },
         })))
@@ -783,16 +702,21 @@ async fn dry_run_prints_the_five_requests_and_serves_nothing() {
     .await;
 
     assert_eq!(responses[0]["result"], json!({ "resources": [] }));
-    for query in [
-        "section=semantic-model",
-        "section=examples",
-        "workflow=portfolio-analysis",
-        "workflow=guarded-sql",
-        "workflow=graph",
+    assert_eq!(
+        stderr.matches("/v1/tools/patstat_docs").count(),
+        5,
+        "dry-run prints five tool requests: {stderr}"
+    );
+    for selector in [
+        r#"{"section":"semantic-model"}"#,
+        r#"{"section":"examples"}"#,
+        r#"{"workflow":"portfolio-analysis"}"#,
+        r#"{"workflow":"guarded-sql"}"#,
+        r#"{"workflow":"graph"}"#,
     ] {
         assert!(
-            stderr.contains(&format!("/v1/patstat/docs?{query}")),
-            "dry-run prints the {query} request: {stderr}"
+            stderr.contains(&format!(r#""body":{selector}"#)),
+            "dry-run prints the {selector} request: {stderr}"
         );
     }
     assert!(
@@ -808,9 +732,9 @@ async fn dry_run_prints_the_five_requests_and_serves_nothing() {
 #[tokio::test]
 async fn a_slow_doctrine_load_never_blocks_other_frames() {
     let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/docs"))
-        .and(query_param("section", "semantic-model"))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_docs"))
+        .and(body_json(json!({ "section": "semantic-model" })))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_delay(Duration::from_secs(2))
@@ -939,9 +863,9 @@ async fn mcp_check_human_lines_warn_resources_and_prompts_separately() {
     let server = MockServer::start().await;
     mount_health_and_tools(&server).await;
     // graph fails outright: resource and prompt both missing.
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/docs"))
-        .and(query_param("workflow", "graph"))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_docs"))
+        .and(body_json(json!({ "workflow": "graph" })))
         .respond_with(ResponseTemplate::new(402).set_body_json(json!({
             "error": { "code": "subscription_required", "message": "subscribe" },
         })))
@@ -950,9 +874,9 @@ async fn mcp_check_human_lines_warn_resources_and_prompts_separately() {
         .await;
     // guarded-sql loads but carries no workflow object: resource served,
     // prompt unavailable.
-    Mock::given(method("GET"))
-        .and(path("/v1/patstat/docs"))
-        .and(query_param("workflow", "guarded-sql"))
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_docs"))
+        .and(body_json(json!({ "workflow": "guarded-sql" })))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_json(json!({ "success": true, "data": { "other": true } })),

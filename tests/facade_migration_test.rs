@@ -3,8 +3,8 @@
 //! assert the tool name (URL) and the tool-input JSON shape without a live
 //! backend — the same seam `facade_test.rs` uses for the ergonomic verbs.
 //!
-//! PATSTAT commands and `keys test`/`keys set` are the named non-facade
-//! exceptions and are deliberately absent here.
+//! `keys test`/`keys set` and the `patstat graph` verbs (until #96) are the
+//! named non-facade exceptions and are deliberately absent here.
 
 use std::process::Command;
 
@@ -333,6 +333,63 @@ fn literature_commands_map_onto_their_search_tools() {
 
 /// The retired subcommands are gone from the surface, so a stale invocation is
 /// a local usage error instead of a request to an endpoint that answers 410.
+/// `patstat portfolio` / `docs` / `query` are ergonomic verbs over the
+/// PATSTAT tools (#95): snake_case input, `--retry-of` as `retry_of`, and the
+/// no-flag docs run asking for the full docs (`compact: false`).
+#[test]
+fn patstat_commands_map_onto_the_patstat_tools() {
+    let sql = "SELECT office, COUNT(*) AS n FROM flowleap.applications GROUP BY office";
+    let cases: [(&[&str], &str, Value); 4] = [
+        (
+            &[
+                "patstat",
+                "query",
+                sql,
+                "--question",
+                "filings by office",
+                "--retry-of",
+                "patstat_sql_invalid",
+            ],
+            "patstat_query",
+            json!({ "sql": sql, "question": "filings by office", "retry_of": "patstat_sql_invalid" }),
+        ),
+        (
+            &[
+                "patstat",
+                "portfolio",
+                "Siemens",
+                "--from-year",
+                "2020",
+                "--to-year",
+                "2024",
+            ],
+            "patstat_portfolio",
+            json!({ "applicant": "Siemens", "from_year": 2020, "to_year": 2024 }),
+        ),
+        (
+            &["patstat", "docs", "--section", "examples"],
+            "patstat_docs",
+            json!({ "section": "examples" }),
+        ),
+        (
+            &["patstat", "docs"],
+            "patstat_docs",
+            json!({ "compact": false }),
+        ),
+    ];
+
+    for (args, tool, body) in cases {
+        let value = dry_run(args);
+        assert_eq!(value["method"], "POST", "{args:?}");
+        assert_eq!(
+            value["url"],
+            format!("https://api.flowleap.co/v1/tools/{tool}"),
+            "{args:?}"
+        );
+        assert_eq!(value["body"], body, "{args:?}");
+    }
+}
+
 #[test]
 fn retired_subcommands_are_no_longer_offered() {
     for args in [

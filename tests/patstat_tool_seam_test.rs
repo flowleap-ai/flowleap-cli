@@ -8,11 +8,8 @@
 
 mod support;
 
-use std::io::Write;
-use std::process::{Command, Stdio};
-
 use serde_json::{json, Value};
-use support::{run_cli, stdout_json};
+use support::{frame, initialize_frame, run_cli, run_mcp, stdout_json};
 use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -66,67 +63,8 @@ async fn requests_to(server: &MockServer, route: &str) -> usize {
         .count()
 }
 
-// ---------------------------------------------------------------- dry-run
-
-#[tokio::test]
-async fn dry_run_shows_the_tool_seam_request_for_each_command() {
-    let cases: [(&[&str], &str, Value); 3] = [
-        (
-            &[
-                "patstat",
-                "query",
-                SQL,
-                "--question",
-                "filings by office",
-                "--retry-of",
-                "patstat_sql_invalid",
-            ],
-            "/v1/tools/patstat_query",
-            json!({ "sql": SQL, "question": "filings by office", "retry_of": "patstat_sql_invalid" }),
-        ),
-        (
-            &[
-                "patstat",
-                "portfolio",
-                "Siemens",
-                "--from-year",
-                "2020",
-                "--to-year",
-                "2024",
-            ],
-            "/v1/tools/patstat_portfolio",
-            json!({ "applicant": "Siemens", "from_year": 2020, "to_year": 2024 }),
-        ),
-        (
-            &["patstat", "docs", "--section", "examples"],
-            "/v1/tools/patstat_docs",
-            json!({ "section": "examples" }),
-        ),
-    ];
-
-    for (args, route, body) in cases {
-        let mut argv = vec!["--dry-run", "--output", "json"];
-        argv.extend_from_slice(args);
-        let output = run_cli("http://127.0.0.1:9", &[API_KEY_ENV], &argv).await;
-
-        assert!(
-            output.status.success(),
-            "{args:?} stderr: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let value = stdout_json(&output);
-        assert_eq!(value["dryRun"], true, "{args:?}");
-        assert_eq!(value["method"], "POST", "{args:?}");
-        assert!(
-            value["url"]
-                .as_str()
-                .is_some_and(|url| url.ends_with(route)),
-            "{args:?}: {}",
-            value["url"]
-        );
-        assert_eq!(value["body"], body, "{args:?}");
-    }
-}
+// The dry-run request shape of the three commands is asserted with every
+// other data command in tests/facade_migration_test.rs.
 
 // ------------------------------------------------------------------ query
 
@@ -417,63 +355,11 @@ async fn docs_semantic_model_prints_the_yaml_raw_in_human_mode() {
 
 // -------------------------------------------------------------------- mcp
 
-/// Run `flowleap mcp` in the same isolated environment as `run_cli`, feed it
-/// `frames`, and return the parsed response frames.
-async fn run_mcp(base_url: &str, frames: &[Value]) -> Vec<Value> {
-    let base_url = base_url.to_string();
-    let input = frames
-        .iter()
-        .map(Value::to_string)
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n";
-
-    tokio::task::spawn_blocking(move || {
-        let home = tempfile::tempdir().expect("create temp home");
-        let mut child = Command::new(env!("CARGO_BIN_EXE_flowleap"))
-            .env("HOME", home.path())
-            .env("XDG_CONFIG_HOME", home.path().join(".config"))
-            .env("FLOWLEAP_BASE_URL", &base_url)
-            .env("FLOWLEAP_NO_UPDATE_CHECK", "1")
-            .env_remove("FLOWLEAP_TOKEN")
-            .env(API_KEY_ENV.0, API_KEY_ENV.1)
-            .arg("mcp")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn flowleap mcp");
-        let mut stdin = child.stdin.take().expect("child stdin");
-        stdin.write_all(input.as_bytes()).expect("write stdin");
-        drop(stdin);
-        let output = child.wait_with_output().expect("wait for flowleap mcp");
-        String::from_utf8(output.stdout)
-            .expect("stdout is utf8")
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .map(|line| serde_json::from_str(line).expect("stdout line is a JSON frame"))
-            .collect()
-    })
-    .await
-    .expect("join flowleap mcp subprocess")
-}
-
-fn call_frame(id: u64, sql: &str) -> Value {
-    json!({
+fn call_frame(id: u64, sql: &str) -> String {
+    frame(json!({
         "jsonrpc": "2.0", "id": id, "method": "tools/call",
         "params": { "name": "patstat_query", "arguments": { "sql": sql } },
-    })
-}
-
-fn initialize() -> Value {
-    json!({
-        "jsonrpc": "2.0", "id": 1, "method": "initialize",
-        "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": { "name": "test-harness", "version": "0.0.0" },
-        },
-    })
+    }))
 }
 
 #[tokio::test]
@@ -491,7 +377,12 @@ async fn mcp_invalid_sql_is_an_error_result_with_the_backend_code_and_message() 
         .mount(&server)
         .await;
 
-    let responses = run_mcp(&server.uri(), &[initialize(), call_frame(2, "SELEC 1")]).await;
+    let responses = run_mcp(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &[initialize_frame(1, "2024-11-05"), call_frame(2, "SELEC 1")],
+    )
+    .await;
 
     let result = &responses[1]["result"];
     assert_eq!(result["isError"], true);
@@ -512,7 +403,12 @@ async fn mcp_patstat_query_timeout_is_a_single_send() {
         .mount(&server)
         .await;
 
-    let responses = run_mcp(&server.uri(), &[initialize(), call_frame(2, SQL)]).await;
+    let responses = run_mcp(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &[initialize_frame(1, "2024-11-05"), call_frame(2, SQL)],
+    )
+    .await;
 
     let result = &responses[1]["result"];
     assert_eq!(result["isError"], true);
