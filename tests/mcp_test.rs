@@ -353,7 +353,8 @@ async fn mcp_check_reports_ready_with_auth_and_backend() {
         value["toolCount"],
         mock_tools().as_array().map(|t| t.len()).unwrap_or(0)
     );
-    assert_eq!(value["resourceCount"], 5);
+    assert_eq!(value["resourceCount"], 6);
+    assert_eq!(value["resourceTemplateCount"], 1);
     assert_eq!(value["promptCount"], 3);
     assert_eq!(value["unloadedDocuments"], json!([]));
 }
@@ -412,7 +413,37 @@ fn workflow_doc(name: &str, description: &str) -> Value {
     })
 }
 
-/// Mount the five doctrine documents as `POST /v1/tools/patstat_docs` answers.
+/// The semantic-model index payload, shaped like the backend's `part: "index"`.
+fn index_doc() -> Value {
+    json!({
+        "part": "index",
+        "data_edition": "PATSTAT 2026 Spring",
+        "note": "Read it first, then one view at a time.",
+        "interpretation_conventions": { "defaults": { "counting_unit": "FAMILIES" } },
+        "view_conventions": { "families": ["applications"] },
+        "logical_tables": [
+            { "name": "applications", "description": "One row per application.",
+              "columns": ["application_id", "family_id"] }
+        ]
+    })
+}
+
+/// One view payload, shaped like the backend's `view: "applications"`.
+fn view_doc() -> Value {
+    json!({
+        "data_edition": "PATSTAT 2026 Spring",
+        "view": {
+            "name": "applications",
+            "description": "One row per application.",
+            "columns": { "application_id": { "type": "bigint", "description": "Primary key." } },
+            "conventions": ["families"]
+        },
+        "interpretation_conventions": { "families": "Two family notions." },
+        "join_paths": ["applications.application_id = applicants.application_id"]
+    })
+}
+
+/// Mount the six doctrine documents as `POST /v1/tools/patstat_docs` answers.
 async fn mount_doctrine(server: &MockServer) {
     Mock::given(method("POST"))
         .and(path("/v1/tools/patstat_docs"))
@@ -420,6 +451,17 @@ async fn mount_doctrine(server: &MockServer) {
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "success": true,
             "data": { "data_edition": "PATSTAT 2026 Spring", "yaml": SEMANTIC_MODEL_YAML },
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_docs"))
+        .and(body_json(
+            json!({ "section": "semantic-model", "part": "index" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true,
+            "data": index_doc(),
         })))
         .mount(server)
         .await;
@@ -450,7 +492,7 @@ async fn mount_doctrine(server: &MockServer) {
 }
 
 #[tokio::test]
-async fn resources_list_serves_the_five_doctrine_documents() {
+async fn resources_list_serves_the_six_doctrine_documents() {
     let server = MockServer::start().await;
     mount_doctrine(&server).await;
 
@@ -475,6 +517,7 @@ async fn resources_list_serves_the_five_doctrine_documents() {
         uris,
         vec![
             "flowleap://patstat/semantic-model",
+            "flowleap://patstat/semantic-model/index",
             "flowleap://patstat/examples",
             "flowleap://patstat/workflow/portfolio-analysis",
             "flowleap://patstat/workflow/guarded-sql",
@@ -492,10 +535,13 @@ async fn resources_list_serves_the_five_doctrine_documents() {
     }
     assert_eq!(resources[0]["mimeType"], "application/yaml");
     assert_eq!(resources[1]["mimeType"], "application/json");
+    assert_eq!(resources[1]["name"], "patstat-semantic-model-index");
+    assert_eq!(resources[1]["title"], "PATSTAT semantic model — index");
+    assert_eq!(resources[2]["mimeType"], "application/json");
     // Titles and descriptions come from the backend payload where one exists.
-    assert_eq!(resources[2]["title"], "Portfolio Analysis");
+    assert_eq!(resources[3]["title"], "Portfolio Analysis");
     assert_eq!(
-        resources[2]["description"],
+        resources[3]["description"],
         "The portfolio-analysis workflow."
     );
 }
@@ -657,7 +703,7 @@ async fn a_document_that_fails_to_load_is_skipped_and_logged() {
 
     assert_eq!(
         responses[0]["result"]["resources"].as_array().map(Vec::len),
-        Some(4)
+        Some(5)
     );
     assert_eq!(
         responses[1]["result"]["prompts"].as_array().map(Vec::len),
@@ -694,7 +740,7 @@ async fn backend_unreachable_at_startup_still_serves_with_zero_doctrine() {
 }
 
 #[tokio::test]
-async fn dry_run_prints_the_five_requests_and_serves_nothing() {
+async fn dry_run_prints_the_six_requests_and_serves_nothing() {
     let server = MockServer::start().await;
     mount_doctrine(&server).await;
 
@@ -711,11 +757,12 @@ async fn dry_run_prints_the_five_requests_and_serves_nothing() {
     assert_eq!(responses[0]["result"], json!({ "resources": [] }));
     assert_eq!(
         stderr.matches("/v1/tools/patstat_docs").count(),
-        5,
-        "dry-run prints five tool requests: {stderr}"
+        6,
+        "dry-run prints six tool requests: {stderr}"
     );
     for selector in [
         r#"{"section":"semantic-model"}"#,
+        r#"{"part":"index","section":"semantic-model"}"#,
         r#"{"section":"examples"}"#,
         r#"{"workflow":"portfolio-analysis"}"#,
         r#"{"workflow":"guarded-sql"}"#,
@@ -774,7 +821,7 @@ async fn a_slow_doctrine_load_never_blocks_other_frames() {
     assert_eq!(responses[0]["result"], json!({ "tools": mock_tools() }));
     assert_eq!(
         responses[2]["result"]["resources"].as_array().map(Vec::len),
-        Some(5)
+        Some(6)
     );
 }
 
@@ -861,7 +908,10 @@ async fn mcp_check_human_lines_report_resources_and_prompts_ok() {
 
     let (ok, stdout) = run_check_human(&server.uri()).await;
     assert!(ok, "ready: {stdout}");
-    assert!(stdout.contains("  resources ok   5 served\n"), "{stdout}");
+    assert!(
+        stdout.contains("  resources ok   6 served, 1 template\n"),
+        "{stdout}"
+    );
     assert!(stdout.contains("  prompts   ok   3 served\n"), "{stdout}");
 }
 
@@ -896,7 +946,7 @@ async fn mcp_check_human_lines_warn_resources_and_prompts_separately() {
     let (ok, stdout) = run_check_human(&server.uri()).await;
     assert!(ok, "a doc failure never makes the bridge unready: {stdout}");
     assert!(
-        stdout.contains("  resources warn 4 served (could not load: workflow/graph)\n"),
+        stdout.contains("  resources warn 5 served, 1 template (could not load: workflow/graph)\n"),
         "{stdout}"
     );
     assert!(
@@ -904,5 +954,139 @@ async fn mcp_check_human_lines_warn_resources_and_prompts_separately() {
             "  prompts   warn 1 served (unavailable: patstat-guarded-sql, patstat-graph)\n"
         ),
         "{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The semantic-model index resource and the per-view resource template.
+// ---------------------------------------------------------------------------
+
+const VIEW_URI: &str = "flowleap://patstat/semantic-model/view/applications";
+
+#[tokio::test]
+async fn the_index_resource_is_the_served_index_as_compact_json() {
+    let server = MockServer::start().await;
+    mount_doctrine(&server).await;
+
+    let responses = run_mcp(
+        &server.uri(),
+        AUTH_ENV,
+        &[frame(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "resources/read",
+            "params": { "uri": "flowleap://patstat/semantic-model/index" },
+        }))],
+    )
+    .await;
+
+    let content = &responses[0]["result"]["contents"][0];
+    assert_eq!(content["mimeType"], "application/json");
+    let text = content["text"].as_str().expect("text");
+    assert!(!text.contains('\n'), "compact JSON: {text}");
+    assert_eq!(serde_json::from_str::<Value>(text).unwrap(), index_doc());
+}
+
+#[tokio::test]
+async fn resource_templates_list_offers_the_view_template() {
+    let server = MockServer::start().await;
+    mount_doctrine(&server).await;
+
+    let responses = run_mcp(
+        &server.uri(),
+        AUTH_ENV,
+        &[frame(
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "resources/templates/list" }),
+        )],
+    )
+    .await;
+
+    assert_eq!(
+        responses[0]["result"],
+        json!({ "resourceTemplates": [{
+            "uriTemplate": "flowleap://patstat/semantic-model/view/{name}",
+            "name": "patstat-semantic-model-view",
+            "title": "PATSTAT semantic model — view",
+            "description": "one logical table of the PATSTAT semantic model; {name} from the index",
+            "mimeType": "application/json",
+        }] })
+    );
+}
+
+#[tokio::test]
+async fn a_view_is_read_on_demand_once_and_then_from_cache() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_docs"))
+        .and(body_json(
+            json!({ "section": "semantic-model", "view": "applications" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true,
+            "data": view_doc(),
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    mount_doctrine(&server).await;
+
+    let read = |id: u64| {
+        frame(json!({
+            "jsonrpc": "2.0", "id": id, "method": "resources/read",
+            "params": { "uri": VIEW_URI },
+        }))
+    };
+    let responses = run_mcp(&server.uri(), AUTH_ENV, &[read(1), read(2)]).await;
+
+    for response in &responses {
+        let content = &response["result"]["contents"][0];
+        assert_eq!(content["uri"], VIEW_URI);
+        assert_eq!(content["mimeType"], "application/json");
+        let text = content["text"].as_str().expect("text");
+        assert_eq!(serde_json::from_str::<Value>(text).unwrap(), view_doc());
+    }
+    // `.expect(1)` fails the test on drop if the second read called the tool.
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn an_unknown_view_is_invalid_params_listing_the_available_views() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_docs"))
+        .and(body_json(
+            json!({ "section": "semantic-model", "view": "nope" }),
+        ))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "success": false,
+            "error": {
+                "code": "NOT_FOUND",
+                "message": "View 'nope' not found",
+                "details": { "availableViews": ["applications", "applicants"] },
+            },
+        })))
+        .mount(&server)
+        .await;
+    mount_doctrine(&server).await;
+
+    let responses = run_mcp(
+        &server.uri(),
+        AUTH_ENV,
+        &[frame(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "resources/read",
+            "params": { "uri": "flowleap://patstat/semantic-model/view/nope" },
+        }))],
+    )
+    .await;
+
+    let error = &responses[0]["error"];
+    assert_eq!(error["code"], -32602);
+    let message = error["message"].as_str().expect("message");
+    assert!(message.contains("nope"), "names the view: {message}");
+    assert!(
+        message.contains("applications, applicants"),
+        "lists the views: {message}"
+    );
+    assert_eq!(
+        error["data"]["availableViews"],
+        json!(["applications", "applicants"])
     );
 }

@@ -341,7 +341,7 @@ fn literature_commands_map_onto_their_search_tools() {
 #[test]
 fn patstat_commands_map_onto_the_patstat_tools() {
     let sql = "SELECT office, COUNT(*) AS n FROM flowleap.applications GROUP BY office";
-    let cases: [(&[&str], &str, Value); 5] = [
+    let cases: [(&[&str], &str, Value); 7] = [
         (
             &[
                 "patstat",
@@ -382,6 +382,30 @@ fn patstat_commands_map_onto_the_patstat_tools() {
             &["patstat", "docs"],
             "patstat_docs",
             json!({ "compact": false }),
+        ),
+        (
+            &[
+                "patstat",
+                "docs",
+                "--section",
+                "semantic-model",
+                "--part",
+                "index",
+            ],
+            "patstat_docs",
+            json!({ "section": "semantic-model", "part": "index" }),
+        ),
+        (
+            &[
+                "patstat",
+                "docs",
+                "--section",
+                "semantic-model",
+                "--view",
+                "applications",
+            ],
+            "patstat_docs",
+            json!({ "section": "semantic-model", "view": "applications" }),
         ),
     ];
 
@@ -495,6 +519,65 @@ fn patstat_graph_verbs_map_onto_the_graph_tools() {
             "{args:?}"
         );
         assert_eq!(value["body"], body, "{args:?}");
+    }
+}
+
+/// `--part` and `--view` exclude each other and only go with `--section
+/// semantic-model`: every broken combination is a usage error (exit 2) that
+/// names the rule, and no request is described.
+#[test]
+fn patstat_docs_part_and_view_need_the_semantic_model_section() {
+    for (args, names) in [
+        (
+            [
+                "--section",
+                "semantic-model",
+                "--part",
+                "index",
+                "--view",
+                "applications",
+            ]
+            .as_slice(),
+            "--view",
+        ),
+        (["--part", "index"].as_slice(), "--section semantic-model"),
+        (
+            ["--view", "applications"].as_slice(),
+            "--section semantic-model",
+        ),
+        (
+            ["--section", "examples", "--part", "index"].as_slice(),
+            "--section semantic-model",
+        ),
+        (
+            ["--workflow", "graph", "--view", "applications"].as_slice(),
+            "--view",
+        ),
+    ] {
+        for json_mode in [false, true] {
+            let mut full = Vec::new();
+            if json_mode {
+                full.push("--json");
+            }
+            full.extend(["patstat", "docs"]);
+            full.extend_from_slice(args);
+            full.push("--dry-run");
+            let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
+                .env_remove("FLOWLEAP_API_KEY")
+                .env_remove("FLOWLEAP_TOKEN")
+                .args(&full)
+                .output()
+                .expect("run patstat docs");
+            assert_eq!(output.status.code(), Some(2), "{full:?} is a usage error");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let shown = if json_mode { &stdout } else { &stderr };
+            assert!(shown.contains(names), "{full:?} names {names}: {shown}");
+            assert!(
+                !stdout.contains("/v1/tools"),
+                "{full:?} describes no request"
+            );
+        }
     }
 }
 
