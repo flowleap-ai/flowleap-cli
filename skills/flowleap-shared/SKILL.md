@@ -149,8 +149,9 @@ Doctor is the machine-readable onboarding contract. Its JSON always carries:
 - `ready: bool` — backend reachable AND authenticated AND no **blocking** next
   step pending. Stricter than `ok`, which keeps its reachability-only meaning.
 - `nextSteps` — the pending onboarding steps in dependency order (empty array
-  when complete). Steps already covered — e.g. a provider the server has its
-  own keys for — are omitted. Each step:
+  when complete). Steps already covered — e.g. a provider with a stored key
+  (validate `source: "stored"`), or one the server has its own keys for — are
+  omitted. Each step:
 
 ```json
 { "id": "store-epo-keys", "actor": "agent",
