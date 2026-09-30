@@ -716,8 +716,15 @@ async fn a_rejected_stored_key_is_blocking() {
 
     assert_eq!(output.status.code(), Some(1));
     let report = stdout_json(&output);
-    assert_eq!(
-        step_ids(&report),
-        ["obtain-epo-keys", "store-epo-keys", "verify-keys"]
+    // The key lives on the keys page, so the fix is one human replace step
+    // there — no signup, no agent `keys set`.
+    assert_eq!(step_ids(&report), ["store-epo-keys", "verify-keys"]);
+    let store = &report["nextSteps"][0];
+    assert_eq!(store["actor"], "human");
+    assert_eq!(store["url"], "https://www.flowleap.co/en/dashboard/keys");
+    assert!(store["run"].is_null(), "{store}");
+    assert!(
+        store["title"].as_str().unwrap().starts_with("Replace"),
+        "{store}"
     );
 }

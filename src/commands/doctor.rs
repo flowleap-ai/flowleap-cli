@@ -43,9 +43,9 @@ pub async fn run(ctx: &Context) -> Result<()> {
 
     // Best-effort server verdicts (POST /v1/keys/validate) so "key missing
     // locally but stored on FlowLeap or covered by the server" produces no
-    // next step. Any failure —
-    // unauthenticated, unreachable, HTTP error — falls back to local key
-    // presence; doctor never errors because of this call.
+    // next step. Any failure — unauthenticated, unreachable, HTTP error —
+    // falls back to local key presence; doctor never errors because of this
+    // call.
     let verdicts: Option<Value> = if reachable && authenticated && !ctx.dry_run {
         crate::commands::keys::validate(ctx, ctx.credentials.clone())
             .await
@@ -311,9 +311,15 @@ fn is_blocking(step: &Value) -> bool {
 /// contract (see docs/adr/0001): `auth-login`, `mint-personal-token`,
 /// `obtain-epo-keys`, `store-epo-keys`, `obtain-uspto-key`, `store-uspto-key`,
 /// `verify-keys`, `refresh-skills`. Steps whose need is already covered (e.g. a
-/// provider with a stored key, or one the server has its own keys for) are omitted — the list means "what
-/// is pending", not "what could be configured". Every step is blocking unless
-/// it carries `advisory: true` (see [`ADVISORY_STEPS`]).
+/// provider with a stored key, or one the server has its own keys for) are
+/// omitted — the list means "what is pending", not "what could be
+/// configured". Every step is blocking unless it carries `advisory: true`
+/// (see [`ADVISORY_STEPS`]).
+///
+/// A stored key the office rejected is the one exception to the obtain/store
+/// pair: the key lives on the FlowLeap Patent-data keys page, so the fix is one
+/// human `store-*` step that replaces it there (a `stored` source proves the
+/// page is enabled), then `verify-keys`.
 fn next_steps(
     ctx: &Context,
     authenticated: bool,
@@ -343,7 +349,15 @@ fn next_steps(
     let epo_pending = provider_pending(verdicts, "epo", ctx.credentials.epo_pair().is_some());
     let uspto_pending = provider_pending(verdicts, "uspto", ctx.credentials.uspto_key.is_some());
 
-    if epo_pending {
+    if epo_pending && stored_rejected(verdicts, "epo") {
+        steps.push(step(
+            "store-epo-keys",
+            "human",
+            "Replace your EPO OPS consumer key and secret on the FlowLeap Patent-data keys page — the office rejected the stored key",
+            None,
+            Some(crate::commands::keys::KEYS_PAGE),
+        ));
+    } else if epo_pending {
         steps.push(step(
             "obtain-epo-keys",
             "human",
@@ -359,7 +373,15 @@ fn next_steps(
             None,
         ));
     }
-    if uspto_pending {
+    if uspto_pending && stored_rejected(verdicts, "uspto") {
+        steps.push(step(
+            "store-uspto-key",
+            "human",
+            "Replace your USPTO ODP API key on the FlowLeap Patent-data keys page — the office rejected the stored key",
+            None,
+            Some(crate::commands::keys::KEYS_PAGE),
+        ));
+    } else if uspto_pending {
         steps.push(step(
             "obtain-uspto-key",
             "human",
@@ -436,6 +458,15 @@ fn provider_pending(verdicts: Option<&Value>, provider: &str, local_present: boo
         }
         None => !local_present,
     }
+}
+
+/// Whether the key a data call uses for `provider` is the user's stored key
+/// and the office rejected it.
+fn stored_rejected(verdicts: Option<&Value>, provider: &str) -> bool {
+    verdicts.is_some_and(|verdicts| {
+        verdicts[provider]["source"] == "stored"
+            && verdicts[provider]["valid"] == Value::Bool(false)
+    })
 }
 
 /// One next step: stable kebab-case id, exactly one actor ("human" |

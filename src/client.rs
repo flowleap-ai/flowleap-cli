@@ -402,12 +402,15 @@ fn error_code(body: &Value) -> Option<&str> {
 ///   on FlowLeap's credentials is spent (429, backend ADR 0017). Resets at the
 ///   next UTC day; the user's own free keys lift it permanently
 ///
-/// While the backend keeps stored keys (backend ADR 0023, #516), a
-/// `data_keys_required` body also carries `keysPageUrl` (the FlowLeap
-/// "Patent-data keys" page) and `nextStep` (`{ id, actor: "human", title, url }`,
-/// the shape and ids of `doctor`'s `nextSteps`). Both are copied onto the hint
-/// verbatim when present, and the human action then names the page first.
-/// Absent, the hint is exactly the one it was before.
+/// While the backend keeps stored keys (backend ADR 0023), two key-gate bodies
+/// also carry `keysPageUrl` (the FlowLeap "Patent-data keys" page) and
+/// `nextStep` (`{ id, actor: "human", title, url }`, the shape and ids of
+/// `doctor`'s `nextSteps`): `data_keys_required` (#516) and
+/// `patent_provider_key_invalid` when the rejected key is the stored key
+/// (#518). For those two codes only, both fields are copied onto the hint
+/// verbatim and the human action names the page first ("replace" for the
+/// rejected key). `trial_data_budget_exhausted` never takes them, so its
+/// `resetsAt` guidance stays. Absent, the hint is exactly the one it was before.
 pub fn provider_keys_hint(status: u16, body: &Value) -> Option<Value> {
     if status < 400 {
         return None;
@@ -468,23 +471,37 @@ pub fn provider_keys_hint(status: u16, body: &Value) -> Option<Value> {
             hint["resetsAt"] = json!(resets_at);
         }
     }
-    let keys_page_url = body.pointer("/error/keysPageUrl").and_then(Value::as_str);
-    if let Some(url) = keys_page_url {
-        hint["keysPageUrl"] = json!(url);
-    }
-    if let Some(next_step) = body
-        .pointer("/error/nextStep")
-        .filter(|step| step.is_object())
-    {
-        hint["nextStep"] = next_step.clone();
-    }
-    if let Some(url) = keys_page_url.or_else(|| hint["nextStep"]["url"].as_str()) {
-        hint["humanAction"] = json!(format!(
-            "Ask the user to add the key on the FlowLeap Patent-data keys page ({url}) — \
-             a stored key is used whenever no key is forwarded — or to run 'flowleap setup' \
-             in a terminal. Never ask for the key value in the chat. Getting keys involves \
-             a browser signup, so an agent cannot complete this alone."
-        ));
+    // The keys page fields belong to the two key gates only. The trial budget
+    // gate keeps its own guidance: its `resetsAt` exit must not be replaced.
+    if code != "trial_budget_exhausted" {
+        let keys_page_url = body.pointer("/error/keysPageUrl").and_then(Value::as_str);
+        if let Some(url) = keys_page_url {
+            hint["keysPageUrl"] = json!(url);
+        }
+        if let Some(next_step) = body
+            .pointer("/error/nextStep")
+            .filter(|step| step.is_object())
+        {
+            hint["nextStep"] = next_step.clone();
+        }
+        if let Some(url) = keys_page_url.or_else(|| hint["nextStep"]["url"].as_str()) {
+            let ask = if code == "provider_keys_invalid" {
+                format!(
+                    "The office rejected the stored key. Ask the user to replace it on the \
+                     FlowLeap Patent-data keys page ({url})"
+                )
+            } else {
+                format!(
+                    "Ask the user to add the key on the FlowLeap Patent-data keys page ({url}) \
+                     — a stored key is used whenever no key is forwarded —"
+                )
+            };
+            hint["humanAction"] = json!(format!(
+                "{ask} or to run 'flowleap setup' in a terminal. Never ask for the key value \
+                 in the chat. Getting keys involves a browser signup, so an agent cannot \
+                 complete this alone."
+            ));
+        }
     }
     Some(hint)
 }
@@ -1331,6 +1348,59 @@ fn redact_sensitive_json(value: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A rejected stored key (backend #518): `patent_provider_key_invalid`
+    /// carries the page fields too, and the human action says "replace".
+    #[test]
+    fn a_rejected_stored_key_hint_carries_the_page_with_replace_wording() {
+        let url = "https://www.flowleap.co/en/dashboard/keys";
+        let next_step = json!({
+            "id": "store-epo-keys",
+            "actor": "human",
+            "title": "Replace your EPO OPS key on the FlowLeap Patent-data keys page",
+            "url": url,
+        });
+        let body = json!({ "error": {
+            "code": "patent_provider_key_invalid",
+            "provider": "epo",
+            "keysPageUrl": url,
+            "nextStep": next_step,
+        }});
+        let hint = provider_keys_hint(400, &body).expect("a key gate");
+        assert_eq!(hint["code"], "provider_keys_invalid");
+        assert_eq!(hint["keysPageUrl"], url);
+        assert_eq!(hint["nextStep"], next_step);
+        let action = hint["humanAction"].as_str().unwrap();
+        assert!(action.contains("replace it"), "{action}");
+        assert!(action.contains(url), "{action}");
+        assert!(action.contains("Never ask for the key value"), "{action}");
+    }
+
+    /// The trial budget gate never takes the page fields: its `resetsAt`
+    /// guidance stays exactly as it was.
+    #[test]
+    fn the_trial_budget_hint_ignores_the_keys_page_fields() {
+        let url = "https://www.flowleap.co/en/dashboard/keys";
+        let body = json!({ "error": {
+            "code": "trial_data_budget_exhausted",
+            "provider": "uspto",
+            "resets_at": "2026-10-01T00:00:00.000Z",
+            "keysPageUrl": url,
+            "nextStep": { "id": "store-uspto-key", "actor": "human", "title": "t", "url": url },
+        }});
+        let hint = provider_keys_hint(429, &body).expect("a key gate");
+        assert_eq!(hint["code"], "trial_budget_exhausted");
+        assert_eq!(hint["resetsAt"], "2026-10-01T00:00:00.000Z");
+        assert!(hint.get("keysPageUrl").is_none(), "{hint}");
+        assert!(hint.get("nextStep").is_none(), "{hint}");
+        assert!(
+            hint["humanAction"]
+                .as_str()
+                .unwrap()
+                .starts_with("Today's shared trial data budget is used up"),
+            "{hint}"
+        );
+    }
 
     /// A `data_keys_required` body without the #516 fields: the hint keeps
     /// exactly its previous shape — no `keysPageUrl`, no `nextStep`, and the

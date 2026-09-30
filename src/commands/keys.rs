@@ -11,6 +11,9 @@ use crate::output;
 
 pub const EPO_SIGNUP: &str = "https://developers.epo.org";
 pub const USPTO_SIGNUP: &str = "https://data.uspto.gov/apis/getting-started";
+/// The FlowLeap "Patent-data keys" page, where the human adds or replaces a
+/// stored key (backend ADR 0023, website route `/en/dashboard/keys`).
+pub const KEYS_PAGE: &str = "https://www.flowleap.co/en/dashboard/keys";
 
 #[derive(Parser)]
 pub struct KeysArgs {
@@ -137,7 +140,8 @@ fn probe_credentials(
 /// patent_provider_key_invalid) into an epo-invalid verdict.
 ///
 /// Shared with `doctor`, which uses the same verdicts (source
-/// user|stored|server|none, valid true|false|null) to decide which provider next-steps actually block.
+/// user|stored|server|none, valid true|false|null) to decide which provider
+/// next-steps actually block.
 pub(crate) async fn validate(ctx: &Context, creds: Credentials) -> Result<Value> {
     let probe = with_candidate_keys(ctx, creds);
     let envelope = probe
