@@ -36,6 +36,10 @@ the two differ in transport and sign-in only, never in tool list.
 _Avoid_: "the MCP" alone where stdio and hosted could be meant; treating the
 bridge as a place to add a tool or a rule (that is the registry's job).
 
+**Hosted MCP server**:
+The backend's `/mcp` endpoint: the same registry, doctrine resources and prompts as the **MCP server**, served over stateless Streamable HTTP with JSON replies to clients that cannot run a binary (claude.ai, Claude Desktop and mobile connectors, ChatGPT). A client signs in with a Clerk OAuth access token (scope `patent-data`) or a personal token; the per-tool gates and the per-identity rate limits are the ones every other transport uses. See ADR 0022.
+_Avoid_: "remote MCP" or "MCP endpoint" alone (say hosted or stdio); "hosted tier" or "MCP plan" (MCP access is in every plan, ADR 0021); a tool, resource or prompt that only the hosted server lists.
+
 **PATSTAT tool**:
 A tool on the backend tools facade whose data comes from the analytics layer
 (the PATSTAT snapshot): portfolio, guarded SQL query, docs, and the graph
