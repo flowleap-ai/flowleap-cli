@@ -236,7 +236,7 @@ longer calls them.
 | `academic search`, `npl` | `search_academic` / `search_npl` |
 | `analytics`, `ocr` | `patent_analytics` / `ocr` |
 | `compare` / `figures` / `summary` / `timeline` / `convert-number` | `compare_patents` / `get_patent_image` / `get_patent_summary` / `get_prosecution_timeline` / `convert_patent_number` |
-| `patstat portfolio` | `patstat_portfolio` (`--from-year`/`--to-year` → `from_year`/`to_year`) |
+| `patstat portfolio` | `patstat_portfolio` (`--from-year`/`--to-year` → `from_year`/`to_year`; sends `offices: "all"` by default so every office stays in the table, `--offices top` sends the tool default `top`, #107) |
 | `patstat docs` | `patstat_docs` (`--section`/`--workflow`/`--endpoint`; no flag sends `compact: false` for the full docs, `--compact` sends `compact: true`). `flowleap mcp` loads its five doctrine resources through this tool too (free at sign-in, backend ADR 0021) |
 | `patstat query` | `patstat_query` (`--retry-of` → `retry_of`) — **never resent by the client**, see below |
 | `patstat graph resolve` | `patstat_resolve` (`<query>` → `q`) |

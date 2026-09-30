@@ -334,12 +334,14 @@ fn literature_commands_map_onto_their_search_tools() {
 /// The retired subcommands are gone from the surface, so a stale invocation is
 /// a local usage error instead of a request to an endpoint that answers 410.
 /// `patstat portfolio` / `docs` / `query` are ergonomic verbs over the
-/// PATSTAT tools (#95): snake_case input, `--retry-of` as `retry_of`, and the
-/// no-flag docs run asking for the full docs (`compact: false`).
+/// PATSTAT tools (#95): snake_case input, `--retry-of` as `retry_of`, the
+/// no-flag docs run asking for the full docs (`compact: false`), and the
+/// portfolio asking for every office (`offices: "all"`, #107) unless
+/// `--offices top` asks for the compact form MCP clients get.
 #[test]
 fn patstat_commands_map_onto_the_patstat_tools() {
     let sql = "SELECT office, COUNT(*) AS n FROM flowleap.applications GROUP BY office";
-    let cases: [(&[&str], &str, Value); 4] = [
+    let cases: [(&[&str], &str, Value); 5] = [
         (
             &[
                 "patstat",
@@ -364,7 +366,12 @@ fn patstat_commands_map_onto_the_patstat_tools() {
                 "2024",
             ],
             "patstat_portfolio",
-            json!({ "applicant": "Siemens", "from_year": 2020, "to_year": 2024 }),
+            json!({ "applicant": "Siemens", "from_year": 2020, "to_year": 2024, "offices": "all" }),
+        ),
+        (
+            &["patstat", "portfolio", "Siemens", "--offices", "top"],
+            "patstat_portfolio",
+            json!({ "applicant": "Siemens", "offices": "top" }),
         ),
         (
             &["patstat", "docs", "--section", "examples"],
