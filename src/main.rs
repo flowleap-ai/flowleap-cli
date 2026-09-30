@@ -134,17 +134,7 @@ async fn main() {
                     ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
                 )
             {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&json!({
-                        "ok": false,
-                        "error": {
-                            "message": err.to_string(),
-                            "kind": format!("{:?}", err.kind()),
-                        }
-                    }))
-                    .unwrap_or_default()
-                );
+                flowleap_cli::output::print_usage_error_json(&err);
                 std::process::exit(err.exit_code());
             }
             err.exit();

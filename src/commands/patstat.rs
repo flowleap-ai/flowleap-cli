@@ -405,10 +405,7 @@ fn check_semantic_model_part(
     };
     let err = clap::Error::raw(kind, format!("{message}\n"));
     if ctx.output_format == "json" {
-        output::print_json(&json!({
-            "ok": false,
-            "error": { "message": err.to_string(), "kind": format!("{kind:?}") },
-        }));
+        output::print_usage_error_json(&err);
     } else {
         eprint!("{err}");
     }
@@ -424,7 +421,7 @@ async fn docs(ctx: &Context, selector: DocsSelector) -> Result<()> {
             if body.pointer("/error/code").and_then(Value::as_str) == Some("patstat_unavailable") {
                 render_unavailable(ctx, &body);
             } else if let (Some(views), false) = (available, ctx.output_format == "json") {
-                print_unknown_view(&body, views);
+                print_unknown_view(ctx, &body, views);
             } else {
                 render_generic_error(ctx, &envelope);
             }
@@ -492,29 +489,31 @@ fn print_model_index(data: &Value) {
     if let Some(note) = data.get("note").and_then(Value::as_str) {
         println!("{note}");
     }
-    print_conventions(data.get("interpretation_conventions"));
+    print_topics("Conventions", data.get("interpretation_conventions"));
 
-    let rows: Vec<Vec<String>> = data
+    let rows: Vec<Value> = data
         .get("logical_tables")
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or_default()
         .iter()
         .map(|table| {
-            let columns: Vec<&str> = table
-                .get("columns")
-                .and_then(Value::as_array)
-                .map(|columns| columns.iter().filter_map(Value::as_str).collect())
-                .unwrap_or_default();
-            vec![
-                text_of(table.get("name")),
-                text_of(table.get("description")),
-                columns.join(", "),
-            ]
+            json!({
+                "view": table.get("name"),
+                "description": table.get("description"),
+                "columns": table.get("columns"),
+            })
         })
         .collect();
     println!("\nViews");
-    print_doc_table(&["View", "Description", "Columns"], rows);
+    output::print_table_whole(
+        &rows,
+        &[
+            ("view", "View"),
+            ("description", "Description"),
+            ("columns", "Columns"),
+        ],
+    );
     println!(
         "\nRead one view in full: flowleap patstat docs --section semantic-model --view <name>"
     );
@@ -535,26 +534,35 @@ fn print_model_view(data: &Value) {
         println!("Physical: {physical}");
     }
 
-    let rows: Vec<Vec<String>> = view
+    let rows: Vec<Value> = view
         .get("columns")
         .and_then(Value::as_object)
         .map(|columns| {
             columns
                 .iter()
                 .map(|(column, spec)| {
-                    vec![
-                        column.clone(),
-                        text_of(spec.get("type")),
-                        text_of(spec.get("description")),
-                    ]
+                    json!({
+                        "column": column,
+                        "type": spec.get("type"),
+                        "description": spec.get("description"),
+                    })
                 })
                 .collect()
         })
         .unwrap_or_default();
     println!("\nColumns");
-    print_doc_table(&["Column", "Type", "Description"], rows);
+    output::print_table_whole(
+        &rows,
+        &[
+            ("column", "Column"),
+            ("type", "Type"),
+            ("description", "Description"),
+        ],
+    );
 
-    print_conventions(data.get("interpretation_conventions"));
+    print_topics("Conventions", data.get("interpretation_conventions"));
+    // The view answer's top-level global_caveats are already the ones that
+    // bear on this view (backend #485); the view object carries none.
     print_topics("Caveats", data.get("global_caveats"));
 
     let paths = data
@@ -571,33 +579,6 @@ fn print_model_view(data: &Value) {
             }
         }
     }
-}
-
-/// A docs table printed whole: served doctrine is never truncated (the shared
-/// `output::print_table` cuts cells at 50 characters). Wraps to the terminal
-/// width when there is one.
-fn print_doc_table(headers: &[&str], rows: Vec<Vec<String>>) {
-    let mut table = comfy_table::Table::new();
-    table
-        .set_content_arrangement(comfy_table::ContentArrangement::Dynamic)
-        .set_header(headers.iter().copied());
-    for row in rows {
-        table.add_row(row);
-    }
-    println!("{table}");
-}
-
-/// A served string as is, a missing field as `-`, anything else as JSON.
-fn text_of(value: Option<&Value>) -> String {
-    match value {
-        Some(Value::String(text)) => text.clone(),
-        None | Some(Value::Null) => "-".to_string(),
-        Some(other) => other.to_string(),
-    }
-}
-
-fn print_conventions(conventions: Option<&Value>) {
-    print_topics("Conventions", conventions);
 }
 
 /// A `{ topic: text | { key: text } }` map as short sections. Values that
@@ -624,16 +605,18 @@ fn print_topics(label: &str, topics: Option<&Value>) {
     }
 }
 
-/// An unknown `--view`: the backend's message, then the views it offers.
-fn print_unknown_view(body: &Value, views: &[Value]) {
+/// An unknown `--view`, in human mode: the backend's message and the views
+/// it offers, through the shared value printer like other human errors.
+fn print_unknown_view(ctx: &Context, body: &Value, views: &[Value]) {
     let message = body
         .pointer("/error/message")
         .and_then(Value::as_str)
         .unwrap_or("Unknown view");
-    println!("{message}. Available views:");
-    for view in views.iter().filter_map(Value::as_str) {
-        println!("  {view}");
-    }
+    output::print_value(
+        &ctx.output_format,
+        &json!({ "error": message, "availableViews": views }),
+        &[("error", "Error"), ("availableViews", "Available views")],
+    );
 }
 
 async fn portfolio(

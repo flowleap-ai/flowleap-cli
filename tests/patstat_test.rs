@@ -1,7 +1,7 @@
 //! `flowleap patstat portfolio` (issue #32, PRD 0011; on the tool seam since
 //! #95): success rendering in both output modes, the 422 ambiguous-applicant
 //! interaction step, the typed `patstat_unavailable` unavailability, and an
-//! auth failure — driven through the real binary against a wiremock backend
+//! auth failure; and `patstat docs --part index` / `--view <name>` (#108) — driven through the real binary against a wiremock backend
 //! answering `POST /v1/tools/patstat_portfolio` with facade envelopes,
 //! matching the exit-code contract's test harness (see
 //! tests/exit_codes_test.rs).
@@ -474,4 +474,317 @@ async fn complete_scope_prints_no_footer() {
     assert!(!stdout.contains("Showing"), "{stdout}");
     assert!(!stdout.contains("more (the tool caps"), "{stdout}");
     assert!(!stdout.contains("Other matching applicants"), "{stdout}");
+}
+
+// ---------------------------------------------------------------------------
+// `patstat docs --part index` / `--view <name>` (#108): the semantic model in
+// parts, on the `patstat_docs` tool.
+// ---------------------------------------------------------------------------
+
+/// The `part: "index"` payload, shaped like the live backend answer.
+fn index_data() -> serde_json::Value {
+    json!({
+        "part": "index",
+        "data_edition": "PATSTAT 2026 Spring",
+        "note": "The catalog of the semantic model. Read it first.",
+        "model": { "name": "flowleap-patstat" },
+        "glossary": { "family": "A DOCDB simple family." },
+        "global_caveats": { "publication_lag": "Recent counts are incomplete." },
+        "interpretation_conventions": {
+            "defaults": { "counting_unit": "FAMILIES for invention-level counting." },
+            "when_to_ask": "Ask only when interpretations diverge materially."
+        },
+        "view_conventions": { "families": ["applications"] },
+        "metrics": { "grant_rate": "granted / applications" },
+        "logical_tables": [
+            { "name": "applications",
+              "description": "One row per patent application filed anywhere in the world.",
+              "columns": ["application_id", "office", "filing_year", "family_id"] }
+        ]
+    })
+}
+
+/// The `view: "applications"` payload: the table in full, the conventions it
+/// names, the caveats that bear on it (top-level `global_caveats`, filtered
+/// by the backend) and the join paths that name it.
+fn view_data() -> serde_json::Value {
+    json!({
+        "data_edition": "PATSTAT 2026 Spring",
+        "view": {
+            "name": "applications",
+            "description": "One row per patent application. THE anchor table.",
+            "physical": "tls201_appln",
+            "columns": {
+                "application_id": { "type": "bigint", "description": "Primary key; joins to every other table." },
+                "family_id": { "type": "bigint", "description": "DOCDB family id." }
+            },
+            "conventions": ["families"]
+        },
+        "interpretation_conventions": { "families": "TWO family notions, and picking the wrong one changes the number." },
+        "global_caveats": { "wo_never_grants": "WO applications never grant by definition." },
+        "join_paths": ["applications.application_id = applicants.application_id  (portfolio questions)"]
+    })
+}
+
+async fn mount_docs(server: &MockServer, input: serde_json::Value, template: ResponseTemplate) {
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_docs"))
+        .and(body_json(input))
+        .respond_with(template)
+        .mount(server)
+        .await;
+}
+
+fn ok_docs(data: serde_json::Value) -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(json!({
+        "success": true, "tool": "patstat_docs", "data": data, "executionTimeMs": 12,
+    }))
+}
+
+#[tokio::test]
+async fn docs_index_human_mode_renders_conventions_then_the_view_table() {
+    let server = MockServer::start().await;
+    mount_docs(
+        &server,
+        json!({ "section": "semantic-model", "part": "index" }),
+        ok_docs(index_data()),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &[
+            "patstat",
+            "docs",
+            "--section",
+            "semantic-model",
+            "--part",
+            "index",
+        ],
+    )
+    .await;
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(
+        stdout.contains("# Loaded edition: PATSTAT 2026 Spring"),
+        "{stdout}"
+    );
+    let conventions = stdout.find("\nConventions\n").expect("conventions heading");
+    assert!(stdout.contains("    counting_unit: FAMILIES for invention-level counting."));
+    assert!(stdout.contains("  when_to_ask: Ask only when interpretations diverge materially."));
+    let views = stdout.find("\nViews\n").expect("views heading");
+    assert!(
+        conventions < views,
+        "conventions come before the table: {stdout}"
+    );
+    for header in ["View", "Description", "Columns"] {
+        assert!(stdout.contains(header), "header {header}: {stdout}");
+    }
+    // One row, printed whole: no cell is cut at 50 characters.
+    assert!(stdout.contains("applications"));
+    assert!(stdout.contains("One row per patent application filed anywhere in the world."));
+    assert!(stdout.contains("application_id, office, filing_year, family_id"));
+}
+
+#[tokio::test]
+async fn docs_view_human_mode_renders_columns_conventions_caveats_and_join_paths() {
+    let server = MockServer::start().await;
+    mount_docs(
+        &server,
+        json!({ "section": "semantic-model", "view": "applications" }),
+        ok_docs(view_data()),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &[
+            "patstat",
+            "docs",
+            "--section",
+            "semantic-model",
+            "--view",
+            "applications",
+        ],
+    )
+    .await;
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(stdout.contains("applications: One row per patent application. THE anchor table."));
+    assert!(stdout.contains("Physical: tls201_appln"));
+    let sections: Vec<usize> = [
+        "\nColumns\n",
+        "\nConventions\n",
+        "\nCaveats\n",
+        "\nJoin paths\n",
+    ]
+    .iter()
+    .map(|heading| {
+        stdout
+            .find(heading)
+            .unwrap_or_else(|| panic!("{heading}: {stdout}"))
+    })
+    .collect();
+    assert!(
+        sections.windows(2).all(|w| w[0] < w[1]),
+        "section order: {stdout}"
+    );
+    assert!(stdout.contains("Primary key; joins to every other table."));
+    assert!(stdout.contains("bigint"));
+    assert!(stdout.contains("  families: TWO family notions"));
+    assert!(stdout.contains("  wo_never_grants: WO applications never grant by definition."));
+    assert!(stdout.contains(
+        "  - applications.application_id = applicants.application_id  (portfolio questions)"
+    ));
+}
+
+#[tokio::test]
+async fn docs_part_and_view_json_mode_emit_the_tool_data_verbatim() {
+    let server = MockServer::start().await;
+    mount_docs(
+        &server,
+        json!({ "section": "semantic-model", "part": "index" }),
+        ok_docs(index_data()),
+    )
+    .await;
+    mount_docs(
+        &server,
+        json!({ "section": "semantic-model", "view": "applications" }),
+        ok_docs(view_data()),
+    )
+    .await;
+
+    for (selector, value, want) in [
+        ("--part", "index", index_data()),
+        ("--view", "applications", view_data()),
+    ] {
+        let output = run_cli(
+            &server.uri(),
+            &[API_KEY_ENV],
+            &[
+                "--json",
+                "patstat",
+                "docs",
+                "--section",
+                "semantic-model",
+                selector,
+                value,
+            ],
+        )
+        .await;
+        assert!(output.status.success(), "{selector} {value}");
+        assert_eq!(stdout_json(&output), want, "{selector} {value}");
+    }
+}
+
+#[tokio::test]
+async fn docs_unknown_view_human_mode_lists_the_available_views() {
+    let server = MockServer::start().await;
+    mount_docs(
+        &server,
+        json!({ "section": "semantic-model", "view": "nope" }),
+        ResponseTemplate::new(404).set_body_json(json!({
+            "success": false,
+            "error": {
+                "code": "NOT_FOUND",
+                "message": "View 'nope' not found",
+                "details": { "availableViews": ["applications", "applicants"] },
+            },
+        })),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &[
+            "patstat",
+            "docs",
+            "--section",
+            "semantic-model",
+            "--view",
+            "nope",
+        ],
+    )
+    .await;
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(
+        stdout.contains("  Error: View 'nope' not found"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("  Available views: applications, applicants"),
+        "{stdout}"
+    );
+}
+
+/// `--part` and `--view` exclude each other and only go with `--section
+/// semantic-model`: every broken combination is a usage error (exit 2) that
+/// names the rule, in both output modes, and no request is sent.
+#[tokio::test]
+async fn docs_part_and_view_need_the_semantic_model_section() {
+    let server = MockServer::start().await;
+    for (args, names) in [
+        (
+            [
+                "--section",
+                "semantic-model",
+                "--part",
+                "index",
+                "--view",
+                "applications",
+            ]
+            .as_slice(),
+            "--view",
+        ),
+        (["--part", "index"].as_slice(), "--section semantic-model"),
+        (
+            ["--view", "applications"].as_slice(),
+            "--section semantic-model",
+        ),
+        (
+            ["--section", "examples", "--part", "index"].as_slice(),
+            "--section semantic-model",
+        ),
+        (
+            ["--workflow", "graph", "--view", "applications"].as_slice(),
+            "--view",
+        ),
+    ] {
+        for json_mode in [false, true] {
+            let mut full = Vec::new();
+            if json_mode {
+                full.push("--json");
+            }
+            full.extend(["patstat", "docs"]);
+            full.extend_from_slice(args);
+            let output = run_cli(&server.uri(), &[API_KEY_ENV], &full).await;
+            assert_eq!(output.status.code(), Some(2), "{full:?} is a usage error");
+            let shown = if json_mode {
+                let value = stdout_json(&output);
+                assert_eq!(value["ok"], false, "{full:?}");
+                value["error"]["message"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string()
+            } else {
+                String::from_utf8_lossy(&output.stderr).to_string()
+            };
+            assert!(shown.contains(names), "{full:?} names {names}: {shown}");
+        }
+    }
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty(),
+        "no request is sent"
+    );
 }

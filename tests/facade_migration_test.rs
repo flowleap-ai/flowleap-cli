@@ -522,65 +522,6 @@ fn patstat_graph_verbs_map_onto_the_graph_tools() {
     }
 }
 
-/// `--part` and `--view` exclude each other and only go with `--section
-/// semantic-model`: every broken combination is a usage error (exit 2) that
-/// names the rule, and no request is described.
-#[test]
-fn patstat_docs_part_and_view_need_the_semantic_model_section() {
-    for (args, names) in [
-        (
-            [
-                "--section",
-                "semantic-model",
-                "--part",
-                "index",
-                "--view",
-                "applications",
-            ]
-            .as_slice(),
-            "--view",
-        ),
-        (["--part", "index"].as_slice(), "--section semantic-model"),
-        (
-            ["--view", "applications"].as_slice(),
-            "--section semantic-model",
-        ),
-        (
-            ["--section", "examples", "--part", "index"].as_slice(),
-            "--section semantic-model",
-        ),
-        (
-            ["--workflow", "graph", "--view", "applications"].as_slice(),
-            "--view",
-        ),
-    ] {
-        for json_mode in [false, true] {
-            let mut full = Vec::new();
-            if json_mode {
-                full.push("--json");
-            }
-            full.extend(["patstat", "docs"]);
-            full.extend_from_slice(args);
-            full.push("--dry-run");
-            let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
-                .env_remove("FLOWLEAP_API_KEY")
-                .env_remove("FLOWLEAP_TOKEN")
-                .args(&full)
-                .output()
-                .expect("run patstat docs");
-            assert_eq!(output.status.code(), Some(2), "{full:?} is a usage error");
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let shown = if json_mode { &stdout } else { &stderr };
-            assert!(shown.contains(names), "{full:?} names {names}: {shown}");
-            assert!(
-                !stdout.contains("/v1/tools"),
-                "{full:?} describes no request"
-            );
-        }
-    }
-}
-
 #[test]
 fn retired_subcommands_are_no_longer_offered() {
     for args in [

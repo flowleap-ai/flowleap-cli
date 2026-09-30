@@ -267,7 +267,7 @@ async fn run_check(ctx: &Context) -> Result<()> {
                 "providerKeys": { "epoOps": epo_ok, "usptoOdp": uspto_ok },
                 "toolCount": tool_count,
                 "resourceCount": doctrine.as_ref().map(|d| d.resources.len()),
-                "resourceTemplateCount": doctrine.as_ref().map(|_| RESOURCE_TEMPLATES),
+                "resourceTemplateCount": doctrine.as_ref().map(|_| RESOURCE_TEMPLATES.len()),
                 "promptCount": doctrine.as_ref().map(|d| d.prompts.len()),
                 "unloadedDocuments": doctrine.as_ref().map(|d| d.unloaded.clone()),
                 "unavailablePrompts": doctrine.as_ref().map(|d| d.unavailable_prompts.clone()),
@@ -297,10 +297,9 @@ async fn run_check(ctx: &Context) -> Result<()> {
         match &doctrine {
             Some(doctrine) => {
                 let resources = doctrine.resources.len();
-                let templates = match RESOURCE_TEMPLATES {
-                    1 => "1 template".to_string(),
-                    n => format!("{n} templates"),
-                };
+                let count = RESOURCE_TEMPLATES.len();
+                let plural = if count == 1 { "" } else { "s" };
+                let templates = format!("{count} template{plural}");
                 if doctrine.unloaded.is_empty() {
                     println!("  resources ok   {resources} served, {templates}");
                 } else {
@@ -665,9 +664,28 @@ struct Doctrine {
     unavailable_prompts: Vec<String>,
 }
 
-/// The resource templates `resources/templates/list` offers: the view template.
-const RESOURCE_TEMPLATES: usize = 1;
-const VIEW_URI_PREFIX: &str = "flowleap://patstat/semantic-model/view/";
+/// One resource template: a URI prefix completed by one `{name}`.
+struct TemplateSpec {
+    uri_prefix: &'static str,
+    name: &'static str,
+    title: &'static str,
+    description: &'static str,
+    /// As [`DocSpec::compact_json`], for the documents the template reads.
+    compact_json: bool,
+}
+
+/// One logical table of the semantic model, read on demand.
+const VIEW_TEMPLATE: TemplateSpec = TemplateSpec {
+    uri_prefix: "flowleap://patstat/semantic-model/view/",
+    name: "patstat-semantic-model-view",
+    title: "PATSTAT semantic model — view",
+    description: "one logical table of the PATSTAT semantic model; {name} from the index",
+    compact_json: true,
+};
+
+/// The templates `resources/templates/list` offers, in order.
+const RESOURCE_TEMPLATES: [&TemplateSpec; 1] = [&VIEW_TEMPLATE];
+const VIEW_URI_PREFIX: &str = VIEW_TEMPLATE.uri_prefix;
 
 /// The views read so far, by name: each one is fetched once per process.
 #[derive(Default)]
@@ -757,7 +775,8 @@ enum Fetched {
     Loaded(Value),
     /// The reason, and the failed envelope when the backend answered.
     Failed(String, Option<Value>),
-    DryRun(String),
+    /// The dry-run description of the request that was not sent.
+    DryRun(Value),
 }
 
 async fn fetch_doc(ctx: &Context, selector: &[(&str, &str)]) -> Fetched {
@@ -771,7 +790,7 @@ async fn fetch_doc(ctx: &Context, selector: &[(&str, &str)]) -> Fetched {
         Err(err) => return Fetched::Failed(err.to_string(), None),
     };
     if envelope.get("dryRun").and_then(Value::as_bool) == Some(true) {
-        return Fetched::DryRun(envelope.to_string());
+        return Fetched::DryRun(envelope);
     }
     let Some(body) = ok_body(&envelope) else {
         let status = envelope_status(&envelope);
@@ -793,7 +812,7 @@ async fn fetch_doc(ctx: &Context, selector: &[(&str, &str)]) -> Fetched {
 /// envelope. Failures are not cached.
 async fn read_view(ctx: &Context, views: &ViewCache, id: Value, name: &str) -> Value {
     let uri = format!("{VIEW_URI_PREFIX}{name}");
-    let contents = |text: String| json!({ "contents": [{ "uri": uri, "mimeType": "application/json", "text": text }] });
+    let contents = |text: String| contents_result(&uri, "application/json", &text);
     if name.is_empty() {
         return error_response(
             id,
@@ -808,7 +827,7 @@ async fn read_view(ctx: &Context, views: &ViewCache, id: Value, name: &str) -> V
     let selector = [("section", "semantic-model"), ("view", name)];
     match fetch_doc(ctx, &selector).await {
         Fetched::Loaded(data) => {
-            let text = data.to_string();
+            let text = json_doc_text(&data, VIEW_TEMPLATE.compact_json);
             views.insert(name, text.clone());
             result_response(id, contents(text))
         }
@@ -818,7 +837,7 @@ async fn read_view(ctx: &Context, views: &ViewCache, id: Value, name: &str) -> V
                 id,
                 -32603,
                 &format!("Dry run: the {name} view was not fetched"),
-                Some(json!({ "uri": uri })),
+                Some(json!({ "uri": uri, "envelope": request })),
             )
         }
         Fetched::Failed(reason, envelope) => {
@@ -851,6 +870,19 @@ async fn read_view(ctx: &Context, views: &ViewCache, id: Value, name: &str) -> V
     }
 }
 
+/// A JSON document's resource text: compact or pretty, per its spec.
+fn json_doc_text(data: &Value, compact: bool) -> String {
+    if compact {
+        return data.to_string();
+    }
+    serde_json::to_string_pretty(data).unwrap_or_else(|_| data.to_string())
+}
+
+/// The `resources/read` result: one text content block.
+fn contents_result(uri: &str, mime_type: &str, text: &str) -> Value {
+    json!({ "contents": [{ "uri": uri, "mimeType": mime_type, "text": text }] })
+}
+
 /// Build the resource (and, for a workflow, the prompt) from one payload.
 /// The resource text is the payload verbatim: the YAML string itself when
 /// the document is YAML, else the `data` object as JSON.
@@ -860,11 +892,7 @@ type PromptError = (&'static str, String);
 fn build_doc(spec: &DocSpec, data: &Value) -> (Resource, Option<Result<Prompt, PromptError>>) {
     let (text, mime_type) = match data.get("yaml").and_then(Value::as_str) {
         Some(yaml) => (yaml.to_string(), "application/yaml"),
-        None if spec.compact_json => (data.to_string(), "application/json"),
-        None => (
-            serde_json::to_string_pretty(data).unwrap_or_else(|_| data.to_string()),
-            "application/json",
-        ),
+        None => (json_doc_text(data, spec.compact_json), "application/json"),
     };
     let workflow = data.get("workflow").filter(|w| w.is_object());
     let payload_title = workflow.and_then(|w| non_empty_str(w, "name"));
@@ -977,19 +1005,22 @@ fn resources_list(doctrine: &Doctrine, id: Value, _params: &Value) -> Value {
     result_response(id, json!({ "resources": resources }))
 }
 
-/// The view template. It is static: its reads go to the tool on demand, so
-/// it is offered whether or not the startup load succeeded.
+/// The templates are static: their reads go to the tool on demand, so they
+/// are offered whether or not the startup load succeeded.
 fn resource_templates_list(_doctrine: &Doctrine, id: Value, _params: &Value) -> Value {
-    result_response(
-        id,
-        json!({ "resourceTemplates": [{
-            "uriTemplate": format!("{VIEW_URI_PREFIX}{{name}}"),
-            "name": "patstat-semantic-model-view",
-            "title": "PATSTAT semantic model — view",
-            "description": "one logical table of the PATSTAT semantic model; {name} from the index",
-            "mimeType": "application/json",
-        }] }),
-    )
+    let templates: Vec<Value> = RESOURCE_TEMPLATES
+        .iter()
+        .map(|t| {
+            json!({
+                "uriTemplate": format!("{}{{name}}", t.uri_prefix),
+                "name": t.name,
+                "title": t.title,
+                "description": t.description,
+                "mimeType": "application/json",
+            })
+        })
+        .collect();
+    result_response(id, json!({ "resourceTemplates": templates }))
 }
 
 fn resources_read(doctrine: &Doctrine, id: Value, params: &Value) -> Value {
@@ -997,12 +1028,7 @@ fn resources_read(doctrine: &Doctrine, id: Value, params: &Value) -> Value {
         return error_response(id, -32602, "Invalid params: missing resource 'uri'", None);
     };
     match doctrine.resources.iter().find(|r| r.uri == uri) {
-        Some(r) => result_response(
-            id,
-            json!({
-                "contents": [{ "uri": r.uri, "mimeType": r.mime_type, "text": r.text }],
-            }),
-        ),
+        Some(r) => result_response(id, contents_result(&r.uri, r.mime_type, &r.text)),
         None => error_response(
             id,
             -32602,
@@ -1050,6 +1076,13 @@ fn prompts_get(doctrine: &Doctrine, id: Value, params: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn spec(key: &str) -> &'static DocSpec {
+        DOC_SPECS
+            .iter()
+            .find(|spec| spec.key == key)
+            .expect("doc spec by key")
+    }
 
     fn result_text(response: &Value) -> &str {
         response["result"]["content"][0]["text"]
@@ -1115,7 +1148,7 @@ mod tests {
     #[test]
     fn yaml_payload_is_served_raw_and_edition_reaches_the_description() {
         let data = json!({ "data_edition": "E1", "yaml": "a: 1\n" });
-        let (resource, prompt) = build_doc(&DOC_SPECS[0], &data);
+        let (resource, prompt) = build_doc(spec("semantic-model"), &data);
         assert_eq!(resource.text, "a: 1\n");
         assert_eq!(resource.mime_type, "application/yaml");
         assert_eq!(resource.title, "PATSTAT semantic model");
@@ -1125,7 +1158,7 @@ mod tests {
 
     #[test]
     fn workflow_without_workflow_object_serves_the_resource_but_no_prompt() {
-        let (resource, prompt) = build_doc(&DOC_SPECS[5], &json!({ "other": true }));
+        let (resource, prompt) = build_doc(spec("workflow/graph"), &json!({ "other": true }));
         assert_eq!(resource.uri, "flowleap://patstat/workflow/graph");
         assert_eq!(resource.name, "patstat-workflow-graph");
         assert_eq!(resource.mime_type, "application/json");

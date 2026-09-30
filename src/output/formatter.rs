@@ -1,4 +1,4 @@
-use comfy_table::{Cell, Table};
+use comfy_table::{Cell, ContentArrangement, Table};
 use serde_json::Value;
 
 /// Print raw JSON (for --output json)
@@ -27,9 +27,27 @@ fn field<'a>(record: &'a Value, key: &str) -> Option<&'a Value> {
     }
 }
 
-/// Print a JSON array as a table (for --output table)
+/// Print a JSON array as a table (for --output table). Cells are cut at 50
+/// characters.
 pub fn print_table(rows: &[Value], columns: &[(&str, &str)]) {
+    print_table_with(rows, columns, Some(50));
+}
+
+/// [`print_table`] with every cell printed whole, wrapped to the terminal
+/// width when there is one — for served doctrine, which must never be cut.
+pub fn print_table_whole(rows: &[Value], columns: &[(&str, &str)]) {
+    print_table_with(rows, columns, None);
+}
+
+fn print_table_with(rows: &[Value], columns: &[(&str, &str)], max: Option<usize>) {
+    let cut = |text: &str| match max {
+        Some(max) => truncate(text, max),
+        None => text.to_string(),
+    };
     let mut table = Table::new();
+    if max.is_none() {
+        table.set_content_arrangement(ContentArrangement::Dynamic);
+    }
     table.set_header(columns.iter().map(|(_, header)| Cell::new(header)));
 
     for row in rows {
@@ -38,14 +56,14 @@ pub fn print_table(rows: &[Value], columns: &[(&str, &str)]) {
             .map(|(key, _)| {
                 let val = field(row, key).cloned().unwrap_or(Value::Null);
                 match val {
-                    Value::String(s) => Cell::new(truncate(&s, 50)),
+                    Value::String(s) => Cell::new(cut(&s)),
                     Value::Array(arr) => {
                         let items: String = arr
                             .iter()
                             .filter_map(|v| v.as_str())
                             .collect::<Vec<_>>()
                             .join(", ");
-                        Cell::new(truncate(&items, 50))
+                        Cell::new(cut(&items))
                     }
                     Value::Null => Cell::new("-"),
                     other => Cell::new(other.to_string()),
@@ -56,6 +74,19 @@ pub fn print_table(rows: &[Value], columns: &[(&str, &str)]) {
     }
 
     println!("{table}");
+}
+
+/// The JSON envelope of a usage error (`{ ok: false, error: { message, kind } }`),
+/// printed on stdout in JSON mode — the shape `main` gives a clap parse
+/// error, shared by the usage checks clap cannot state.
+pub fn print_usage_error_json(err: &clap::Error) {
+    print_json(&serde_json::json!({
+        "ok": false,
+        "error": {
+            "message": err.to_string(),
+            "kind": format!("{:?}", err.kind()),
+        }
+    }));
 }
 
 /// Print a value in human-readable format

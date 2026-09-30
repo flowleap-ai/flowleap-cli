@@ -439,6 +439,7 @@ fn view_doc() -> Value {
             "conventions": ["families"]
         },
         "interpretation_conventions": { "families": "Two family notions." },
+        "global_caveats": { "wo_never_grants": "WO applications never grant." },
         "join_paths": ["applications.application_id = applicants.application_id"]
     })
 }
@@ -1088,5 +1089,51 @@ async fn an_unknown_view_is_invalid_params_listing_the_available_views() {
     assert_eq!(
         error["data"]["availableViews"],
         json!(["applications", "applicants"])
+    );
+}
+
+#[tokio::test]
+async fn a_dry_run_view_read_carries_the_request_in_the_error_frame() {
+    let server = MockServer::start().await;
+    mount_doctrine(&server).await;
+
+    let (responses, stderr) = run_mcp_with_stderr(
+        &server.uri(),
+        AUTH_ENV,
+        &["--dry-run"],
+        &[frame(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "resources/read",
+            "params": { "uri": VIEW_URI },
+        }))],
+    )
+    .await;
+
+    let error = &responses[0]["error"];
+    assert_eq!(error["code"], -32603);
+    assert_eq!(error["data"]["uri"], VIEW_URI);
+    let request = &error["data"]["envelope"];
+    assert_eq!(request["dryRun"], true);
+    assert_eq!(request["method"], "POST");
+    assert!(
+        request["url"]
+            .as_str()
+            .is_some_and(|url| url.ends_with("/v1/tools/patstat_docs")),
+        "{request}"
+    );
+    assert_eq!(
+        request["body"],
+        json!({ "section": "semantic-model", "view": "applications" })
+    );
+    assert!(
+        stderr.contains(r#""body":{"section":"semantic-model","view":"applications"}"#),
+        "the request also goes to stderr: {stderr}"
+    );
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty(),
+        "dry-run sends nothing"
     );
 }
