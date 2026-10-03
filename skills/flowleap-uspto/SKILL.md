@@ -7,6 +7,8 @@ description: Search USPTO Open Data Portal records with Lucene queries you write
 
 Auth and global flags: see `flowleap-shared`.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+
 ## Search
 
 `uspto search` runs the `search_patents` tool (`provider: uspto`) on the Tools

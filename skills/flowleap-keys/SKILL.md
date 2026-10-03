@@ -5,6 +5,8 @@ description: Manage BYOK patent-data keys (EPO OPS consumer key/secret, USPTO OD
 
 # FlowLeap Patent-Data Keys (BYOK)
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The `keys` commands have no tool there: the user adds a stored key on the Patent-data keys page, and you never ask for the key value in the chat.
+
 Patent data flows through provider APIs that may need the USER's own
 credentials: EPO OPS (consumer key + secret — always a pair) and USPTO ODP
 (single API key). The concept is **patent-data keys**; `provider_keys_required`

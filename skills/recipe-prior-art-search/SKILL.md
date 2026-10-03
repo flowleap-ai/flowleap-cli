@@ -11,6 +11,8 @@ metadata:
 A multi-step workflow for comprehensive prior-art searching. Each database uses
 its own query syntax — see `flowleap-uspto` for the USPTO Lucene grammar.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+
 ## Steps
 
 ### Step 1: Write the Search Queries

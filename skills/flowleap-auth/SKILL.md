@@ -7,6 +7,8 @@ description: Authenticate the FlowLeap CLI — OAuth 2.0 device flow login (user
 
 Global flags and configuration: see `flowleap-shared`.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The `auth` commands have no tool there: sign-in is the connector's OAuth.
+
 ## Commands
 
 ### Login via OAuth device flow

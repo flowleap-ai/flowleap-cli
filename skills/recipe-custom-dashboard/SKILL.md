@@ -14,6 +14,8 @@ self-contained HTML file. This skill owns **presentation craft only** — the
 *analysis* (which query, which corpus, how to read the result) lives in the
 analytical recipes. Do the analysis there first, then render here.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. A chat client has no file system, so it writes no bundle and no `generate.mjs`: describe the data, and hand the numbers to the user exactly as the tools returned them, with each call's tool, parameters, and dataset identity.
+
 Vocabulary (agent-v2 `CONTEXT.md`): **Portfolio Analytics** = grounded PATSTAT
 aggregates for one harmonized applicant (`data_edition` stamped). **Topic
 Analytics** = full-corpus filing analytics over the quarterly Google-Patents slice

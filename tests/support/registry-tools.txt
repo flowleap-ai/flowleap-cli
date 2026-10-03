@@ -1,0 +1,54 @@
+# Tool names in the backend /v1/tools registry, one per line.
+# Vendored for tests/skills_connector_test.rs. Refresh when the registry changes:
+#   flowleap --json tools list | jq -r '.[].name' | sort
+# Fetched 2026-10-03 from https://api.flowleap.co.
+compare_patents
+convert_patent_number
+get_abstract
+get_application_documents
+get_assignments
+get_attorney
+get_bibliography
+get_citation_stats
+get_citations
+get_claims
+get_continuity
+get_description
+get_family
+get_foreign_priority
+get_fulltext
+get_legal_jurisdictions
+get_legal_status
+get_patent_family
+get_patent_image
+get_patent_summary
+get_patent_term
+get_patent_term_adjustment
+get_prosecution_timeline
+get_register_events
+get_search_syntax
+get_transactions
+get_us_application
+get_us_grant
+ocr
+patent_analytics
+patstat_applicant
+patstat_cpc
+patstat_docs
+patstat_explain
+patstat_neighborhood
+patstat_patent
+patstat_path
+patstat_portfolio
+patstat_query
+patstat_resolve
+patstat_technology
+read_application_document
+reference_search
+search_academic
+search_enriched_citations
+search_npl
+search_office_action_citations
+search_patents
+search_uspto_portfolio_by_customer_number
+server_info

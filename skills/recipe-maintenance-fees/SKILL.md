@@ -11,6 +11,8 @@ metadata:
 Compute maintenance-fee deadlines for US utility patents and report what is
 paid, due, and docketable — from official USPTO data, never from memory.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+
 **Scope guard — dates and status only.** Fee *amounts* depend on the current
 USPTO fee schedule and entity status and change over time. Never state dollar
 amounts; link to https://www.uspto.gov/learning-and-resources/fees-and-payment

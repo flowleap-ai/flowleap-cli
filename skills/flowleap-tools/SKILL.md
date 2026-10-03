@@ -5,6 +5,8 @@ description: Discover and run FlowLeap backend tools through the agent-first /v1
 
 # FlowLeap Tools (agent-first facade)
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The connector lists the same registry under the same names.
+
 The **Tools facade** is the single agent surface for patent data: named tools
 invoked through `/v1/tools`, one success envelope, one error contract, a
 self-describing registry. It is not one API among several — every JSON

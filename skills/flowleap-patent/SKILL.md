@@ -7,6 +7,8 @@ description: Search EPO patents with CQL you write yourself — field reference,
 
 Auth and global flags: see `flowleap-shared`.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+
 EP/WO search runs on the user's own EPO patent-data key. A
 `provider_keys_required` error is a **user-action stop for that office, never an
 exhausted route**: do not fall back to web-scraped patent data, deliver whatever
