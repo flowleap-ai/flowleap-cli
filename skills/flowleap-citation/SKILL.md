@@ -7,6 +7,8 @@ description: USPTO enriched citation data from office actions — citations by a
 
 Auth and global flags: see `flowleap-shared`.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+
 ## Which citation universe?
 
 FlowLeap exposes two, and neither is a superset of the other:

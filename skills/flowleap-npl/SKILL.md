@@ -7,6 +7,8 @@ description: Search non-patent literature (scholarly works via OpenAlex) with ye
 
 Auth and global flags: see `flowleap-shared`.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+
 ```bash
 flowleap --json npl "perovskite solar cell stability" --limit 5
 flowleap --json npl "CRISPR delivery" --from-year 2020 --to-year 2024 --open-access

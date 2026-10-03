@@ -11,6 +11,8 @@ metadata:
 You are a startup founder using the FlowLeap CLI to validate your IP position and
 build a patent strategy.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+
 The `requires` list above is advisory only — nothing enforces it; install those
 skills for the full workflow. Shared conventions stay in their owner skills:
 `--json`/output guidance in `flowleap-shared`, the EPO-vs-USPTO search split in

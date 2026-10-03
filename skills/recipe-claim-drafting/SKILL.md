@@ -10,6 +10,8 @@ metadata:
 
 Draft claims that are novel over the closest art and formally sound.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+
 ## Step 1: Find the Closest Art First
 
 Claims drafted blind get rejected. Anchor on the art before writing:

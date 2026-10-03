@@ -20,9 +20,11 @@ so no `flowleap …` command can run there.
   (`snake_case` parameters), success envelope, and error codes. The table below
   gives the tool behind each command family.
 - **Sign-in is the connector's OAuth.** The user connects FlowLeap in the
-  client's connector settings. `auth`, `doctor`, `setup`, `keys`, `config`,
-  `skills`, and `upgrade` have no tool: do not tell the user to run them in a
-  chat client.
+  client's connector settings. `auth`, `doctor`, `setup`, `init`, `keys`,
+  `config`, `skills`, `upgrade`, `api`, `health`, and `mcp` have no tool: do
+  not tell the user to run them in a chat client. In place of `health`,
+  call `server_info`: it reports the backend's configured providers and
+  available tools.
 - **Patent-data keys are stored keys.** The CLI forwards the keys kept on the
   user's machine; a chat client has no keys to forward, so the backend uses the
   stored key the user added on the FlowLeap Patent-data keys page

@@ -10,6 +10,8 @@ metadata:
 
 Turn an office action (OA) into a structured, evidence-backed draft response.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+
 ## Step 1: Intake — Read the Office Action
 
 For a US application, fetch the OA straight from the USPTO file wrapper — no

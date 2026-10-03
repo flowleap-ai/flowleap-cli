@@ -10,6 +10,8 @@ metadata:
 
 Build a prior-art invalidity case against a target patent, claim by claim.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+
 ## Step 1: Target Intake — Fix the Critical Date
 
 ```bash

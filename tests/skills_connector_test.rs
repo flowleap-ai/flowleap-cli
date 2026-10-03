@@ -6,8 +6,8 @@
 //!   umbrella skill's one-call verb table exists in the registry, read from
 //!   the vendored list in `tests/support/registry-tools.txt` (refresh it with
 //!   the command in its header when the registry changes);
-//! - every skill that invokes `flowleap …` commands carries the one-line
-//!   routing sentence.
+//! - every skill that invokes `flowleap …` commands, inline or in a fenced
+//!   block, carries the one-line routing sentence.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -50,8 +50,9 @@ fn table_tool_names(skill: &str, heading: &str, col: usize) -> Vec<String> {
     for row in rows {
         let cell = row.split('|').nth(col + 1).unwrap_or_default();
         for (i, part) in cell.split('`').enumerate() {
-            // Odd parts sit between backticks.
-            if i % 2 == 1 && part.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+            // Odd parts sit between backticks. Every one goes to the registry
+            // check, so a misspelling with a digit or uppercase is reported.
+            if i % 2 == 1 {
                 names.push(part.to_string());
             }
         }
@@ -66,6 +67,33 @@ fn assert_in_registry(skill: &str, names: &[String]) {
         missing.is_empty(),
         "{skill}: tool names not in the registry: {missing:?}"
     );
+}
+
+/// True for a command line such as `flowleap --json ops claims EP1`: the
+/// line matches `^\s*flowleap( --\S+)* [a-z]`.
+fn invokes_flowleap(line: &str) -> bool {
+    let Some(rest) = line.trim_start().strip_prefix("flowleap ") else {
+        return false;
+    };
+    let mut rest = rest;
+    while let Some(flag) = rest.strip_prefix("--") {
+        match flag.split_once(' ') {
+            Some((name, tail)) if !name.is_empty() && !name.contains(char::is_whitespace) => {
+                rest = tail
+            }
+            _ => return false,
+        }
+    }
+    rest.starts_with(|c: char| c.is_ascii_lowercase())
+}
+
+#[test]
+fn invokes_flowleap_matches_command_lines_only() {
+    assert!(invokes_flowleap("flowleap ops claims EP1"));
+    assert!(invokes_flowleap("  flowleap --json --dry-run summary EP1"));
+    assert!(!invokes_flowleap("flowleap --version"));
+    assert!(!invokes_flowleap("the flowleap ops command"));
+    assert!(!invokes_flowleap("flowleap <command>"));
 }
 
 #[test]
@@ -113,7 +141,7 @@ fn every_command_invoking_skill_routes_chat_clients() {
             continue;
         }
         let text = read(&skill_md);
-        if !text.contains("`flowleap ") {
+        if !text.contains("`flowleap ") && !text.lines().any(invokes_flowleap) {
             continue;
         }
         checked += 1;
