@@ -11,6 +11,8 @@ metadata:
 Make AI-assisted patent research verifiable: every finding traceable to a
 command, every command re-runnable.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+
 ## Step 1: Record the Environment
 
 ```bash

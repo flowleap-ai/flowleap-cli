@@ -9,6 +9,53 @@ Shared authentication, configuration, and global-flag reference used by every
 other FlowLeap skill. For the overall map of commands, skills, and workflows,
 start from the `flowleap` skill.
 
+## Chat clients with the FlowLeap connector
+
+In claude.ai, Claude Desktop and mobile, Cowork, and ChatGPT, FlowLeap is a
+connector to the **hosted MCP server**, not a CLI. These clients have no shell,
+so no `flowleap …` command can run there.
+
+- **Call the tool of the same name through the connector.** The connector lists
+  the same registry as `flowleap tools list`: the same tool names, input schemas
+  (`snake_case` parameters), success envelope, and error codes. The table below
+  gives the tool behind each command family.
+- **Sign-in is the connector's OAuth.** The user connects FlowLeap in the
+  client's connector settings. `auth`, `doctor`, `setup`, `init`, `keys`,
+  `config`, `skills`, `upgrade`, `api`, `health`, and `mcp` have no tool: do
+  not tell the user to run them in a chat client. In place of `health`,
+  call `server_info`: it reports the backend's configured providers and
+  available tools.
+- **Patent-data keys are stored keys.** The CLI forwards the keys kept on the
+  user's machine; a chat client has no keys to forward, so the backend uses the
+  stored key the user added on the FlowLeap Patent-data keys page
+  (https://www.flowleap.co/en/dashboard/keys). When a tool answers a key gate,
+  relay that page (the error's `keysPageUrl` and `nextStep`, when present).
+  **Never ask for a key value in the chat.** The rest of the key doctrine in
+  `flowleap-keys` applies unchanged.
+- **Global flags do not apply.** `--json`, `--dry-run`, and `--output` are CLI
+  flags; a tool call always returns the JSON envelope.
+
+| Command family | Tool(s) | Notes |
+|---|---|---|
+| `ops biblio` / `claims` / `description` / `family` / `legal` / `abstract` | `get_bibliography`, `get_claims`, `get_description`, `get_family`, `get_legal_status`, `get_abstract` | `get_family` is the INPADOC extended family |
+| `patent search`, `ops search` | `search_patents` | `provider: "epo_ops"`, CQL |
+| `uspto search` | `search_patents` | `provider: "uspto"`, Lucene |
+| `uspto application` / `grant` / `continuity` | `get_us_application`, `get_us_grant`, `get_continuity` | |
+| `uspto transactions` / `assignments` / `foreign-priority` / `adjustment` / `attorney` | `get_transactions`, `get_assignments`, `get_foreign_priority`, `get_patent_term_adjustment`, `get_attorney` | |
+| `uspto documents` / `document-text` | `get_application_documents`, `read_application_document` | |
+| `citation search` / `forward` / `stats` | `search_office_action_citations`, `search_enriched_citations`, `get_citation_stats` | `citation novelty` is `search_office_action_citations` with `category: "X"`, `examiner_cited_only: true` |
+| EPO forward citations (no command) | `get_citations` | |
+| `academic search`, `npl` | `search_academic`, `search_npl` | |
+| `legal search` / `jurisdictions` | `reference_search`, `get_legal_jurisdictions` | |
+| `analytics` | `patent_analytics` | |
+| `ocr` | `ocr` | |
+| `patstat portfolio` / `query` / `docs` | `patstat_portfolio`, `patstat_query`, `patstat_docs` | |
+| `patstat graph resolve` / `cpc` / `patent` / `applicant` / `technology` / `neighborhood` / `path` / `explain` | `patstat_resolve`, `patstat_cpc`, `patstat_patent`, `patstat_applicant`, `patstat_technology`, `patstat_neighborhood`, `patstat_path`, `patstat_explain` | |
+| `tools run <name>` | the same names | |
+
+The one-call verbs (`summary`, `compare`, `timeline`, `figures`,
+`convert-number`) map the same way; their table is in the `flowleap` skill.
+
 ## Authentication
 
 Every authenticated request sends `Authorization: Bearer <credential>` — either

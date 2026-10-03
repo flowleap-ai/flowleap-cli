@@ -7,6 +7,8 @@ description: Direct EPO Open Patent Services access through the FlowLeap backend
 
 Auth and global flags: see `flowleap-shared`.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+
 Direct access to the European Patent Office (EPO) Open Patent Services API.
 
 OPS needs the user's own EPO patent-data key. If a command returns the gate code

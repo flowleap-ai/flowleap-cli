@@ -10,6 +10,8 @@ metadata:
 
 Capture an invention completely enough that an attorney can draft from it.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+
 ## Step 1: Structured Capture
 
 Interview for these sections (push past marketing language to mechanisms):

@@ -11,6 +11,8 @@ metadata:
 Extract all data from a patent document and assemble it into one structured
 report.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+
 ## Steps
 
 ### Step 1: One-Call Snapshot

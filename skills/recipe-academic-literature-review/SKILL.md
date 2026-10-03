@@ -11,6 +11,8 @@ metadata:
 Combine academic and patent searches to map what a field has published against
 what it has protected.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+
 Prefer `academic` (Semantic Scholar + arXiv) for CS/ML papers and preprints;
 prefer `npl` (OpenAlex) for broad cross-disciplinary journal coverage and
 open-access filtering.

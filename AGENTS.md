@@ -359,6 +359,16 @@ the *thin* passthrough first and put the workflow in a skill on top of it.
   mirrors them from the backend (the PATSTAT doctrine, through `patstat_docs`).
   Change them in the backend; a skill points at `flowleap patstat docs` instead
   of copying them.
+- **Chat clients route to tools.** claude.ai, ChatGPT and Cowork reach
+  FlowLeap through the hosted MCP server connector and have no shell. The
+  command-to-tool table lives in `flowleap-shared` ("Chat clients with the
+  FlowLeap connector"), the one-call verb table in `flowleap`, and every other
+  skill that invokes `flowleap …` carries the one-line routing sentence near its
+  top. `tests/skills_connector_test.rs` checks the table names against the
+  vendored registry list `tests/support/registry-tools.txt` (refresh it with the
+  command in its header when the registry changes) and checks that every
+  command-invoking skill has the sentence. A new command-invoking skill needs
+  the sentence; a new command needs its row.
 - **Distribution is release-gated.** CLI skills ship inside the binary (next
   tag) and reach the website marketplace via the `flowleap-plugins` re-sync
   (bump `sync.json` ref, add the entry, copy byte-for-byte). Budget the

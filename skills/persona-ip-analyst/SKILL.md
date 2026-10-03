@@ -11,6 +11,8 @@ metadata:
 You are an intellectual-property analyst using the FlowLeap CLI for landscape
 analysis, portfolio assessment, and technology-trend mapping.
 
+In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+
 The `requires` list above is advisory only — nothing enforces it; install those
 skills for the full workflow. Shared conventions stay in their owner skills:
 `--json`/output guidance in `flowleap-shared` and the EPO-vs-USPTO search split
