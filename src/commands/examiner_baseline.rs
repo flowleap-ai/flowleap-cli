@@ -1,28 +1,33 @@
 //! `flowleap patent examiner-baseline <publication>`: the Examiner Baseline
 //! (PRD 0019 F1, agent-v2 ADR 0010).
 //!
-//! Walks the INPADOC family of a publication, reads the `references-cited`
-//! block of every publication of every member (`get_bibliography`), adds the
-//! USPTO enriched office-action citations for granted US members
-//! (`get_us_grant` resolves the application number,
-//! `search_office_action_citations` reads the rows), and prints one matrix:
-//! cited document × office.
+//! The backend computes the Baseline in one call, the `examiner_baseline`
+//! facade tool (backend #548), and the verb prints its answer, so the CLI,
+//! the chat clients and the MCP bridge show one identical Baseline. Against an
+//! older backend whose registry does not list that tool, the verb runs the
+//! same walk locally: it walks the INPADOC family of a publication, reads the
+//! `references-cited` block of every publication of every member
+//! (`get_bibliography`), adds the USPTO enriched office-action citations for
+//! granted US members (`get_us_grant` resolves the application number,
+//! `search_office_action_citations` reads the rows), and builds one matrix:
+//! cited document × office. `--verbose` names the path that ran.
 //!
 //! Guardrail (Verified-Data Contract): this verb never calls a model. Every
 //! category, claim list and count comes from a backend response. A member
 //! whose office returned no citation block is a gap, printed as one — never as
 //! "nothing cited".
 //!
-//! The work is split so the logic is testable without a backend: [`collect`]
-//! does the I/O and keeps every raw answer in a [`Collected`]; [`assemble`]
-//! turns that into the [`Baseline`] that `--json` prints; [`render_human`]
-//! derives the table from the same struct.
+//! The local walk is split so the logic is testable without a backend:
+//! [`collect`] does the I/O and keeps every raw answer in a [`Collected`];
+//! [`assemble`] turns that into the [`Baseline`] that `--json` prints. Both
+//! paths end in the same [`Baseline`] shape, and [`render_human`] derives the
+//! table from it.
 
 use std::collections::BTreeMap;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use comfy_table::{Cell as TableCell, ContentArrangement, Table};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::client::Context;
@@ -32,28 +37,65 @@ use crate::output;
 /// The largest page `search_office_action_citations` serves.
 const ENRICHED_PAGE_SIZE: u64 = 1000;
 
+/// The backend facade tool that computes the Baseline in one call.
+const TOOL: &str = "examiner_baseline";
+
 const SOURCE_OPS: &str = "ops_biblio";
 const SOURCE_ENRICHED: &str = "uspto_enriched";
 
 /// The verb's entry point.
 pub async fn run(ctx: &Context, publication: &str) -> Result<()> {
+    let input = json!({ "publication": publication });
     if ctx.dry_run {
-        // A dry run can only describe the first request; every later one
-        // depends on the family it would have returned.
-        let input = json!({ "patent_number": publication });
-        if let Some(data) = tools::call_tool_data(ctx, "get_family", &input).await? {
-            output::print_json(&data);
-        }
+        // A dry run describes the one-call request. The registry check and
+        // the fallback walk depend on answers a dry run never gets.
+        tools::call_tool_data(ctx, TOOL, &input).await?;
         return Ok(());
     }
-    let collected = collect(ctx, publication).await?;
-    let baseline = assemble(&collected);
-    if ctx.output_format == "json" {
-        output::print_json(&serde_json::to_value(&baseline)?);
+    let baseline = if registry_lists_tool(ctx).await? {
+        if ctx.verbose {
+            eprintln!("  examiner-baseline: backend tool {TOOL}");
+        }
+        match tools::call_tool_data(ctx, TOOL, &input).await? {
+            Some(data) => data,
+            None => return Ok(()),
+        }
     } else {
-        print!("{}", render_human(&baseline));
+        if ctx.verbose {
+            eprintln!(
+                "  examiner-baseline: local family walk (the tools registry does not list {TOOL})"
+            );
+        }
+        let collected = collect(ctx, publication).await?;
+        serde_json::to_value(assemble(&collected))?
+    };
+    if ctx.output_format == "json" {
+        output::print_json(&baseline);
+    } else {
+        let parsed: Baseline = serde_json::from_value(baseline)
+            .context("the examiner_baseline answer is not a Baseline")?;
+        print!("{}", render_human(&parsed));
     }
     Ok(())
+}
+
+/// Whether the backend registry lists the one-call tool. An older backend
+/// does not, and the verb then walks the family itself. A registry read that
+/// fails stops the verb with its usual envelope and exit code: every later
+/// call would meet the same failure.
+async fn registry_lists_tool(ctx: &Context) -> Result<bool> {
+    let envelope = tools::fetch_tools_envelope(ctx).await?;
+    if envelope.get("ok").and_then(Value::as_bool) != Some(true) {
+        return Err(ctx.fail_with_envelope(&envelope));
+    }
+    Ok(envelope
+        .pointer("/body/tools")
+        .and_then(Value::as_array)
+        .is_some_and(|tools| {
+            tools
+                .iter()
+                .any(|tool| tool.get("name").and_then(Value::as_str) == Some(TOOL))
+        }))
 }
 
 // ---------------------------------------------------------------------------
@@ -68,11 +110,14 @@ pub(crate) enum Read {
     Failed(ReadError),
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReadError {
+    #[serde(default)]
     pub status: Option<u64>,
+    #[serde(default)]
     pub code: Option<String>,
+    #[serde(default)]
     pub message: Option<String>,
 }
 
@@ -315,8 +360,9 @@ fn us_application_number(grant: &Value) -> Option<String> {
 
 /// The Examiner Baseline. `--json` prints this struct; the human table is
 /// derived from it. Field names are a contract for the Find Better skill and
-/// the report writer: add fields, never rename.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+/// the report writer: add fields, never rename. The backend `examiner_baseline`
+/// tool answers the same shape, so its answer deserializes into this struct.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Baseline {
     /// The publication the walk started from, as given.
@@ -333,61 +379,64 @@ pub(crate) struct Baseline {
     /// How rows were deduplicated: `docdb-number` (country + number, kind
     /// dropped). Family-level dedupe is not applied: no cited document's
     /// family is read.
-    pub dedupe: &'static str,
+    pub dedupe: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MemberWalked {
     pub office: String,
     pub representative_publication: String,
     /// The DOCDB application value from the family read. A label, never a
     /// filing number.
+    #[serde(default)]
     pub docdb_application: Option<String>,
     pub publications: Vec<PublicationRead>,
     /// Only on members with a US grant.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uspto_enriched: Option<EnrichedRead>,
 }
 
 /// What one publication's biblio read returned.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PublicationRead {
     pub publication: String,
     /// `read` (a citation block came back), `no_citation_record` (the read
     /// worked and carried no block) or `read_failed`.
-    pub status: &'static str,
+    pub status: String,
     /// The office's own count of entries in the block.
     pub cited_count: usize,
     pub examiner_count: usize,
     pub applicant_count: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ReadError>,
 }
 
 /// What the USPTO enriched-citation read returned for a US member.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EnrichedRead {
     /// The USPTO application number, as `get_us_grant` served it.
+    #[serde(default)]
     pub application_number: Option<String>,
     /// `read`, `no_citation_record`, `not_resolved` (no application number)
     /// or `read_failed`.
-    pub status: &'static str,
+    pub status: String,
     /// Rows returned.
     pub rows: usize,
     /// The `total` the tool reported.
+    #[serde(default)]
     pub total: Option<u64>,
     /// Rows that name no cited document (kept in the count, not in the
     /// matrix).
     pub unidentified_rows: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ReadError>,
 }
 
 /// One matrix row.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CitedDocument {
     /// The dedupe key: country + number without kind (`US4964287`), or
@@ -395,63 +444,78 @@ pub(crate) struct CitedDocument {
     pub document: String,
     /// Kind codes seen across the citations (OPS serves it apart from the
     /// number).
+    #[serde(default)]
     pub kinds: Vec<String>,
     /// Always null today: no cited document's family is read.
+    #[serde(default)]
     pub family_id: Option<String>,
     /// The non-patent-literature citation text, for NPL rows.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub npl: Option<String>,
     /// Per office: the cell, keyed by office code. An office absent here did
     /// not cite the document (or is in `gaps`).
     pub cells: BTreeMap<String, OfficeCell>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OfficeCell {
     /// The rendered cell: category and cited claims, or `applicant` when only
     /// the applicant cited it.
+    #[serde(default)]
     pub text: String,
     /// Every citation behind the cell, verbatim from its source.
     pub citations: Vec<Citation>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Citation {
     /// `ops_biblio` or `uspto_enriched`.
-    pub source: &'static str,
+    pub source: String,
     /// The citing publication (OPS) or the USPTO application number
     /// (enriched).
     pub citing: String,
     /// `examiner`, `applicant` or `unknown`, as the source states it.
     pub cited_by: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
-    /// OPS: the claims the search report names. Enriched: the claims the
-    /// office action rejected.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// OPS: the claims the search report names (its first list, verbatim).
+    /// Enriched: the claims the office action rejected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relevant_claims: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// OPS only: each category with its own claim list, when the search
+    /// report pairs them (a combined `X,A` then says which claims are X).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub category_claims: Vec<CategoryClaims>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relevant_passages: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub office_action_date: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub office_action_type: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+/// One search-report category with the claims it names.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct CategoryClaims {
+    pub category: String,
+    #[serde(default)]
+    pub claims: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Gap {
     pub office: String,
     /// The member's representative publication.
     pub member: String,
     /// `ops_biblio` or `uspto_enriched`.
-    pub source: &'static str,
+    pub source: String,
     /// `no_citation_record`, `read_failed` or `not_resolved`.
-    pub reason: &'static str,
+    pub reason: String,
     /// The line the table prints.
     pub message: String,
 }
@@ -489,8 +553,8 @@ pub(crate) fn assemble(collected: &Collected) -> Baseline {
             gaps.push(Gap {
                 office: member.office.clone(),
                 member: member.representative.clone(),
-                source: SOURCE_OPS,
-                reason: "read_failed",
+                source: SOURCE_OPS.to_string(),
+                reason: "read_failed".to_string(),
                 message: format!(
                     "could not read citations from {} ({}){}",
                     member.office,
@@ -503,8 +567,8 @@ pub(crate) fn assemble(collected: &Collected) -> Baseline {
             gaps.push(Gap {
                 office: member.office.clone(),
                 member: member.representative.clone(),
-                source: SOURCE_OPS,
-                reason: "no_citation_record",
+                source: SOURCE_OPS.to_string(),
+                reason: "no_citation_record".to_string(),
                 message: format!(
                     "no citation record from {} ({})",
                     member.office, member.representative
@@ -516,7 +580,7 @@ pub(crate) fn assemble(collected: &Collected) -> Baseline {
             let enriched =
                 read_enriched(collected, &member.representative, &member.office, &mut rows);
             if enriched.status != "read" {
-                let detail = match enriched.status {
+                let detail = match enriched.status.as_str() {
                     "not_resolved" => format!(
                         "US application number not resolved for {}{}",
                         member.representative,
@@ -537,8 +601,8 @@ pub(crate) fn assemble(collected: &Collected) -> Baseline {
                 gaps.push(Gap {
                     office: member.office.clone(),
                     member: member.representative.clone(),
-                    source: SOURCE_ENRICHED,
-                    reason: enriched.status,
+                    source: SOURCE_ENRICHED.to_string(),
+                    reason: enriched.status.clone(),
                     message: detail,
                 });
             }
@@ -573,7 +637,7 @@ pub(crate) fn assemble(collected: &Collected) -> Baseline {
         members_walked: walked,
         documents,
         gaps,
-        dedupe: "docdb-number",
+        dedupe: "docdb-number".to_string(),
     }
 }
 
@@ -617,7 +681,7 @@ fn read_publication(
 ) -> PublicationRead {
     let mut result = PublicationRead {
         publication: publication.to_string(),
-        status: "no_citation_record",
+        status: "no_citation_record".to_string(),
         cited_count: 0,
         examiner_count: 0,
         applicant_count: 0,
@@ -626,12 +690,12 @@ fn read_publication(
     let data = match read {
         Some(Read::Ok(data)) => data,
         Some(Read::Failed(error)) => {
-            result.status = "read_failed";
+            result.status = "read_failed".to_string();
             result.error = Some(error.clone());
             return result;
         }
         None => {
-            result.status = "read_failed";
+            result.status = "read_failed".to_string();
             return result;
         }
     };
@@ -641,7 +705,7 @@ fn read_publication(
     if references.is_empty() {
         return result;
     }
-    result.status = "read";
+    result.status = "read".to_string();
     result.cited_count = references.len();
     for reference in references {
         let cited_by = str_field(reference, "citedBy").unwrap_or_else(|| "unknown".into());
@@ -657,11 +721,12 @@ fn read_publication(
             _ => continue,
         };
         let citation = Citation {
-            source: SOURCE_OPS,
+            source: SOURCE_OPS.to_string(),
             citing: publication.to_string(),
             cited_by,
             category: str_field(reference, "category"),
             relevant_claims: str_field(reference, "relevantClaims"),
+            category_claims: category_claims(reference),
             phase: str_field(reference, "phase"),
             relevant_passages: reference
                 .get("relevantPassages")
@@ -696,7 +761,7 @@ fn read_enriched(
 ) -> EnrichedRead {
     let mut result = EnrichedRead {
         application_number: None,
-        status: "not_resolved",
+        status: "not_resolved".to_string(),
         rows: 0,
         total: None,
         unidentified_rows: 0,
@@ -716,12 +781,12 @@ fn read_enriched(
     let data = match collected.enriched.get(&application) {
         Some(Read::Ok(data)) => data,
         Some(Read::Failed(error)) => {
-            result.status = "read_failed";
+            result.status = "read_failed".to_string();
             result.error = Some(error.clone());
             return result;
         }
         None => {
-            result.status = "read_failed";
+            result.status = "read_failed".to_string();
             return result;
         }
     };
@@ -736,7 +801,8 @@ fn read_enriched(
         "no_citation_record"
     } else {
         "read"
-    };
+    }
+    .to_string();
     for row in &citations {
         let is_npl = row.get("isNPL").and_then(Value::as_bool) == Some(true);
         let cited_text = str_field(row, "citedDocument");
@@ -761,11 +827,12 @@ fn read_enriched(
             "unknown"
         };
         let citation = Citation {
-            source: SOURCE_ENRICHED,
+            source: SOURCE_ENRICHED.to_string(),
             citing: application.clone(),
             cited_by: cited_by.to_string(),
             category: str_field(row, "category"),
             relevant_claims: str_field(row, "rejectedClaims"),
+            category_claims: Vec::new(),
             phase: None,
             relevant_passages: Vec::new(),
             office_action_date: str_field(row, "officeActionDate")
@@ -809,6 +876,23 @@ fn add_citation(
     if !cell.citations.contains(&citation) {
         cell.citations.push(citation);
     }
+}
+
+/// The per-category claim lists of one OPS reference (`categoryClaims`), when
+/// the bibliography read carries them. A pair without a category is dropped.
+fn category_claims(reference: &Value) -> Vec<CategoryClaims> {
+    reference
+        .get("categoryClaims")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|pair| {
+            Some(CategoryClaims {
+                category: str_field(pair, "category")?,
+                claims: str_field(pair, "claims"),
+            })
+        })
+        .collect()
 }
 
 fn str_field(value: &Value, key: &str) -> Option<String> {
@@ -859,6 +943,28 @@ pub(crate) fn doc_key(raw: &str) -> String {
     format!("{country}{body}")
 }
 
+/// The OPS label of one categorised citation. With per-category claim lists
+/// (`categoryClaims`) each category names its own claims (`X cl. 13, A cl.
+/// 1,5,9`); without them, the combined category and the one claim list. The
+/// backend tool renders the same label, so both paths print one text.
+fn category_label(citation: &Citation, category: &str) -> String {
+    if !citation.category_claims.is_empty() {
+        return citation
+            .category_claims
+            .iter()
+            .map(|pair| match &pair.claims {
+                Some(claims) => format!("{} cl. {claims}", pair.category),
+                None => pair.category.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+    }
+    match &citation.relevant_claims {
+        Some(claims) => format!("{category} cl. {claims}"),
+        None => category.to_string(),
+    }
+}
+
 /// The cell text for one office: each distinct citation as category plus
 /// cited claims, the citing side named when it is not the examiner. A bare
 /// `applicant` (or `examiner`) appears only when no citation of the document
@@ -869,10 +975,7 @@ pub(crate) fn cell_text(citations: &[Citation]) -> String {
     for citation in citations {
         let label = match &citation.category {
             Some(category) => {
-                let mut label = category.clone();
-                if let Some(claims) = &citation.relevant_claims {
-                    label.push_str(&format!(" cl. {claims}"));
-                }
+                let mut label = category_label(citation, category);
                 if citation.source == SOURCE_ENRICHED {
                     label.push_str(" (US OA");
                     if let Some(date) = &citation.office_action_date {
@@ -926,7 +1029,7 @@ pub(crate) fn render_human(baseline: &Baseline) -> String {
             member.office, member.representative_publication
         ));
         for publication in &member.publications {
-            let line = match publication.status {
+            let line = match publication.status.as_str() {
                 "read" => format!(
                     "{} cited ({} examiner, {} applicant)",
                     publication.cited_count,
@@ -948,7 +1051,7 @@ pub(crate) fn render_human(baseline: &Baseline) -> String {
                 .application_number
                 .as_deref()
                 .unwrap_or("not resolved");
-            let line = match enriched.status {
+            let line = match enriched.status.as_str() {
                 "read" => {
                     let mut line = format!("{} rows", enriched.rows);
                     if let Some(total) = enriched.total {
@@ -996,11 +1099,11 @@ pub(crate) fn render_human(baseline: &Baseline) -> String {
             }
             let mut row = vec![TableCell::new(output::truncate(&name, 80))];
             for office in &baseline.offices {
-                let text = document
-                    .cells
-                    .get(office)
-                    .map(|cell| cell.text.clone())
-                    .unwrap_or_else(|| "-".to_string());
+                let text = match document.cells.get(office) {
+                    Some(cell) if cell.text.is_empty() => cell_text(&cell.citations),
+                    Some(cell) => cell.text.clone(),
+                    None => "-".to_string(),
+                };
                 row.push(TableCell::new(text));
             }
             table.add_row(row);
@@ -1059,8 +1162,10 @@ mod tests {
         biblio.insert(
             "EP2110298A3".into(),
             Read::Ok(json!({ "citedReferences": [
-                ops_ref("EP1602570", "A1", "applicant", json!({ "category": "X,A", "relevantClaims": "13" })),
-                ops_ref("US4964287", "A", "examiner", json!({ "category": "X,A", "relevantClaims": "1-3,5,7,8", "phase": "national-search-report", "relevantPassages": ["* the whole document *"] })),
+                ops_ref("EP1602570", "A1", "applicant", json!({ "category": "X,A", "relevantClaims": "13",
+                    "categoryClaims": [{ "category": "X", "claims": "13" }, { "category": "A", "claims": "1,5,9" }] })),
+                ops_ref("US4964287", "A", "examiner", json!({ "category": "X,A", "relevantClaims": "1-3,5,7,8", "phase": "national-search-report", "relevantPassages": ["* the whole document *"],
+                    "categoryClaims": [{ "category": "X", "claims": "1-3,5,7,8" }, { "category": "A", "claims": "9" }] })),
                 ops_ref("US2007052285", "A1", "examiner", json!({ "category": "X,A", "relevantClaims": "5" })),
             ]})),
         );
@@ -1182,7 +1287,7 @@ mod tests {
                 ),
                 (
                     "US4964287".to_string(),
-                    pairs(&[("EP", "X,A cl. 1-3,5,7,8"), ("US", "applicant")])
+                    pairs(&[("EP", "X cl. 1-3,5,7,8, A cl. 9"), ("US", "applicant")])
                 ),
                 (
                     "US5135330".to_string(),
@@ -1190,7 +1295,7 @@ mod tests {
                 ),
                 (
                     "EP1602570".to_string(),
-                    pairs(&[("EP", "X,A cl. 13 [applicant]")])
+                    pairs(&[("EP", "X cl. 13, A cl. 1,5,9 [applicant]")])
                 ),
             ]
         );
@@ -1211,7 +1316,7 @@ mod tests {
         let gaps: Vec<(&str, &str, String)> = baseline
             .gaps
             .iter()
-            .map(|g| (g.source, g.reason, g.message.clone()))
+            .map(|g| (g.source.as_str(), g.reason.as_str(), g.message.clone()))
             .collect();
         assert_eq!(
             gaps,
@@ -1279,11 +1384,43 @@ mod tests {
             "OPS biblio EP2110298A3: 3 cited (2 examiner, 1 applicant)",
             "OPS biblio EP2110298B1: no citation block",
             "USPTO enriched citations, application 12103744: 3 rows, 1 naming no document",
-            "X,A cl. 13 [applicant]",
+            "X cl. 13, A cl. 1,5,9 [applicant]",
             "could not read citations from US (US2009261648A1): 404 NOT_FOUND",
         ] {
             assert!(text.contains(expected), "missing {expected:?} in:\n{text}");
         }
+    }
+
+    #[test]
+    fn the_json_shape_reads_back_into_the_same_baseline() {
+        // The backend tool answers this shape; the human table is rendered
+        // from what it deserializes into.
+        let baseline = assemble(&collected());
+        let value = serde_json::to_value(&baseline).unwrap();
+        assert_eq!(
+            (
+                serde_json::from_value::<Baseline>(value.clone()).unwrap(),
+                value["documents"][3]["cells"]["EP"]["citations"][0]["categoryClaims"].clone(),
+            ),
+            (
+                baseline,
+                json!([{ "category": "X", "claims": "13" }, { "category": "A", "claims": "1,5,9" }]),
+            )
+        );
+    }
+
+    #[test]
+    fn a_cell_without_text_is_rendered_from_its_citations() {
+        let answer = json!({
+            "publication": "EP2110298B1", "offices": ["EP"], "dedupe": "docdb-number",
+            "membersWalked": [], "gaps": [],
+            "documents": [{ "document": "US4763957", "cells": { "EP": { "citations": [
+                { "source": "ops_biblio", "citing": "EP2110298A3", "citedBy": "examiner", "category": "X,A",
+                  "relevantClaims": "13", "categoryClaims": [{ "category": "X", "claims": "13" }, { "category": "A", "claims": null }] },
+            ]}}}],
+        });
+        let text = render_human(&serde_json::from_value(answer).unwrap());
+        assert!(text.contains("X cl. 13, A "), "{text}");
     }
 
     #[test]

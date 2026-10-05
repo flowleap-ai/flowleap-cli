@@ -45,7 +45,7 @@ so no `flowleap …` command can run there.
 | `uspto documents` / `document-text` | `get_application_documents`, `read_application_document` | |
 | `citation search` / `forward` / `stats` | `search_office_action_citations`, `search_enriched_citations`, `get_citation_stats` | `citation novelty` is `search_office_action_citations` with `category: "X"`, `examiner_cited_only: true` |
 | EPO forward citations (no command) | `get_citations` | |
-| `patent examiner-baseline` | `get_family`, `get_bibliography`, `get_us_grant`, `search_office_action_citations` | No one-call tool. Walk every family member: `get_bibliography` per publication, and for a US grant `get_us_grant` then `search_office_action_citations` (`size: 1000`). Show a member without a citation block as a gap |
+| `patent examiner-baseline` | `examiner_baseline` | In a chat client call the examiner_baseline tool; it returns the same JSON. |
 | `academic search`, `npl` | `search_academic`, `search_npl` | |
 | `legal search` / `jurisdictions` | `reference_search`, `get_legal_jurisdictions` | |
 | `analytics` | `patent_analytics` | |

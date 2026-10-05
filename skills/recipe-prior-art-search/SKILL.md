@@ -46,6 +46,8 @@ The USPTO leg uses ODP Lucene over title + metadata (see `flowleap-uspto`):
 same term extraction, same probe discipline, but the discrimination must be a
 term that plausibly appears in an invention title.
 
+Show the statement as a Search Statement block — see flowleap-patent `references/search-statement.md`.
+
 Done when you have one probed EPO CQL query and one USPTO ODP query.
 
 ### Step 2: Search Patents (EPO + USPTO)

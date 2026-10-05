@@ -182,6 +182,8 @@ Match keywords against group titles, then search with the 4-char class
 
 1. Extract the candidate terms from the description (Step 1).
 2. Write the CQL (Step 2) and probe the count (Step 3); refine until workable.
+   Show the statement to the user as a Search Statement block — see
+   [references/search-statement.md](references/search-statement.md).
 3. Run the search: `flowleap --json patent search --query "<CQL>" --limit 20`.
    The JSON payload is `{ total, docs }`. Results arrive in EPO OPS default
    order (no relevance ranking — recent publications tend to come first), so

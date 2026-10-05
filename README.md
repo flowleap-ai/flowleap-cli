@@ -361,7 +361,7 @@ The full contract (hint schemas, endpoint list, agent protocol) lives in [AGENTS
 
 ## Cookbook: Recipe Skills
 
-The CLI bundles 12 multi-step workflow recipes (`recipe-*` skills). Install them with `flowleap skills install` and your agent can run each end to end:
+The CLI bundles 15 multi-step workflow recipes (`recipe-*` skills). Install them with `flowleap skills install` and your agent can run each end to end:
 
 | Recipe | What it does |
 |--------|--------------|
@@ -377,11 +377,13 @@ The CLI bundles 12 multi-step workflow recipes (`recipe-*` skills). Install them
 | `recipe-office-action-response` | OCR an office action, pull cited references, map rejections, ground arguments in guidelines |
 | `recipe-invalidity-analysis` | Build a prior-art invalidity case: priority date, element hunt, X/Y/A invalidity chart |
 | `recipe-infringement-charting` | Element-by-element infringement claim chart against an accused product |
+| `recipe-maintenance-fees` | US maintenance-fee status: fee windows from the grant date, paid fees from USPTO transaction events, the next deadline with surcharge dates |
+| `recipe-custom-dashboard` | Turn verified patent data into an offline single-file HTML dashboard, every number computed in code, with a provenance footer |
 | `recipe-audit-report` | Auditable record of AI-assisted research: command log, provenance, AI-usage disclosure |
 
 ## Skills Reference
 
-28 skills ship embedded in the binary — `flowleap skills list` shows them, `flowleap skills install` works offline anywhere. Three categories:
+33 skills ship embedded in the binary — `flowleap skills list` shows them, `flowleap skills install` works offline anywhere. Three categories:
 
 | Category | Description |
 |----------|-------------|
@@ -390,7 +392,7 @@ The CLI bundles 12 multi-step workflow recipes (`recipe-*` skills). Install them
 | **Recipe skills** (`recipe-*`) | Multi-step workflows (see Cookbook above) |
 
 ```
-skills/                            # 28 skills, embedded in the binary
+skills/                            # 33 skills, embedded in the binary
   flowleap/SKILL.md                # Start here: umbrella + skill map
   flowleap-shared/SKILL.md         # Auth, global flags, config reference
   flowleap-auth/SKILL.md           # OAuth device flow + fl_pat_ tokens
@@ -403,6 +405,8 @@ skills/                            # 28 skills, embedded in the binary
   flowleap-legal/SKILL.md          # Patent-law reference search (RAG)
   flowleap-citation/SKILL.md       # USPTO enriched citation data
   flowleap-tools/SKILL.md          # Agent-first /v1/tools facade
+  flowleap-patstat/SKILL.md        # PATSTAT portfolio analytics + guarded SQL
+  flowleap-patstat-graph/SKILL.md  # PATSTAT graph verbs
   persona-patent-attorney/SKILL.md
   persona-ip-analyst/SKILL.md
   persona-researcher/SKILL.md
@@ -419,6 +423,8 @@ skills/                            # 28 skills, embedded in the binary
   recipe-invention-disclosure/SKILL.md      # prosecution
   recipe-invalidity-analysis/SKILL.md       # litigation
   recipe-infringement-charting/SKILL.md     # litigation
+  recipe-maintenance-fees/SKILL.md          # prosecution
+  recipe-custom-dashboard/SKILL.md          # presentation
   recipe-audit-report/SKILL.md              # governance
 ```
 
