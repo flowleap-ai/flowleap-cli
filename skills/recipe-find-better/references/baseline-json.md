@@ -29,7 +29,7 @@ rebuild it from other calls. Fields are only added, never renamed.
 
 ## `documents[]`
 
-- `document`: DOCDB number without kind, for example `US5135330`.
+- `document`: DOCDB number without kind, for example `US5653436`.
 - `kinds[]`: the kinds seen, for example `["A1"]`.
 - `familyId`: always `null` today. Family dedupe is not applied.
 - `cells.<office>.text`: the human cell text.
@@ -53,7 +53,7 @@ rebuild it from other calls. Fields are only added, never renamed.
 
 1. **X or Y means examiner-assessed.** Only an examiner assigns a category.
    OPS can mark a categorised citation `citedBy: "applicant"` (example:
-   EP1602570 on EP2110298A3, `X,A` claim 13). It is still examiner's art.
+   US7819306 on EP2743895A1, `A,D` claims 1-18). It is still examiner's art.
 2. **Claim numbers belong to the citing claim set.** `relevantClaims` numbers
    the claims of `citing` as that office searched them: the application claims
    for an EP A3 search report, the pending claims for a US office action. Map
@@ -86,25 +86,28 @@ can sit lower. Rank by the steps below.
 3. Per granted independent claim, sort: X before Y; then more offices citing
    it with X or Y; then more independent claims reached.
 
-## Worked example: EP2110298B1 (critical date 2008-04-16)
+## Worked example: EP2743895B1 (critical date 2012-12-17)
 
-Granted independent claims 1, 6 and 10. Concordance: EP A2 claims 1+4 and US
-application claims 1, 5 map to claim 1; EP A2 claim 9 and US claim 15 map to
-claim 6; EP A2 claim 13 and US claim 22 map to claim 10. EP A2 claim 5 and US
-claim 8 (the "rod and stem" system) were not granted.
+Granted independent claims 1 and 13 (claim 11 refers back to "any proceeding
+claim"). Concordance: EP A1 claims 1 and 3 map to claim 1 (granted claim 1
+adds the A1 claim 3 features); EP A1 claims 2 and 4-11 map to granted claims
+2-10; A1 claims 12-13 map to claims 11-12; A1 claims 14-15 map to claim 13 and
+its dependent 14. EP A1 claims 16-18 (the "aperture plate and shutter"
+apparatus) were not granted.
 
 | Granted claim | Examiner's best art | Evidence in the Baseline |
 |---|---|---|
-| 1 | US5135330 A | EP `X` A2 cl. 1-5; US `X` cl. 1-4,6 (OA 2009-08-18) |
-| 1 | US4964287 A | EP `X` A2 cl. 1-3 |
-| 1 | US2007052286 A1 | US `X` cl. 1 (OA 2009-08-18) |
-| 6 | US5135330 A | US `X` cl. 15-21 (OA 2009-08-18); no EP X/Y on A2 cl. 9 |
-| 10 | US4763957 A | EP `X` A2 cl. 13 |
-| 10 | EP1602570 A1 | EP `X` A2 cl. 13, `citedBy: applicant` |
+| 1 | US5653436 A | EP `X` A1 cl. 1,12-15 |
+| 13 | US5653436 A | EP `X` A1 cl. 1,12-15 (cl. 14-15 map to claim 13) |
 
-The EP evidence is the X pair of each `categoryClaims`: for example US5135330
-reads `X cl. 1-5, A cl. 9,13` on the A3, so A2 claim 9 has no X or Y from it.
+The EP evidence is the X pair of each `categoryClaims`: US5653436 reads
+`X cl. 1,12-15, Y cl. 2-11,16-18` on the A1, so only A1 cl. 1,12-15 are X.
 
-Searched claims not granted: US2007052285 A1 (EP `X` A2 cl. 5), US5385360 A
-(US `X` cl. 10, dependent on cl. 8). Gap: no USPTO enriched-citation record for
-US8056987B2 (application 12756531).
+Not best art for an independent claim: WO2009103933 A1 (EP `Y` A1 cl.
+2-11,16-18) reaches only dependent claims 2-10, not claim 1. Searched claims
+not granted: US5653436 A and WO2009103933 A1 on A1 cl. 16-18, and
+WO2010014035 A1 (EP `X` cl. 16, citing EP2743895B1; the grant has 14 claims).
+Gaps: CN100594522 C is `X` cl. 16-18 of CN103871153A, but a CN member gives
+citations only, so its claim numbers cannot be mapped to the granted claims.
+No USPTO enriched-citation record for US9290983B2 (application 14101625): the
+US citations carry no category, so none counts as examiner's best art.
