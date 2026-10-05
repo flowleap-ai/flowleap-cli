@@ -1,6 +1,7 @@
 # Reading the Examiner Baseline JSON
 
 `flowleap --json patent examiner-baseline <publication>` prints one object.
+In a chat client the `examiner_baseline` tool returns the same object.
 Code computes every value from the offices' own records. Read it; do not
 rebuild it from other calls. Fields are only added, never renamed.
 
@@ -39,7 +40,12 @@ rebuild it from other calls. Fields are only added, never renamed.
   - `citedBy`: `examiner` or `applicant`, copied from the source.
   - `category`: `X`, `Y`, `A`, or a combination such as `X,A`. Absent when the
     office gave none.
-  - `relevantClaims`: for example `1-3,5,7,8`.
+  - `relevantClaims`: for example `1-3,5,7,8`. For a combined category this
+    is the first claim list of the search report, verbatim.
+  - `categoryClaims[]` (OPS only): each category with its own claims, for
+    example `[{"category": "X", "claims": "13"}, {"category": "A", "claims":
+    "1,5,9"}]`. Present when the search report pairs them. The cell `text`
+    then reads `X cl. 13, A cl. 1,5,9`.
   - `relevantPassages[]` (OPS), `phase` (OPS), `officeActionDate` and
     `officeActionType` (USPTO).
 
@@ -54,9 +60,11 @@ rebuild it from other calls. Fields are only added, never renamed.
    each number to the granted independent claims by comparing claim text (a
    claim concordance). A searched claim with no granted counterpart reaches no
    granted claim; list it under "searched claims not granted".
-3. **A combined category does not split its claims.** `X,A` with claims `1-5`
-   does not say which claims are X. Treat the document as X for ranking and
-   quote the category and claims verbatim in the report.
+3. **A combined category splits through `categoryClaims`.** `X,A` with
+   `categoryClaims` X `1-5` and A `9,13` is X for claims 1-5 only. Use the
+   pairs for ranking and quote them in the report. Without `categoryClaims`,
+   `X,A` with claims `1-5` does not say which claims are X: treat the document
+   as X for those claims and quote the category and claims verbatim.
 4. **Gaps stay gaps.** Copy each `gaps[].message` into the report. A CN, JP or
    KR member gives citations and English abstracts only; say that element
    mapping against those documents is not possible.
@@ -66,8 +74,15 @@ rebuild it from other calls. Fields are only added, never renamed.
 
 ## Ranking the examiner's best art per independent claim
 
+Any X or Y category counts as examiner-assessed, whatever `citedBy` says
+(rule 1). The order of `documents[]` is not this ranking: it puts rows with an
+`examiner` citation first, so a categorised row marked `citedBy: "applicant"`
+can sit lower. Rank by the steps below.
+
 1. Keep each citation whose `category` contains X or Y.
-2. Map its `relevantClaims` to granted independent claims (rule 2).
+2. Map its X and Y claims to granted independent claims (rule 2): the
+   `categoryClaims` pairs for X and Y when present, otherwise
+   `relevantClaims` (rule 3).
 3. Per granted independent claim, sort: X before Y; then more offices citing
    it with X or Y; then more independent claims reached.
 
@@ -80,13 +95,16 @@ claim 8 (the "rod and stem" system) were not granted.
 
 | Granted claim | Examiner's best art | Evidence in the Baseline |
 |---|---|---|
-| 1 | US5135330 A | EP `X,A` A2 cl. 1-5; US `X` cl. 1-4,6 (OA 2009-08-18) |
-| 1 | US4964287 A | EP `X,A` A2 cl. 1-3 |
+| 1 | US5135330 A | EP `X` A2 cl. 1-5; US `X` cl. 1-4,6 (OA 2009-08-18) |
+| 1 | US4964287 A | EP `X` A2 cl. 1-3 |
 | 1 | US2007052286 A1 | US `X` cl. 1 (OA 2009-08-18) |
 | 6 | US5135330 A | US `X` cl. 15-21 (OA 2009-08-18); no EP X/Y on A2 cl. 9 |
-| 10 | US4763957 A | EP `X,A` A2 cl. 13 |
-| 10 | EP1602570 A1 | EP `X,A` A2 cl. 13, `citedBy: applicant` |
+| 10 | US4763957 A | EP `X` A2 cl. 13 |
+| 10 | EP1602570 A1 | EP `X` A2 cl. 13, `citedBy: applicant` |
 
-Searched claims not granted: US2007052285 A1 (EP `X,A` A2 cl. 5), US5385360 A
+The EP evidence is the X pair of each `categoryClaims`: for example US5135330
+reads `X cl. 1-5, A cl. 9,13` on the A3, so A2 claim 9 has no X or Y from it.
+
+Searched claims not granted: US2007052285 A1 (EP `X` A2 cl. 5), US5385360 A
 (US `X` cl. 10, dependent on cl. 8). Gap: no USPTO enriched-citation record for
 US8056987B2 (application 12756531).

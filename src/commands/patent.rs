@@ -39,11 +39,16 @@ enum PatentCommand {
     #[command(
         long_about = "The Examiner Baseline: every document cited across a publication's \
 INPADOC family, as one matrix of cited document x office.\n\n\
-It walks the family (get_family), reads the references-cited block of every \
+It calls the backend examiner_baseline tool, so the CLI and the chat clients \
+print one identical Baseline. Against an older backend without that tool it \
+runs the same walk locally (--verbose names the path): it walks the family \
+(get_family), reads the references-cited block of every \
 publication of every member (get_bibliography: cited by examiner or applicant, \
 category, cited claims, phase, passages), and for a US grant adds the USPTO \
 enriched office-action citations of its application. A cell shows the category \
-and cited claims, or `applicant` when only the applicant cited the document. A \
+and cited claims, each category with its own claims where the search report \
+pairs them (X cl. 13, A cl. 1,5,9), or `applicant` when only the applicant \
+cited the document. A \
 member whose office returned no citation block is printed as a gap, never as \
 \"nothing cited\". No model is called; every count is the office's count.",
         after_help = "Examples:\n  flowleap patent examiner-baseline EP2110298B1\n  flowleap --json patent examiner-baseline US7722129B2"

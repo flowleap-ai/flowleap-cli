@@ -1,9 +1,10 @@
 # Tool names in the backend /v1/tools registry, one per line.
 # Vendored for tests/skills_connector_test.rs. Refresh when the registry changes:
 #   flowleap --json tools list | jq -r '.[].name' | sort
-# Fetched 2026-10-03 from https://api.flowleap.co.
+# Fetched 2026-10-05 from https://api.flowleap.co.
 compare_patents
 convert_patent_number
+examiner_baseline
 get_abstract
 get_application_documents
 get_assignments

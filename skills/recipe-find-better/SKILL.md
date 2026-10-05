@@ -24,9 +24,7 @@ only comparison is a count over quoted element rows.
 flowleap --json patent examiner-baseline <granted-publication>
 ```
 
-In a chat client there is no Baseline tool: build it from the tools in the
-`flowleap-shared` row for `patent examiner-baseline`, and label it "assembled
-by the agent, not computed".
+In a chat client call the examiner_baseline tool; it returns the same JSON.
 
 Read `documents[]`, `gaps[]` and `membersWalked[]` (field guide:
 [references/baseline-json.md](references/baseline-json.md)). Record the
@@ -60,6 +58,7 @@ Run all three tracks. Each one is mandatory. Use the commands in
    the X/Y patents, and the authors of the X/Y non-patent documents.
 3. **Classification co-occurrence**: the classifications of the target and of
    its X/Y documents, combined with the Discriminating Terms.
+   Show the statement as a Search Statement block — see flowleap-patent `references/search-statement.md`.
 
 Keep only documents published before the critical date. Log every query with
 its count in the working record, empty results too.

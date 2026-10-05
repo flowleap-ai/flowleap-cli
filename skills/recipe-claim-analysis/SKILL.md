@@ -53,7 +53,7 @@ claim at a time.
 4. **Write a search query per key element combination** with the self-written
    query method in `flowleap-patent` (extract terms, discriminating term,
    count probe). The element pairs, not single elements, usually carry the
-   discrimination.
+   discrimination. Show the statement as a Search Statement block — see flowleap-patent `references/search-statement.md`.
 
 Repeat for every independent claim. For each dependent claim, note how it
 narrows its parent (the added element). Done when every independent claim has an
