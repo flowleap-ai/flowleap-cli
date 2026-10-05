@@ -58,11 +58,13 @@ the free key at the end. See `flowleap-keys`.
 ## Step 4: Mine the Prosecution Record
 
 ```bash
-flowleap --json citation search <application-number> --category x    # what the examiner already found
+flowleap --json patent examiner-baseline <target-patent>             # art of record, every family member and office
 flowleap --json citation forward <target-patent> --size 50           # who cites it since
 ```
 
-Art the examiner never saw is stronger than art already of record.
+Read the Examiner Baseline as `recipe-find-better` Step 1 does: any X or Y
+category is examiner's art, and each gap is a gap, not "nothing cited". Art the
+examiner never saw is stronger than art already of record.
 
 ## Step 5: Tag References X/Y/A
 

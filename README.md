@@ -368,6 +368,7 @@ The CLI bundles 12 multi-step workflow recipes (`recipe-*` skills). Install them
 | `recipe-prior-art-search` | Comprehensive prior art search: query generation, dual EPO/USPTO search, academic sweep, deep dives on closest hits |
 | `recipe-patent-landscape` | Map a technology area: scoped searches, key players, recent activity, full-corpus filing analytics |
 | `recipe-freedom-to-operate` | FTO/clearance search: per-feature queries, blocking-patent search, legal-status and claims checks |
+| `recipe-find-better` | Post-grant: read the Examiner Baseline, run three logged expansion tracks, compare the examiner's best art with the art found per claim |
 | `recipe-claim-analysis` | Extract and analyze a patent's claims with full context and element decomposition |
 | `recipe-patent-to-report` | Extract everything about one patent into a structured report (dossier) |
 | `recipe-academic-literature-review` | Technology review combining scholarly literature and a matching patent sweep |
@@ -407,6 +408,7 @@ skills/                            # 28 skills, embedded in the binary
   persona-researcher/SKILL.md
   persona-startup-founder/SKILL.md
   recipe-prior-art-search/SKILL.md
+  recipe-find-better/SKILL.md
   recipe-patent-landscape/SKILL.md
   recipe-freedom-to-operate/SKILL.md
   recipe-claim-analysis/SKILL.md

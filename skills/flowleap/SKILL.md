@@ -91,6 +91,10 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
 - **EPO document data** (biblio, claims, description, family, legal) → `flowleap-ops`.
 - **Academic / non-patent literature** → `flowleap-academic`, `flowleap-npl`.
 - **Patent-law RAG** → `flowleap-legal`; **enriched citations** → `flowleap-citation`.
+- **Examiner Baseline** (`flowleap --json patent examiner-baseline <pub>` —
+  every document cited across a granted patent's family, by office, with gaps)
+  and **Find Better** (earlier or closer art than the examiners cited) →
+  `recipe-find-better`.
 - **Portfolio Analytics** (structured criteria — named applicant, CPC/IPC,
   office, year, family, grant status) → `flowleap-patstat`; free-text
   keyword analytics (`flowleap analytics`, Topic Analytics) stay below.
@@ -165,5 +169,5 @@ a `refresh-skills` next step.
 - Shared reference: `flowleap-shared` (auth, flags, config), `flowleap-auth`, `flowleap-keys`
 - Data sources: `flowleap-patent` (EPO CQL), `flowleap-uspto` (ODP Lucene), `flowleap-ops` (EPO documents), `flowleap-academic`, `flowleap-npl`, `flowleap-legal`, `flowleap-citation`, `flowleap-patstat` (Portfolio Analytics), `flowleap-patstat-graph` (Graph Analytics), `flowleap-tools` (facade)
 - Personas: `persona-patent-attorney`, `persona-ip-analyst`, `persona-researcher`, `persona-startup-founder`
-- Recipes (search/analysis): `recipe-prior-art-search`, `recipe-patent-landscape`, `recipe-freedom-to-operate`, `recipe-claim-analysis`, `recipe-patent-to-report`, `recipe-academic-literature-review`
+- Recipes (search/analysis): `recipe-prior-art-search`, `recipe-find-better`, `recipe-patent-landscape`, `recipe-freedom-to-operate`, `recipe-claim-analysis`, `recipe-patent-to-report`, `recipe-academic-literature-review`
 - Recipes (prosecution/litigation, full pack only): `recipe-office-action-response`, `recipe-invalidity-analysis`, `recipe-infringement-charting`, `recipe-claim-drafting`, `recipe-invention-disclosure`, `recipe-audit-report`
