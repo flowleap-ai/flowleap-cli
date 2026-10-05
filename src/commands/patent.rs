@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
 use crate::client::Context;
-use crate::commands::tools;
+use crate::commands::{examiner_baseline, tools};
 use crate::output;
 
 #[derive(Parser)]
@@ -34,6 +34,24 @@ enum PatentCommand {
         #[arg(long)]
         count_only: bool,
     },
+    /// The Examiner Baseline: every document cited across a publication's
+    /// family, by office and by who cited it, from the offices' own records
+    #[command(
+        long_about = "The Examiner Baseline: every document cited across a publication's \
+INPADOC family, as one matrix of cited document x office.\n\n\
+It walks the family (get_family), reads the references-cited block of every \
+publication of every member (get_bibliography: cited by examiner or applicant, \
+category, cited claims, phase, passages), and for a US grant adds the USPTO \
+enriched office-action citations of its application. A cell shows the category \
+and cited claims, or `applicant` when only the applicant cited the document. A \
+member whose office returned no citation block is printed as a gap, never as \
+\"nothing cited\". No model is called; every count is the office's count.",
+        after_help = "Examples:\n  flowleap patent examiner-baseline EP2110298B1\n  flowleap --json patent examiner-baseline US7722129B2"
+    )]
+    ExaminerBaseline {
+        /// Publication number with kind, e.g. EP2110298B1
+        publication: String,
+    },
 }
 
 pub async fn run(ctx: &Context, args: PatentArgs) -> Result<()> {
@@ -51,6 +69,9 @@ pub async fn run(ctx: &Context, args: PatentArgs) -> Result<()> {
             } else {
                 search(ctx, &query, limit, countries.as_deref()).await
             }
+        }
+        PatentCommand::ExaminerBaseline { publication } => {
+            examiner_baseline::run(ctx, &publication).await
         }
     }
 }

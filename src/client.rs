@@ -1217,6 +1217,16 @@ impl Context {
         Err(printed_error_for(&envelope).into())
     }
 
+    /// Render a failed envelope from [`Self::execute_json_envelope_with`] the
+    /// way `execute_json_body_or_error` does (envelope plus hint boxes) and
+    /// return the typed error that carries its exit code. For callers that
+    /// read envelopes themselves, record some failures as data, and must
+    /// still stop visibly on the rest.
+    pub fn fail_with_envelope(&self, envelope: &Value) -> anyhow::Error {
+        self.print_error_envelope(envelope);
+        printed_error_for(envelope).into()
+    }
+
     /// Backend ADR 0017 warn-band: once ≥80% of today's shared trial data
     /// budget is spent, SUCCESS envelopes carry a `trial_data_budget_low`
     /// warning (with `remaining` and `resets_at`). Surface it on stderr in
