@@ -85,6 +85,12 @@ can sit lower. Rank by the steps below.
    `relevantClaims` (rule 3).
 3. Per granted independent claim, sort: X before Y; then more offices citing
    it with X or Y; then more independent claims reached.
+4. When no X or Y citation exists (a US-origin family often has none), take
+   the documents with `citedBy: "examiner"` and no category, then the
+   documents a US office action rejected claims with under 102 or 103
+   (`source: "uspto_enriched"`). Show that basis beside each document. Never
+   take a document that only the applicant cited, with no category and no
+   rejection.
 
 ## Worked example: EP2743895B1 (critical date 2012-12-17)
 
