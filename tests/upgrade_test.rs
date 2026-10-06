@@ -94,8 +94,8 @@ async fn mount_release(server: &MockServer, tag: &str, asset: &str, bytes: &[u8]
 async fn raw_binary_self_updates_with_checksum_verification() {
     let server = MockServer::start().await;
     let asset = platform_asset();
-    let new_bytes = b"NEW-FLOWLEAP-BINARY-v0.9.9\n".to_vec();
-    mount_release(&server, "v0.9.9", &asset, &new_bytes).await;
+    let new_bytes = b"NEW-FLOWLEAP-BINARY-v99.0.0\n".to_vec();
+    mount_release(&server, "v99.0.0", &asset, &new_bytes).await;
 
     // Copy the built binary into a temp dir; the copy is a raw-binary install
     // (path has no node_modules/Cellar/.cargo marker) and is what self-updates.
@@ -150,7 +150,7 @@ async fn check_json_reports_channel_and_versions_without_acting() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/releases/latest"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "tag_name": "v0.9.9" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "tag_name": "v99.0.0" })))
         .mount(&server)
         .await;
 
@@ -183,7 +183,7 @@ async fn check_json_reports_channel_and_versions_without_acting() {
     let value: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("check output is JSON");
     assert_eq!(value["channel"], "raw-binary");
-    assert_eq!(value["latestVersion"], "0.9.9");
+    assert_eq!(value["latestVersion"], "99.0.0");
     assert_eq!(value["updateAvailable"], true);
     assert!(value["command"]
         .as_str()
