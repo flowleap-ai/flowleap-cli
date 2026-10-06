@@ -12,7 +12,7 @@ Write two files: `<publication>.find-better.md` (the report) and
 ```markdown
 # Find Better: <publication>
 
-Critical date: <earliest priority date>. Family members walked: <n>. Offices: <list>.
+Critical date: <earliest priority date, YYYY-MM-DD>. Family members walked: <n>. Offices: <list>.
 Scope: post-grant discovery. This report states no invalidity conclusion.
 
 ## Result per independent claim
@@ -48,6 +48,15 @@ no element mapping">
 | 2 inventors | <name> | in="<name>" AND pd<<critical date> | <count> | <kept> |
 | 3 classification | <cpc> | cpc=<cpc> AND ta=<term> AND pd<<critical date> | <count> | <kept> |
 ```
+
+Result column: write "No better art found for claim N; the examiner's best art
+remains <pub>" only when all three tracks ran a query and Track 1 has a hop 2.
+Otherwise write "Search incomplete for claim N: <reason>". Name only the
+examiner documents you scored; list the rest as "Examiner's best art named but
+not scored". Show the basis of a document without X or Y, for example
+"US3980041 (examiner-cited, no category)". Flag an examiner document with a P
+or E category, or published after the critical date, as "published after the
+critical date; not prior art for this claim unless the priority claim fails".
 
 ## Rules
 
