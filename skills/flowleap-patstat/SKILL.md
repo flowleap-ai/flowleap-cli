@@ -164,6 +164,8 @@ Four rules decide whether the number is right:
 - **Text discovery** (`flowleap.application_texts`) — *discovery returns
   identifiers, never document text as the answer.* The match idiom is exact:
   `to_tsvector('english', title) @@ plainto_tsquery('english', $q) AND title_lang = 'en'`.
+  `websearch_to_tsquery` may replace `plainto_tsquery` for phrases, `-excluded`
+  words and `or`; read its two traps in the recipes reference first.
   EXPLAIN does not bound a GIN seed, so bound it yourself with
   `ipr_type = 'PI'`, a year floor and/or an office. This lookup **outranks**
   the app's own CPC reference tables, which are the last-resort fallback for
