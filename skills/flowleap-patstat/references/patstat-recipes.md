@@ -338,6 +338,26 @@ Any other spelling — `ILIKE`, a different regconfig, no language predicate —
 seq-scans 122M title rows, plans at 7.1M–17M against the gate's 5M ceiling, and
 is **rejected**, not merely slow.
 
+**The tsquery on the right of `@@` is your choice.** The index matches the left
+side only, so `websearch_to_tsquery('english', $q)` uses it too. It reads search
+syntax: `"solid state"` is a phrase, `-polymer` excludes a word, `or` is OR.
+Two traps, both measured on the box:
+
+- **`or` joins only the two words beside it, and there are no brackets.**
+  `'sulfide or oxide electrolyte'` parses as `sulfid | (oxid & electrolyt)`, so
+  every title with "sulfide" matches. Group the OR with the tsquery `&&`
+  operator, or repeat the shared word on each side:
+
+  ```sql
+  to_tsvector('english', tx.title) @@ (websearch_to_tsquery('english', 'sulfide or oxide')
+                                       && websearch_to_tsquery('english', '"solid electrolyte" battery'))
+    AND tx.title_lang = 'en'
+  -- or: websearch_to_tsquery('english', '"sulfide electrolyte" or "oxide electrolyte"')
+  ```
+
+- **Excluded words alone cannot use the index.** `'-battery'` plans at 7.1M and
+  the gate rejects it. Keep at least one positive term.
+
 **Abstract variant: same idiom, different columns — but not yet verified.**
 Swap `tx.title` for `tx.abstract` and `tx.title_lang` for `tx.abstract_lang`.
 It is the higher-recall and more expensive path: reach for it when the title
