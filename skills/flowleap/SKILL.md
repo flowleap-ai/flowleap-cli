@@ -72,20 +72,6 @@ agents use a `fl_pat_` API token instead — see `flowleap-auth`.
 no `--base-url` needed. Developing the FlowLeap backend itself? Add
 `--base-url http://localhost:8000` to point at a local server.
 
-## Writing to the User
-
-Write your own words, in the chat answer and in every report, memo or chart
-you produce, in ASD-STE100 Simplified Technical English style. A sentence has
-at most 25 words and one instruction. A paragraph has one topic and at most
-6 sentences. Prefer the active voice. Use the same word for the same thing
-every time. Keep "the", "a" and "this". Keep technical names and terms of
-art; do not swap them for simpler words. Keep every word that states
-uncertainty ("likely", "possibly", "appears to", "may"): STE style shortens
-the sentence, it never removes a hedge or turns a possibility into a fact.
-Never rewrite quoted claims, cited passages or legal terms ("comprising",
-"consisting of", "means for"): their exact wording carries legal meaning, and
-a simpler word can change a claim's scope.
-
 ## Where Things Live
 
 - **Auth, global flags, config, output formats** → `flowleap-shared`; login,
