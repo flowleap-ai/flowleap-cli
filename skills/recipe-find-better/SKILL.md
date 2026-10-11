@@ -73,15 +73,21 @@ Run all three tracks. Each one is mandatory. Use the commands in
    read the titles of the top hits of each variant before the critical date.
    Then run one **title-phrase query** per Discriminating Term,
    `ti="<two-word phrase from the claim>"`, because old US documents often
-   have no abstract in OPS.
+   have no abstract in OPS. When the target carries 2000-series indexing
+   codes, also run the main group with combinations of 2-3 indexing codes it
+   shares with the examiner's documents, with no terms. Read every result set
+   in full (page through it with `ops search --start/--end`) or narrow it
+   until you can; never judge a set from its first page. Then log the
+   **recall check**: how many Baseline documents, matched by family, the
+   Track 3 queries returned.
    Show the statement as a Search Statement block — see flowleap-patent `references/search-statement.md`.
 
 Keep only documents published before the critical date. Log every query with
 its count in the working record, empty results too.
 
-Done when each track has its log, Track 3 has its term-drop variants and its
-title-phrase queries, and each kept candidate has its claims or full text
-pulled.
+Done when each track has its log, Track 3 has its term-drop variants, its
+title-phrase queries, its indexing-code combinations and its recall check, and
+each kept candidate has its claims or full text pulled.
 
 ## Step 4: Compare
 

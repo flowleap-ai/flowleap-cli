@@ -37,7 +37,8 @@ so no `flowleap …` command can run there.
 
 | Command family | Tool(s) | Notes |
 |---|---|---|
-| `ops biblio` / `claims` / `description` / `family` / `legal` / `abstract` | `get_bibliography`, `get_claims`, `get_description`, `get_family`, `get_legal_status`, `get_abstract` | `get_family` is the INPADOC extended family |
+| `ops biblio` / `claims` / `description` / `family` / `legal` / `abstract` | `get_bibliography`, `get_claims`, `get_description`, `get_family`, `get_legal_status`, `get_abstract` | `get_family` is the INPADOC extended family; `--resolve-npl` is `resolve_npl: true` |
+| `ops register-biblio` | `get_register_biblio` | EP only: representatives of record, opponents |
 | `patent search`, `ops search` | `search_patents` | `provider: "epo_ops"`, CQL |
 | `uspto search` | `search_patents` | `provider: "uspto"`, Lucene |
 | `uspto application` / `grant` / `continuity` | `get_us_application`, `get_us_grant`, `get_continuity` | |
@@ -47,6 +48,7 @@ so no `flowleap …` command can run there.
 | EPO forward citations (no command) | `get_citations` | |
 | `patent examiner-baseline` | `examiner_baseline` | In a chat client call the examiner_baseline tool; it returns the same JSON. |
 | `academic search`, `npl` | `search_academic`, `search_npl` | |
+| `npl-work` | `get_npl_work` | one cited paper: DOI, OpenAlex id or citation string |
 | `legal search` / `jurisdictions` | `reference_search`, `get_legal_jurisdictions` | |
 | `analytics` | `patent_analytics` | |
 | `ocr` | `ocr` | |

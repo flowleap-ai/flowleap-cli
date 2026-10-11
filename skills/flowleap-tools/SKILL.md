@@ -85,7 +85,8 @@ Search: `search_patents` (`provider=epo_ops` CQL | `uspto` Lucene),
 Retrieval (any publication number, EPO OPS worldwide): `get_bibliography`,
 `get_abstract`, `get_claims`, `get_description`, `get_fulltext`, `get_family`
 (INPADOC extended family), `get_patent_family` (simple family),
-`get_legal_status`, `get_register_events`, `get_citations`, `get_patent_image`,
+`get_legal_status`, `get_register_events`, `get_register_biblio` (EP
+representatives and opponents), `get_citations`, `get_patent_image`,
 `convert_patent_number`.
 
 US lookups and prosecution: `get_us_grant`, `get_us_application`,
@@ -100,7 +101,8 @@ Compound (one call, multiple sources): `get_patent_summary`, `compare_patents`
 (2-10 patents), `get_prosecution_timeline`, `get_patent_term`.
 
 Literature and reference: `search_academic` (Semantic Scholar + arXiv),
-`search_npl` (OpenAlex), `reference_search` (patent-law RAG: EPC, EPO
+`search_npl` (OpenAlex), `get_npl_work` (one cited paper to its OpenAlex
+record), `reference_search` (patent-law RAG: EPC, EPO
 Guidelines, MPEP, …), `get_legal_jurisdictions`.
 
 Analytics and documents: `patent_analytics` (Topic Analytics, free-text

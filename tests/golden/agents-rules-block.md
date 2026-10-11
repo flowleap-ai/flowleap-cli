@@ -66,12 +66,16 @@ flowleap --json legal jurisdictions
 flowleap --json tools run reference_search query='inventive step' jurisdiction=EPO
 ```
 
-#### flowleap-npl — Search non-patent literature (scholarly works via OpenAlex) with year, open-access and publication-type filters.
+#### flowleap-npl — Search non-patent literature (scholarly works via OpenAlex) with year, open-access and publication-type filters, and resolve a cited paper (DOI, OpenAlex id or an office's citation string) to its record.
 
 ```bash
 flowleap --json npl "perovskite solar cell stability" --limit 5
 flowleap --json npl "CRISPR delivery" --from-year 2020 --to-year 2024 --open-access
 flowleap --json npl "transformer attention" --type preprint
+flowleap --json npl "hydraulic accumulator bypass" --to-year 2022 --type dissertation
+flowleap --json npl-work 10.1038/nature14539
+flowleap --json npl-work "SMITH J: 'Hydraulic actuator control', IEEE TRANS., 2015"
+flowleap --json ops biblio EP3000000A3 --resolve-npl
 ```
 
 #### flowleap-ops — Direct EPO Open Patent Services access through the FlowLeap backend — CQL search plus per-document bibliography, claims, description, family, legal status, and abstract.
@@ -84,7 +88,7 @@ flowleap ops description <doc> --lang en
 flowleap ops family <doc>
 flowleap ops legal <doc>
 flowleap ops abstract <doc>
-flowleap convert-number US5443036.A --to docdb
+flowleap ops register-biblio <EP-doc>
 ```
 
 #### flowleap-patent — Search EPO patents with CQL you write yourself — field reference, the discriminating-term rule, and the mandatory count probe.
@@ -162,5 +166,5 @@ flowleap --json uspto adjustment 14412875
 - **recipe-office-action-response** — Prosecution recipe for turning an office action into a structured draft response — OCR the OA, pull every cited reference's claims and bibliography, map rejections element-by-element, and ground arguments in MPEP/EPO guideline citations. Trigger when the user asks to respond to an office action, analyze examiner rejections, or prepare arguments against novelty/obviousness (102/103, Art. 54/56) objections.
 - **recipe-patent-landscape** — Patent-landscape analysis for a technology area — scoped dual-database search, key-player identification, full-corpus filing analytics, and CPC-versus-year white-space detection. Trigger when the user asks to map a technology space, identify who patents in an area, or report filing trends and white space.
 - **recipe-patent-to-report** — Formatted single-patent dossier — pull bibliography, abstract, claims, description, family, legal status, prosecution timeline, figures, and related art into one structured Markdown report. Trigger when the user asks for a complete profile, dossier, or report on a specific patent.
-- **recipe-prior-art-search** — Comprehensive prior-art / novelty search before filing — natural-language query generation, dual EPO/USPTO patent search, an academic literature sweep, and X/Y/A tagging of the closest hits. Trigger when the user asks to find prior art for an invention, run a novelty search, or check what already exists before filing.
+- **recipe-prior-art-search** — Comprehensive prior-art / novelty search before filing or on a published patent — per-element synonym rows, dual EPO/USPTO patent search with a classification-only track and a citation track, an NPL sweep (OpenAlex first), a recall check against the Examiner Baseline, and X/Y/A tagging of the closest hits. Trigger when the user asks to find prior art for an invention, run a novelty search, or check what already exists before filing.
 <!-- END FLOWLEAP AGENT RULES -->

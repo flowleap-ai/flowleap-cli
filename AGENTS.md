@@ -38,7 +38,7 @@ before trusting `skills install` output or regenerating goldens.
 | `src/commands/uspto.rs` | USPTO ODP search, grants, applications, continuity, file wrapper (transactions/assignments/foreign-priority/adjustment/attorney/documents + OCR document text) |
 | `src/commands/ops.rs` | EPO OPS document reads (biblio, claims, description, family, legal, abstract) |
 | `src/commands/academic.rs` | Academic literature search |
-| `src/commands/npl.rs` | Non-patent literature search (OpenAlex) |
+| `src/commands/npl.rs` | Non-patent literature search (OpenAlex) and `npl-work`, one cited paper to its OpenAlex record |
 | `src/commands/legal.rs` | Patent-law document search (legal RAG) |
 | `src/commands/citation.rs` | USPTO enriched citation search |
 | `src/commands/api.rs` | Profile/usage + raw API escape hatch |
@@ -238,7 +238,8 @@ longer calls them.
 |---------|------|
 | `patent search`, `ops search` | `search_patents` (`provider: epo_ops`) |
 | `uspto search` | `search_patents` (`provider: uspto`) |
-| `ops biblio` / `abstract` / `claims` / `description` / `legal` | `get_bibliography` / `get_abstract` / `get_claims` / `get_description` / `get_legal_status` |
+| `ops biblio` / `abstract` / `claims` / `description` / `legal` | `get_bibliography` / `get_abstract` / `get_claims` / `get_description` / `get_legal_status` (`biblio --designated-states` → `include_designated_states`, `--resolve-npl` → `resolve_npl`; both opt-in, each costs extra reads) |
+| `ops register-biblio` | `get_register_biblio` (EP Register: representatives of record, opponents) |
 | `ops family` | `get_family` — the **INPADOC extended family**. `get_patent_family` is the narrower simple-family equivalents tool |
 | `uspto grant` / `application` / `continuity` | `get_us_grant` / `get_us_application` / `get_continuity` |
 | `uspto transactions` / `assignments` / `foreign-priority` / `adjustment` / `attorney` | `get_transactions` / `get_assignments` / `get_foreign_priority` / `get_patent_term_adjustment` / `get_attorney` |
@@ -247,7 +248,8 @@ longer calls them.
 | `citation novelty` | `search_office_action_citations` with `category: "X"`, `examiner_cited_only: true` — a recipe, not a tool of its own |
 | `patent examiner-baseline` | `examiner_baseline` (`publication`), after a `GET /v1/tools` check. When the registry does not list it (older backend), the fallback walk: `get_family`, then `get_bibliography` per member publication, `get_us_grant` per US grant (resolves the application number) and `search_office_action_citations` (`size: 1000`) per resolved application. A per-document failure becomes a gap row; a key gate, 401/403, 402, 429 or 410 stops the verb with its usual exit code |
 | `legal search` / `jurisdictions` | `reference_search` / `get_legal_jurisdictions` |
-| `academic search`, `npl` | `search_academic` / `search_npl` |
+| `academic search`, `npl` | `search_academic` / `search_npl` (human output names a failed `search_academic` source on stderr) |
+| `npl-work` | `get_npl_work` (`<reference>` → `reference`) |
 | `analytics`, `ocr` | `patent_analytics` / `ocr` |
 | `compare` / `figures` / `summary` / `timeline` / `convert-number` | `compare_patents` / `get_patent_image` / `get_patent_summary` / `get_prosecution_timeline` / `convert_patent_number` |
 | `patstat portfolio` | `patstat_portfolio` (`--from-year`/`--to-year` → `from_year`/`to_year`; sends `offices: "all"` by default so every office stays in the table, `--offices top` sends the tool default `top`, #107) |

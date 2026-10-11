@@ -78,7 +78,12 @@ common failure is dropping the phrase that *is* the invention.
 
 Every query needs at least one **discriminating** term — one that separates this
 invention from the millions of generic patents in its technology area. A CPC
-code is never discriminating: it names a neighbourhood, not a house. For "AI for
+code is never discriminating: it names a neighbourhood, not a house. The one
+exception is a prior-art classification-only track: a main group AND two or
+three specific indexing codes (2000-series, e.g. `cpc=F15B7/006 AND
+cpc=F15B2211/7053 AND cpc=F15B2211/785`) is a set small enough to read in
+full, and it finds documents whose wording no keyword query matches (see
+`recipe-prior-art-search`, Step 2). For "AI for
 patent analysis", the discriminating term is `ta="patent analysis"` — never just
 `ta="artificial intelligence"`, and `ic=G06N` alone returns every
 machine-learning patent ever filed.
@@ -150,6 +155,14 @@ A query you never probed is a guess; in a prior-art search a query returning
 thousands of hits instead of tens means the closest art is never seen. A
 prior-art search starts broad and narrows — you cannot notice what a too-narrow
 query never returned.
+
+**Reading the set.** Results come back newest first, not by relevance, and
+`--limit` stops at 100: older art is at the end. A set you rely on is read in
+full by paging `flowleap --json ops search --cql '<query>' --start 101 --end
+200` (and so on), or narrowed until it can be. Never judge a set from its first
+page. OPS returns one publication per family, so a document you expect may
+appear as another member (a CA or WO publication for a US one): compare by
+family.
 
 ### Recall vs precision
 
