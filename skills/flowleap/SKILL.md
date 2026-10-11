@@ -72,6 +72,15 @@ agents use a `fl_pat_` API token instead — see `flowleap-auth`.
 no `--base-url` needed. Developing the FlowLeap backend itself? Add
 `--base-url http://localhost:8000` to point at a local server.
 
+## Writing to the User
+
+Write your own explanations in ASD-STE100 Simplified Technical English style:
+short sentences, active voice, one meaning per word. Keep technical names and
+terms of art; do not swap them for simpler words. Never rewrite quoted claims,
+cited passages or legal terms ("comprising", "consisting of", "means for"):
+their exact wording carries legal meaning, and a simpler word can change a
+claim's scope.
+
 ## Where Things Live
 
 - **Auth, global flags, config, output formats** → `flowleap-shared`; login,
