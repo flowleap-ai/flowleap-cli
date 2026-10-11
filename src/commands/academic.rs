@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::client::Context;
 use crate::commands::tools;
@@ -121,6 +121,64 @@ async fn search(
         Some(papers) => output::print_value(&ctx.output_format, papers, columns),
         None => output::print_value(&ctx.output_format, &result, columns),
     }
+    for note in source_notes(&result) {
+        eprintln!("{note}");
+    }
 
     Ok(())
+}
+
+/// One stderr line per source that did not answer, so a rate-limited source is
+/// not read as "no literature exists". `--json` carries the same verdicts in
+/// the payload's `sources` array.
+pub fn source_notes(result: &Value) -> Vec<String> {
+    result["sources"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|s| s["status"].as_str().is_some_and(|status| status != "ok"))
+        .map(|s| {
+            let name = match s["source"].as_str().unwrap_or("unknown") {
+                "scholar" => "Semantic Scholar",
+                "arxiv" => "arXiv",
+                other => other,
+            };
+            let status = s["status"].as_str().unwrap_or("error").replace('_', " ");
+            let mut note =
+                format!("note: {name} {status}; its papers are missing from these results");
+            if let Some(after) = s["retryAfter"].as_u64() {
+                note.push_str(&format!(" (retry after {after}s)"));
+            }
+            note
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_source_is_named_not_silent() {
+        let notes = source_notes(&json!({
+            "sources": [
+                { "source": "scholar", "status": "rate_limited", "returned": 0, "retryAfter": 30 },
+                { "source": "arxiv", "status": "ok", "returned": 5 }
+            ]
+        }));
+        assert_eq!(notes.len(), 1);
+        assert!(
+            notes[0].contains("Semantic Scholar rate limited"),
+            "{notes:?}"
+        );
+        assert!(notes[0].contains("retry after 30s"), "{notes:?}");
+    }
+
+    #[test]
+    fn all_sources_ok_prints_nothing() {
+        assert!(
+            source_notes(&json!({ "sources": [{ "source": "arxiv", "status": "ok" }] })).is_empty()
+        );
+        assert!(source_notes(&json!({ "papers": [] })).is_empty());
+    }
 }

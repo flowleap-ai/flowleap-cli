@@ -43,12 +43,26 @@ All document commands take a patent document number (e.g., `EP1234567`).
 ```bash
 flowleap ops biblio <doc>                  # Bibliographic data
 flowleap ops biblio <doc> --designated-states  # …plus the EPC states it designates
+flowleap ops biblio <doc> --resolve-npl    # …plus the OpenAlex record of each cited paper
 flowleap ops claims <doc> --lang en        # Claims text
 flowleap ops description <doc> --lang en   # Full description
 flowleap ops family <doc>                  # Patent family members
 flowleap ops legal <doc>                   # Legal status events + designated states
 flowleap ops abstract <doc>                # Abstract text
+flowleap ops register-biblio <EP-doc>      # EP Register: representatives, opponents, status
 ```
+
+`biblio --resolve-npl` looks each `citedReferences[].npl` string up in
+OpenAlex and attaches `nplWork` (`status` `matched` | `candidates` |
+`not_found` | `lookup_failed`, and on a match the title, DOI and abstract
+preview). Only `matched` is the cited paper. It costs one OpenAlex read per
+reference, so it is never on by default; see `flowleap-npl` for one reference
+at a time (`npl-work`).
+
+`register-biblio` reads the EP Register record (EP publications only): title,
+applicants, status, filing and publication dates, the professional
+representatives of record before the EPO, and the opponents named in any
+opposition. For a US attorney of record use `uspto attorney`.
 
 Doc IDs are normalized server-side — `ep1.000.000` and `EP1000000` both resolve.
 
@@ -66,7 +80,8 @@ retryable error — don't retry it; fall back to another source for that documen
 
 Every `ops` command runs a tool on the Tools facade — `search_patents` for
 `ops search`, then `get_bibliography`, `get_abstract`, `get_claims`,
-`get_description`, `get_legal_status`, and `get_family` for the document reads.
+`get_description`, `get_legal_status`, `get_family` and `get_register_biblio`
+for the document reads.
 The per-source provider route each used to call is a retired endpoint.
 
 The facade answers one envelope,

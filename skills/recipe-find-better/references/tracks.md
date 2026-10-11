@@ -19,7 +19,10 @@ flowleap --json ops biblio <hop-1-document>     # hop 2: their citedReferences[]
 ```
 
 - Read `citedReferences[].docId` and `.kind` for patents and `.npl` for
-  non-patent citations.
+  non-patent citations. `ops biblio <doc> --resolve-npl` attaches each `npl`
+  entry's OpenAlex record as `nplWork` (DOI, authors, abstract);
+  `npl-work "<cited string>"` resolves one. Only a `matched` record is the
+  cited paper; its authors feed Track 2.
 - Hop 2 runs on every hop-1 document that is not of record and is published
   before the critical date.
 - Optional, for a wider net: `flowleap --json patstat graph neighborhood
@@ -54,7 +57,9 @@ flowleap --json npl "<author name> <discriminating term>" --to-year <priority-ye
 ## Track 3: classification co-occurrence
 
 Collect the CPC codes (`cpc[]` in `ops biblio`) of the target and of each X/Y
-document. Use the codes that the target shares with at least one X/Y document.
+document, including the 2000-series **indexing codes** (e.g.
+`F15B2211/7053`). Use the codes that the target shares with at least one X/Y
+document.
 
 ```bash
 flowleap --json tools run search_patents query='cpc=<code> AND ta=<discriminating term> AND pd<<critical-date>' range=1-1 details=false
@@ -69,6 +74,33 @@ flowleap --json patent search --query 'cpc=<code> AND (ta=<term> OR ta=<synonym>
 - Example (EP2743895B1): `cpc=E05G1/026 AND ta=lock AND ta=door AND
   pd<20121217` gave 63.
 - Log: per code, each query and its count.
+
+### Indexing-code combinations (mandatory when the target has indexing codes)
+
+Indexing codes describe features independent of wording. Run the main group
+AND each combination of 2-3 indexing codes that the target shares with the
+examiner's documents, with the date limit and no terms, e.g.
+`cpc=F15B7/006 AND cpc=F15B2211/7053 AND cpc=F15B2211/785 AND pd<20230810`
+(45 hits, probed live 2026-10-11; it holds three of the four ISR documents of
+WO2025031952A1, one as a CA family member). Log each combination with its
+count and read every title.
+
+### Reading a result set
+
+Results come back newest first, not by relevance, and `patent search --limit`
+stops at 100. Read every title of a set you rely on by paging
+`flowleap --json ops search --cql '<query>' --start 101 --end 200` (and so on),
+or narrow the query until you can. Never judge a set from its first page. OPS
+returns one publication per family: match a hit to a Baseline document by
+family, not by number.
+
+### Recall check
+
+After Track 3, count how many Baseline documents (X, Y and A, by family) its
+queries returned, and log "Track 3 retrieved n of m Baseline documents". When
+the examiners' own art is missing from the classification sets, the queries
+are too narrow for new art too: add the missing documents' indexing codes or
+synonyms and run again before you trust a "no better art found".
 
 ### Term-drop pass (mandatory)
 

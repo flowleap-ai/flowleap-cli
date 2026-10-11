@@ -88,8 +88,11 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
   a missing-key gap, ask at the end; PATSTAT, legal, and academic/NPL stay live
   keyless as *different* data. Full doctrine: `flowleap-keys`.
 - **Patent search & CQL** → `flowleap-patent`; **USPTO ODP** → `flowleap-uspto`.
-- **EPO document data** (biblio, claims, description, family, legal) → `flowleap-ops`.
-- **Academic / non-patent literature** → `flowleap-academic`, `flowleap-npl`.
+- **EPO document data** (biblio, claims, description, family, legal, EP
+  Register representatives and opponents) → `flowleap-ops`.
+- **Non-patent literature** → `flowleap-npl` first (OpenAlex search, and
+  `npl-work` to resolve a paper an office cited), `flowleap-academic`
+  (Semantic Scholar + arXiv) as the second pass.
 - **Patent-law RAG** → `flowleap-legal`; **enriched citations** → `flowleap-citation`.
 - **Examiner Baseline** (`flowleap --json patent examiner-baseline <pub>` —
   every document cited across a granted patent's family, by office, with gaps)

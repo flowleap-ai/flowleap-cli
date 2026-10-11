@@ -54,7 +54,7 @@ Tools-facade equivalent: `search_academic` (`query=`, `sources=`,
 
 ## Response Format (JSON)
 
-The CLI prints the tool's `data` payload — `{ query, total, papers }`. The
+The CLI prints the tool's `data` payload — `{ query, total, papers, sources }`. The
 envelope fields (`success`, `executionTimeMs`, `cached`) sit outside it; add
 `--verbose` to see the cache verdict and timing on stderr.
 
@@ -69,8 +69,23 @@ envelope fields (`success`, `executionTimeMs`, `cached`) sit outside it; add
       "year": "2024",
       "source": "arxiv",
       "url": "https://example.com/paper",
-      "abstract": "..."
+      "abstract": "...",
+      "doi": "10.1000/example",
+      "alsoIn": ["scholar"]
     }
+  ],
+  "sources": [
+    { "source": "scholar", "status": "rate_limited", "returned": 0, "retryAfter": 30 },
+    { "source": "arxiv", "status": "ok", "returned": 1, "totalHits": 214 }
   ]
 }
 ```
+
+`sources[]` reports every requested source: `ok`, `rate_limited` or `error`.
+A source that failed contributed no papers, so its absence is a gap, never
+"no literature exists"; the human and table output name it on stderr.
+`total` is the number of papers returned; `totalHits` is a source's own match
+count. Duplicates across sources are merged (`alsoIn` names the other one).
+
+For a broad NPL sweep run `flowleap npl` (OpenAlex) first and use this command
+as the second pass (see `flowleap-npl`).

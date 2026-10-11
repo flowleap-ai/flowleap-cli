@@ -90,6 +90,8 @@ enum Commands {
     Academic(academic::AcademicArgs),
     /// Search non-patent literature
     Npl(npl::NplArgs),
+    /// Resolve a cited paper (DOI, OpenAlex id or citation string) to its OpenAlex record
+    NplWork(npl::NplWorkArgs),
     /// Search patent-law documents
     Legal(legal::LegalArgs),
     /// Search USPTO citation/prior-art data
@@ -343,6 +345,7 @@ async fn dispatch(command: Commands, ctx: &client::Context) -> Result<()> {
         Commands::Uspto(args) => uspto::run(ctx, args).await,
         Commands::Academic(args) => academic::run(ctx, args).await,
         Commands::Npl(args) => npl::run(ctx, args).await,
+        Commands::NplWork(args) => npl::run_work(ctx, args).await,
         Commands::Legal(args) => legal::run(ctx, args).await,
         Commands::Citation(args) => citation::run(ctx, args).await,
         Commands::Analytics(args) => analytics::run(ctx, args).await,

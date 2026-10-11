@@ -107,6 +107,42 @@ fn ops_biblio_requests_designated_states_only_on_demand() {
     );
 }
 
+/// Cited-NPL resolution costs one OpenAlex read per reference, so it too is
+/// sent only on demand, and it combines with the designated-states join.
+#[test]
+fn ops_biblio_resolves_cited_npl_only_on_demand() {
+    let body = dry_run(&["ops", "biblio", "EP1000000"])["body"].clone();
+    assert!(
+        body.get("resolve_npl").is_none(),
+        "biblio asked for NPL resolution unprompted: {body}"
+    );
+
+    assert_tool_call(
+        &[
+            "ops",
+            "biblio",
+            "EP1000000",
+            "--resolve-npl",
+            "--designated-states",
+        ],
+        "get_bibliography",
+        &[
+            ("patent_number", json!("EP1000000")),
+            ("resolve_npl", json!(true)),
+            ("include_designated_states", json!(true)),
+        ],
+    );
+}
+
+#[test]
+fn ops_register_biblio_reads_the_ep_register() {
+    assert_tool_call(
+        &["ops", "register-biblio", "EP1000000"],
+        "get_register_biblio",
+        &[("patent_number", json!("EP1000000"))],
+    );
+}
+
 #[test]
 fn ops_search_uses_the_epo_leg_of_search_patents() {
     assert_tool_call(
@@ -328,6 +364,19 @@ fn literature_commands_map_onto_their_search_tools() {
             ("limit", json!(5)),
             ("filter", json!({ "open_access": true, "type": "preprint" })),
         ],
+    );
+
+    // The full OpenAlex type list the tool accepts, not only the original four.
+    assert_tool_call(
+        &["npl", "hydraulic actuator", "--type", "dissertation"],
+        "search_npl",
+        &[("filter", json!({ "type": "dissertation" }))],
+    );
+
+    assert_tool_call(
+        &["npl-work", "10.1038/nature14539"],
+        "get_npl_work",
+        &[("reference", json!("10.1038/nature14539"))],
     );
 }
 

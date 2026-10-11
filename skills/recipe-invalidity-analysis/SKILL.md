@@ -44,10 +44,18 @@ flowleap --json tools run search_patents query='<CQL for the element combination
 flowleap --json patent search --query "<CQL for the element combination>" --limit 30
 flowleap --json uspto search --query "<self-written ODP Lucene>" --limit 30   # title + metadata only
 
-# Non-patent art — bound by the critical date
-flowleap --json academic search "<element keywords>" --to-year <priority-year> --limit 20
+# Non-patent art — bound by the critical date. OpenAlex first, then
+# Semantic Scholar + arXiv as a second pass; dedupe by DOI or title
 flowleap --json npl "<element keywords>" --to-year <priority-year> --limit 20
+flowleap --json academic search "<element keywords>" --to-year <priority-year> --limit 20
 ```
+
+NPL hits hard here: printed publications are fully usable in IPR, and
+examiners rarely searched them. Papers already of record are resolved, not
+searched: run `flowleap --json ops biblio <target-patent> --resolve-npl` (for an
+EP family, on the A3 search-report publication) or `flowleap --json npl-work
+"<cited string or DOI>"` for one, before the sweep, so it logs them as art of
+record and aims past them. Only a `matched` record is the cited paper.
 
 A `provider_keys_required` on either office is a missing patent-data key, not an
 exhausted search: hunt the live office and the non-patent art in full, record the

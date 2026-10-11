@@ -37,6 +37,12 @@ enum OpsCommand {
         /// states (one extra EPO read — they are not in the biblio document)
         #[arg(long)]
         designated_states: bool,
+
+        /// Also look up each cited non-patent reference (citedReferences[].npl)
+        /// in OpenAlex and attach its record as `nplWork` (one OpenAlex read
+        /// per reference)
+        #[arg(long)]
+        resolve_npl: bool,
     },
     /// Get claims text for a patent
     Claims {
@@ -69,6 +75,11 @@ enum OpsCommand {
         /// Patent document number
         doc: String,
     },
+    /// EP Register bibliography: representatives of record, opponents, status
+    RegisterBiblio {
+        /// EP publication number (e.g., EP1000000)
+        doc: String,
+    },
 }
 
 pub async fn run(ctx: &Context, args: OpsArgs) -> Result<()> {
@@ -79,12 +90,19 @@ pub async fn run(ctx: &Context, args: OpsArgs) -> Result<()> {
         // The designated states live in the INPADOC legal record, not in the
         // bibliography document, so the backend charges an extra OPS read for
         // them — opt-in, never on by default.
+        // Cited-NPL resolution is likewise opt-in: one OpenAlex read per
+        // reference.
         OpsCommand::Biblio {
             doc,
             designated_states,
+            resolve_npl,
         } => {
-            let extra = designated_states.then_some(("include_designated_states", json!(true)));
-            document_with(ctx, "get_bibliography", &doc, None, extra).await
+            let extras = [
+                designated_states.then_some(("include_designated_states", json!(true))),
+                resolve_npl.then_some(("resolve_npl", json!(true))),
+            ];
+            let extras: Vec<_> = extras.into_iter().flatten().collect();
+            document_with(ctx, "get_bibliography", &doc, None, &extras).await
         }
         OpsCommand::Claims { doc, lang } => document(ctx, "get_claims", &doc, Some(&lang)).await,
         OpsCommand::Description { doc, lang } => {
@@ -96,6 +114,9 @@ pub async fn run(ctx: &Context, args: OpsArgs) -> Result<()> {
         OpsCommand::Family { doc } => document(ctx, "get_family", &doc, None).await,
         OpsCommand::Legal { doc } => document(ctx, "get_legal_status", &doc, None).await,
         OpsCommand::Abstract { doc } => document(ctx, "get_abstract", &doc, None).await,
+        OpsCommand::RegisterBiblio { doc } => {
+            document(ctx, "get_register_biblio", &doc, None).await
+        }
     }
 }
 
@@ -110,25 +131,25 @@ async fn search(ctx: &Context, cql: &str, start: u32, end: u32) -> Result<()> {
 /// Read one document projection through the facade. Every ops read is a
 /// single-document tool taking `patent_number`, optionally with a language.
 async fn document(ctx: &Context, tool: &str, doc: &str, lang: Option<&str>) -> Result<()> {
-    document_with(ctx, tool, doc, lang, None).await
+    document_with(ctx, tool, doc, lang, &[]).await
 }
 
-/// `document`, plus one optional extra input field. Every ops read goes through
-/// here so the tool call is built in one place; only `biblio` passes an extra,
-/// for the opt-in `include_designated_states` join.
+/// `document`, plus optional extra input fields. Every ops read goes through
+/// here so the tool call is built in one place; only `biblio` passes extras,
+/// for the opt-in `include_designated_states` join and `resolve_npl` lookup.
 async fn document_with(
     ctx: &Context,
     tool: &str,
     doc: &str,
     lang: Option<&str>,
-    extra: Option<(&str, Value)>,
+    extras: &[(&str, Value)],
 ) -> Result<()> {
     let mut input = json!({ "patent_number": doc });
     if let Some(lang) = lang {
         input["language"] = json!(lang);
     }
-    if let Some((key, value)) = extra {
-        input[key] = value;
+    for (key, value) in extras {
+        input[*key] = value.clone();
     }
     if let Some(data) = tools::call_tool_data(ctx, tool, &input).await? {
         output::print_json(&data);
