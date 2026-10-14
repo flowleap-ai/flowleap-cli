@@ -144,6 +144,24 @@ fn ops_register_biblio_reads_the_ep_register() {
 }
 
 #[test]
+fn ops_register_search_searches_the_ep_register() {
+    assert_tool_call(
+        &[
+            "ops",
+            "register-search",
+            "--cql",
+            "re=Kreuels",
+            "--start",
+            "2",
+            "--end",
+            "4",
+        ],
+        "search_register",
+        &[("query", json!("re=Kreuels")), ("range", json!("2-4"))],
+    );
+}
+
+#[test]
 fn ops_search_uses_the_epo_leg_of_search_patents() {
     assert_tool_call(
         &[

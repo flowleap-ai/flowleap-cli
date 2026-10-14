@@ -80,7 +80,10 @@ request.
 read it rather than trusting this snapshot when the two disagree.
 
 Search: `search_patents` (`provider=epo_ops` CQL | `uspto` Lucene),
-`get_search_syntax`, `search_uspto_portfolio_by_customer_number`.
+`search_register` (EP Register CQL, EP applications only — the one search
+with a representative index: `re=` representative, `op=` opponent;
+`search_patents` has none at any office), `get_search_syntax` (`provider`
+`epo_ops` | `uspto` | `epo_register`), `search_uspto_portfolio_by_customer_number`.
 
 Retrieval (any publication number, EPO OPS worldwide): `get_bibliography`,
 `get_abstract`, `get_claims`, `get_description`, `get_fulltext`, `get_family`
