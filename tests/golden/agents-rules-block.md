@@ -89,6 +89,7 @@ flowleap ops description <doc> --lang en
 flowleap ops family <doc>
 flowleap ops legal <doc>
 flowleap ops abstract <doc>
+flowleap ops register-biblio <EP-doc>
 ```
 
 #### flowleap-patent — Search EPO patents with CQL you write yourself — field reference, the discriminating-term rule, and the mandatory count probe.
@@ -144,6 +145,7 @@ flowleap --json uspto transactions 14412875
 flowleap --json uspto assignments 14412875
 flowleap --json uspto foreign-priority 14412875
 flowleap --json uspto adjustment 14412875
+flowleap --json uspto attorney 14412875
 ```
 
 ### Workflow Triggers

@@ -27,8 +27,11 @@ const RULES_END: &str = "<!-- END FLOWLEAP AGENT RULES -->";
 /// (safe-to-refresh) copy apart from one the user has edited by hand.
 const MANIFEST_FILE: &str = ".flowleap-skills-manifest.json";
 
-/// Max command lines extracted per skill for the condensed reference.
-const COMMANDS_PER_SKILL: usize = 8;
+/// Max command lines extracted per skill for the condensed reference. The
+/// rendered block is the routing signal agents read, so the cap must hold
+/// every command of the largest skill: `ops` has 9, and both EP Register
+/// commands (`register-biblio`, `register-search`) must stay visible (#146).
+const COMMANDS_PER_SKILL: usize = 9;
 
 #[derive(Parser)]
 pub struct SkillsArgs {
