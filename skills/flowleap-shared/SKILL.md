@@ -266,6 +266,33 @@ flowleap upgrade --check --json
 flowleap upgrade
 ```
 
+## Office coverage of the text tools and the family-member workaround
+
+**Office coverage** is a property of a tool: the offices it answers for, and
+from which source. The three text tools serve two offices from EPO OPS and US
+claims from BigQuery; every other tool of the document family (`ops biblio`,
+`family`, `legal`, `abstract`, citations, images) is worldwide bibliographic.
+
+- `ops claims` / `get_claims`: EP and WO from EPO OPS; US from BigQuery, in
+  English only.
+- `ops description` / `get_description`: EP and WO from EPO OPS. US description
+  is not served.
+- `get_fulltext` (no command): probes the EPO OPS holdings only, so it answers
+  for EP and WO. A negative probe means EPO OPS holds no text, not that no text
+  exists.
+
+Eight offices have bibliographic, family and legal-event depth and **no text
+source**: CN, JP, KR, CA, AU, FR, DE and GB. Backend ADR 0024 adds no source
+until a customer names an office, so never call one of them "pending".
+
+**Family-member workaround** for a publication at one of those offices, two
+steps:
+
+1. `flowleap --json ops family <number>` / `get_family` (the extended INPADOC
+   family) to find the EP, WO or US member.
+2. `flowleap --json ops claims <member>` or `ops description <member>` /
+   `get_claims` or `get_description` on that member.
+
 ## Safety
 
 - Use `--dry-run` before executing mutating operations

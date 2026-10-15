@@ -1,0 +1,51 @@
+{
+  "get_claims": [
+    {
+      "office": "EP",
+      "source": "epo_ops"
+    },
+    {
+      "office": "WO",
+      "source": "epo_ops"
+    },
+    {
+      "office": "US",
+      "source": "bigquery",
+      "configured": true
+    }
+  ],
+  "get_description": [
+    {
+      "office": "EP",
+      "source": "epo_ops"
+    },
+    {
+      "office": "WO",
+      "source": "epo_ops"
+    }
+  ],
+  "noTextSource": [
+    "CN",
+    "JP",
+    "KR",
+    "CA",
+    "AU",
+    "FR",
+    "DE",
+    "GB"
+  ],
+  "workaround": {
+    "tool": "get_family",
+    "shares": {
+      "CA": 95,
+      "AU": 88,
+      "FR": 60,
+      "DE": 55,
+      "GB": 54,
+      "JP": 48,
+      "KR": 38,
+      "CN": 13
+    },
+    "dataEdition": "PATSTAT 2026 Spring"
+  }
+}
