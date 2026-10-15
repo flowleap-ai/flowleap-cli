@@ -15,23 +15,14 @@
 //! it. Fetched 2026-10-15 from backend main `officeCoverageBlock({
 //! bigqueryConfigured: true })`.
 
+mod support;
+
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+
+use support::skills::{read, root, skill, skills};
 
 const SECTION_HEADING: &str =
     "## Office coverage of the text tools and the family-member workaround";
-
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e))
-}
-
-fn skill(name: &str) -> String {
-    read(&root().join("skills").join(name).join("SKILL.md"))
-}
 
 /// The vendored `officeCoverage` block, the fields the skills restate.
 struct OfficeCoverage {
@@ -195,26 +186,6 @@ fn context_md_defines_office_coverage_and_office_depth() {
         text.contains("three senses"),
         "CONTEXT.md: the conventions do not say that \"coverage\" carries three senses"
     );
-}
-
-/// Every skill file, by skill name.
-fn skills() -> Vec<(String, String)> {
-    let dir = root().join("skills");
-    let mut names: Vec<String> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().join("SKILL.md").is_file())
-        .map(|entry| entry.file_name().to_string_lossy().to_string())
-        .collect();
-    names.sort();
-    assert!(!names.is_empty(), "no skills under {}", dir.display());
-    names
-        .into_iter()
-        .map(|name| {
-            let text = skill(&name);
-            (name, text)
-        })
-        .collect()
 }
 
 const TEXT_TOOLS: [&str; 5] = [

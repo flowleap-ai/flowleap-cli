@@ -13,7 +13,11 @@
 //!   with JSON-RPC lines built by [`frame`] / [`initialize_frame`].
 //! - Callers create the server themselves via `wiremock::MockServer::start()`
 //!   and pass `server.uri()` as the base URL.
+//! - [`skills`] — readers for the skill files and `CONTEXT.md`, for the tests
+//!   that check what an agent reads.
 #![allow(dead_code)]
+
+pub mod skills;
 
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
