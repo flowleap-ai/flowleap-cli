@@ -98,8 +98,9 @@ For an office with no text source, use the family-member workaround in `flowleap
 
 **An unread claim is never a cleared claim.** A survivor at an office with no
 text source answers `FULLTEXT_UNAVAILABLE`. When the workaround finds a served
-member, chart from that member's claims and label the chart "member text, not
-the office's claims": a reading aid, not a verdict on the office's right. When
+member, chart from that member's claims and label the chart
+"member text, not the office's claims": a reading aid, not a verdict on the
+office's right. When
 no member's text is served, carry the survivor into the deliverable as "claims
 not readable here", an open gap on the same footing as a missing-key gap:
 never cleared, never dropped.
