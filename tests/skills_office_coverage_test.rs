@@ -53,7 +53,10 @@ fn office_coverage() -> OfficeCoverage {
             .iter()
             .map(|o| o.as_str().expect("office").to_string())
             .collect(),
-        workaround_tool: workaround["tool"].as_str().expect("workaround.tool").to_string(),
+        workaround_tool: workaround["tool"]
+            .as_str()
+            .expect("workaround.tool")
+            .to_string(),
         shares: workaround["shares"]
             .as_object()
             .expect("workaround.shares")
@@ -71,7 +74,10 @@ fn office_coverage() -> OfficeCoverage {
 fn shared_section() -> String {
     let text = skill("flowleap-shared");
     let count = text.matches(SECTION_HEADING).count();
-    assert_eq!(count, 1, "flowleap-shared: expected the section once, found {count}");
+    assert_eq!(
+        count, 1,
+        "flowleap-shared: expected the section once, found {count}"
+    );
     let start = text.find(SECTION_HEADING).unwrap();
     let body = &text[start + SECTION_HEADING.len()..];
     let end = body.find("\n## ").unwrap_or(body.len());

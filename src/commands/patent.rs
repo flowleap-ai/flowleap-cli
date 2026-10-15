@@ -14,7 +14,7 @@ pub struct PatentArgs {
 
 #[derive(Subcommand)]
 enum PatentCommand {
-    /// Search patents via EPO OPS (worldwide coverage)
+    /// Search patents via EPO OPS (worldwide bibliographic coverage)
     Search {
         /// EPO CQL query (e.g. 'ti="battery separator" and pa=lg'). Write the
         /// CQL yourself — the flowleap-patent skill carries the method.

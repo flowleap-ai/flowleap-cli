@@ -771,3 +771,20 @@ fn keys_status_is_an_alias_for_keys_list() {
 
     assert_eq!(run("status"), run("list"));
 }
+
+/// The text tools serve two offices; "worldwide" is true of the bibliographic
+/// tier only, so the search help names its tier (#152, backend ADR 0024).
+#[test]
+fn patent_help_says_worldwide_bibliographic() {
+    let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
+        .args(["patent", "--help"])
+        .output()
+        .expect("run patent --help");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(
+        stdout.contains("worldwide bibliographic"),
+        "patent --help does not name the tier: {stdout}"
+    );
+}
