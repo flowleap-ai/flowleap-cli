@@ -90,7 +90,9 @@ Retrieval (any publication number, EPO OPS worldwide): `get_bibliography`,
 `get_abstract`, `get_claims`, `get_description`, `get_fulltext`, `get_family`
 (INPADOC extended family), `get_patent_family` (simple family),
 `get_legal_status`, `get_register_events`, `get_register_biblio` (EP
-representatives and opponents), `get_citations`, `get_patent_image`,
+representatives and opponents), `get_citations`, `get_patent_image`
+(through MCP, `include_images: true` returns each PNG or JPEG page as an image
+content block you can see, with the page metadata in the text block),
 `convert_patent_number`.
 
 US lookups and prosecution: `get_us_grant`, `get_us_application`,

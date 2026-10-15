@@ -173,6 +173,55 @@ async fn tools_call_round_trips_the_tool_envelope() {
 }
 
 #[tokio::test]
+async fn get_patent_image_pages_arrive_as_image_blocks_through_stdio() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/get_patent_image"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true,
+            "tool": "get_patent_image",
+            "data": {
+                "docId": "EP4671722A1",
+                "totalFigures": 10,
+                "drawingStartPage": 9,
+                "availableFormats": ["png"],
+                "figures": [{ "page": 9, "format": "png", "base64": "cG5n", "width": 1, "height": 1, "bytes": 3 }],
+            },
+            "executionTimeMs": 12,
+        })))
+        .mount(&server)
+        .await;
+
+    let responses = run_mcp(
+        &server.uri(),
+        AUTH_ENV,
+        &[
+            initialize_frame(1, "2024-11-05"),
+            frame(json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {
+                    "name": "get_patent_image",
+                    "arguments": { "patent_number": "EP4671722A1", "include_images": true, "pages": [9] },
+                },
+            })),
+        ],
+    )
+    .await;
+
+    let result = &responses[1]["result"];
+    assert_eq!(result.get("isError"), None, "success must not set isError");
+    assert_eq!(
+        result["content"],
+        json!([
+            { "type": "text", "text": r#"{"availableFormats":["png"],"docId":"EP4671722A1","drawingStartPage":9,"figures":[{"bytes":3,"format":"png","height":1,"page":9,"width":1}],"totalFigures":10}"# },
+            { "type": "text", "text": "Page 9 of EP4671722A1" },
+            { "type": "image", "data": "cG5n", "mimeType": "image/png" },
+        ]),
+        "one text block without base64, then a page label and an image block per page (#150)"
+    );
+}
+
+#[tokio::test]
 async fn tools_call_error_is_a_tool_result_carrying_the_hint() {
     let server = MockServer::start().await;
     // Missing EPO keys: the backend answers 400 data_keys_required naming the

@@ -26,6 +26,10 @@ verbs map like this:
 | `figures` | `get_patent_image` |
 | `convert-number` | `convert_patent_number` |
 
+Through MCP, `get_patent_image` with `include_images: true` returns each PNG or
+JPEG page as an image content block the client shows you directly; the JSON
+text block keeps the page metadata only.
+
 ## Start Here
 
 ```bash
