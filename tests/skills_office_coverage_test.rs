@@ -413,3 +413,20 @@ fn ops_skill_says_holding_gap_and_states_its_text_coverage() {
         "flowleap-ops: the description does not state \"claims and description for EP and WO\""
     );
 }
+
+/// The freedom-to-operate recipe never clears a claim it did not read: a
+/// candidate at an office with no text source is charted from the served
+/// member's claims, labelled as member text, or carried as an open gap.
+#[test]
+fn fto_recipe_records_unreadable_claims_as_an_open_gap() {
+    let text = skill("recipe-freedom-to-operate");
+    for phrase in [
+        "claims not readable here",
+        "member text, not the office's claims",
+    ] {
+        assert!(
+            text.contains(phrase),
+            "recipe-freedom-to-operate: lacks the phrase {phrase:?}"
+        );
+    }
+}
