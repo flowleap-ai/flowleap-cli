@@ -173,14 +173,23 @@ fn shared_section_explains_the_fulltext_unavailable_reasons() {
 /// office coverage (per tool) and office depth (per office).
 #[test]
 fn context_md_defines_office_coverage_and_office_depth() {
-    let text = read(&root().join("CONTEXT.md"));
+    // Line wraps do not matter: match on the text with one space per run of
+    // whitespace.
+    let text = read(&root().join("CONTEXT.md"))
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     assert!(
         text.contains("**Office coverage** vs **office depth**"),
         "CONTEXT.md: no **Office coverage** vs **office depth** entry"
     );
     assert!(
-        text.contains("Office coverage") && text.contains("office depth"),
-        "CONTEXT.md: the two terms are not both defined"
+        text.contains("**Office coverage** is a property of a *tool*"),
+        "CONTEXT.md: office coverage is not defined as a property of a tool"
+    );
+    assert!(
+        text.contains("**Office depth** is a property of an *office*"),
+        "CONTEXT.md: office depth is not defined as a property of an office"
     );
     assert!(
         text.contains("three senses"),
