@@ -318,7 +318,7 @@ The share for CN is low. For a CN prior-art question go to the abstract, the
 bibliography and the citations first, and try the family after.
 
 **The served failure.** A text read for an office with no text source answers
-`FULLTEXT_UNAVAILABLE` (exit 1; a data verdict, never retry). Under
+`FULLTEXT_UNAVAILABLE` (HTTP 404, exit 5; a data verdict, never retry). Under
 `error.details`, `reason` is `no_source` and the `workaround` field beside it
 is `{ tool: "get_family", note }`: act on that field, not on the message text. A
 US publication the BigQuery table does not hold answers `no_source` with no
