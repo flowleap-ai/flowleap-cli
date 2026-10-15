@@ -180,6 +180,8 @@ flowleap ops claims <patent-number>
 flowleap ops family <patent-number>
 ```
 
+For an office with no text source, use the family-member workaround in `flowleap-shared`.
+
 **One hop from the closest hits** (the citation track): for each closest
 candidate of the keyword and classification tracks, and for each Examiner
 Baseline document once Step 5 has it, read its cited references (`ops biblio`

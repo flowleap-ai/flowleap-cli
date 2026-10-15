@@ -59,7 +59,7 @@ flowleap patent search --query "pa=Ecobee AND ti=thermostat"
 
 ```bash
 flowleap --json summary US10123456   # biblio + legal + family + term
-flowleap ops claims US10123456       # exactly what a competitor protected
+flowleap ops claims US10123456       # exactly what a competitor protected (US claims: BigQuery, English)
 ```
 
 ## Deeper Workflows

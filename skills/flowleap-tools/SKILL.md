@@ -86,12 +86,16 @@ name in any role, surname-first, for when a role index returns 0;
 `search_patents` has none at any office), `get_search_syntax` (`provider`
 `epo_ops` | `uspto` | `epo_register`), `search_uspto_portfolio_by_customer_number`.
 
-Retrieval (any publication number, EPO OPS worldwide): `get_bibliography`,
-`get_abstract`, `get_claims`, `get_description`, `get_fulltext`, `get_family`
-(INPADOC extended family), `get_patent_family` (simple family),
-`get_legal_status`, `get_register_events`, `get_register_biblio` (EP
-representatives and opponents), `get_citations`, `get_patent_image`,
-`convert_patent_number`.
+Retrieval, worldwide bibliographic (any publication number, EPO OPS):
+`get_bibliography`, `get_abstract`, `get_family` (INPADOC extended family),
+`get_patent_family` (simple family), `get_legal_status`,
+`get_register_events`, `get_register_biblio` (EP representatives and
+opponents), `get_citations`, `get_patent_image`, `convert_patent_number`.
+
+Text, by office: `get_claims` (EP and WO from EPO OPS; US from BigQuery, in
+English only), `get_description` (EP and WO from EPO OPS), `get_fulltext` (EP
+and WO). Every other office answers `FULLTEXT_UNAVAILABLE`. For an office
+with no text source, use the family-member workaround in `flowleap-shared`.
 
 US lookups and prosecution: `get_us_grant`, `get_us_application`,
 `get_continuity`, `get_transactions`, `get_assignments`, `get_foreign_priority`,

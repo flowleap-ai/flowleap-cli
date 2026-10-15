@@ -35,6 +35,10 @@ fn skill(name: &str) -> String {
 
 /// The vendored `officeCoverage` block, the fields the skills restate.
 struct OfficeCoverage {
+    /// `get_claims` rows: (office, source).
+    claims: Vec<(String, String)>,
+    /// `get_description` rows: (office, source).
+    description: Vec<(String, String)>,
     no_text_source: Vec<String>,
     workaround_tool: String,
     shares: BTreeMap<String, u64>,
@@ -46,7 +50,22 @@ fn office_coverage() -> OfficeCoverage {
         serde_json::from_str(&read(&root().join("tests/support/office-coverage.json")))
             .expect("tests/support/office-coverage.json is JSON");
     let workaround = &value["workaround"];
+    let rows = |tool: &str| -> Vec<(String, String)> {
+        value[tool]
+            .as_array()
+            .unwrap_or_else(|| panic!("{tool} is an array"))
+            .iter()
+            .map(|row| {
+                (
+                    row["office"].as_str().expect("office").to_string(),
+                    row["source"].as_str().expect("source").to_string(),
+                )
+            })
+            .collect()
+    };
     OfficeCoverage {
+        claims: rows("get_claims"),
+        description: rows("get_description"),
         no_text_source: value["noTextSource"]
             .as_array()
             .expect("noTextSource is an array")
@@ -178,8 +197,236 @@ fn context_md_defines_office_coverage_and_office_depth() {
     );
 }
 
-// T2 (#153) adds here: the pointer sentences in the tools skill, the OPS
-// skill and the four recipes; the sweep for a text tool under a "worldwide"
-// or "any publication number" heading; the example-office check for `ops
-// claims` / `ops description` numbers and `--lang`; the OPS "holding gap"
-// wording; the freedom-to-operate phrases.
+/// Every skill file, by skill name.
+fn skills() -> Vec<(String, String)> {
+    let dir = root().join("skills");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().join("SKILL.md").is_file())
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .collect();
+    names.sort();
+    assert!(!names.is_empty(), "no skills under {}", dir.display());
+    names
+        .into_iter()
+        .map(|name| {
+            let text = skill(&name);
+            (name, text)
+        })
+        .collect()
+}
+
+const TEXT_TOOLS: [&str; 5] = [
+    "get_claims",
+    "get_description",
+    "get_fulltext",
+    "ops claims",
+    "ops description",
+];
+
+/// The lead sentence of a block: its first line up to the first colon or
+/// full stop.
+fn lead_sentence(block: &str) -> String {
+    let first = block.lines().next().unwrap_or("");
+    let end = first
+        .find(':')
+        .into_iter()
+        .chain(first.find(". "))
+        .min()
+        .unwrap_or(first.len());
+    first[..end].to_lowercase()
+}
+
+/// A skill must not list a text tool (`get_claims`, `get_description`,
+/// `get_fulltext`, `ops claims`, `ops description`) in a paragraph or list
+/// whose heading or lead sentence promises "worldwide" or "any publication
+/// number": the text tools answer for EP, WO and US only (ADR 0024).
+#[test]
+fn no_skill_lists_a_text_tool_under_a_worldwide_lead() {
+    const PROMISES: [&str; 2] = ["worldwide", "any publication number"];
+    let mut offenders = Vec::new();
+    for (name, text) in skills() {
+        let mut heading = String::new();
+        let mut block: Vec<&str> = Vec::new();
+        let mut check = |heading: &str, block: &mut Vec<&str>| {
+            if block.is_empty() {
+                return;
+            }
+            let body = block.join("\n");
+            let lead = lead_sentence(&body);
+            let promised = PROMISES
+                .iter()
+                .any(|p| heading.contains(p) || lead.contains(p));
+            if promised {
+                for tool in TEXT_TOOLS {
+                    if body.contains(tool) {
+                        offenders.push(format!(
+                            "{name}: `{tool}` under heading {heading:?}, lead {lead:?}"
+                        ));
+                    }
+                }
+            }
+            block.clear();
+        };
+        for line in text.lines() {
+            if line.starts_with('#') {
+                check(&heading, &mut block);
+                heading = line.to_lowercase();
+            } else if line.trim().is_empty() {
+                check(&heading, &mut block);
+            } else {
+                block.push(line);
+            }
+        }
+        check(&heading, &mut block);
+    }
+    assert!(
+        offenders.is_empty(),
+        "text tools listed under a worldwide / any-publication-number lead: {offenders:#?}"
+    );
+}
+
+/// The skills that read claims point at the shared block, never copy it: one
+/// pointer phrase each, in the tools skill, the OPS skill and the four
+/// recipes that read claims.
+#[test]
+fn text_reading_skills_point_at_the_family_member_workaround() {
+    const POINTER: &str = "family-member workaround in `flowleap-shared`";
+    let missing: Vec<&str> = [
+        "flowleap-tools",
+        "flowleap-ops",
+        "recipe-freedom-to-operate",
+        "recipe-prior-art-search",
+        "recipe-claim-analysis",
+        "recipe-invalidity-analysis",
+    ]
+    .into_iter()
+    .filter(|name| !skill(name).contains(POINTER))
+    .collect();
+    assert!(
+        missing.is_empty(),
+        "skills without the pointer {POINTER:?}: {missing:?}"
+    );
+}
+
+/// Every example `ops claims` / `ops description` command whose number has a
+/// country prefix: (skill, line, command, office, `--lang` value, line text).
+fn example_text_reads() -> Vec<(String, usize, String, String, Option<String>, String)> {
+    let mut reads = Vec::new();
+    for (name, text) in skills() {
+        for (i, line) in text.lines().enumerate() {
+            let words: Vec<&str> = line.split_whitespace().collect();
+            for window in words.windows(3) {
+                let [ops, command, number] = [window[0], window[1], window[2]];
+                if ops != "ops" || !["claims", "description"].contains(&command) {
+                    continue;
+                }
+                let number = number.trim_matches('`');
+                let office: String = number.chars().take(2).collect();
+                let prefixed = office.chars().all(|c| c.is_ascii_uppercase())
+                    && number.chars().nth(2).is_some_and(|c| c.is_ascii_digit());
+                if !prefixed {
+                    continue;
+                }
+                let lang = words
+                    .iter()
+                    .position(|w| *w == "--lang")
+                    .and_then(|at| words.get(at + 1))
+                    .map(|l| l.to_string());
+                reads.push((
+                    name.clone(),
+                    i + 1,
+                    command.to_string(),
+                    office,
+                    lang,
+                    line.to_string(),
+                ));
+            }
+        }
+    }
+    reads
+}
+
+/// An example reads text only at an office the vendored block serves for
+/// that command, and asks for a language other than English only where the
+/// source is EPO OPS (the BigQuery claims are English only).
+#[test]
+fn example_text_reads_use_offices_the_backend_serves() {
+    let coverage = office_coverage();
+    let reads = example_text_reads();
+    assert!(
+        !reads.is_empty(),
+        "no example text read with a country prefix found"
+    );
+    let mut wrong = Vec::new();
+    for (skill, line, command, office, lang, text) in reads {
+        let rows = match command.as_str() {
+            "claims" => &coverage.claims,
+            _ => &coverage.description,
+        };
+        let source = rows.iter().find(|(o, _)| *o == office).map(|(_, s)| s);
+        match source {
+            None => wrong.push(format!(
+                "{skill}:{line}: `ops {command} {office}…` but {office} has no {command} source"
+            )),
+            Some(source) => {
+                if lang.as_deref().is_some_and(|l| l != "en") && source != "epo_ops" {
+                    wrong.push(format!(
+                        "{skill}:{line}: `--lang {}` on {office}, whose {command} source {source} is English only",
+                        lang.unwrap()
+                    ));
+                }
+                if source == "bigquery" && !(text.contains("BigQuery") && text.contains("English"))
+                {
+                    wrong.push(format!(
+                        "{skill}:{line}: a {office} {command} example must say BigQuery, English"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "example text reads: {wrong:#?}");
+}
+
+/// The OPS skill uses the backend's word for a document EPO OPS does not
+/// hold, "holding gap", never "coverage gap" (CONTEXT.md reserves "coverage"
+/// for named senses), and its description states the office coverage of its
+/// text reads.
+#[test]
+fn ops_skill_says_holding_gap_and_states_its_text_coverage() {
+    let text = skill("flowleap-ops");
+    assert!(
+        text.contains("holding gap"),
+        "flowleap-ops: no \"holding gap\""
+    );
+    assert!(
+        !text.contains("coverage gap"),
+        "flowleap-ops: \"coverage gap\" is the retired wording"
+    );
+    let description = text
+        .lines()
+        .find(|line| line.starts_with("description:"))
+        .expect("flowleap-ops: a description line");
+    assert!(
+        description.contains("claims and description for EP and WO"),
+        "flowleap-ops: the description does not state \"claims and description for EP and WO\""
+    );
+}
+
+/// The freedom-to-operate recipe never clears a claim it did not read: a
+/// candidate at an office with no text source is charted from the served
+/// member's claims, labelled as member text, or carried as an open gap.
+#[test]
+fn fto_recipe_records_unreadable_claims_as_an_open_gap() {
+    let text = skill("recipe-freedom-to-operate");
+    for phrase in [
+        "claims not readable here",
+        "member text, not the office's claims",
+    ] {
+        assert!(
+            text.contains(phrase),
+            "recipe-freedom-to-operate: lacks the phrase {phrase:?}"
+        );
+    }
+}

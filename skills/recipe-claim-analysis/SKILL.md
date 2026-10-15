@@ -20,7 +20,7 @@ In a chat client with the FlowLeap connector, call the tools named in the `flowl
 flowleap --json ops claims <patent-number>
 ```
 
-Done when you have the full claim set, independent claims identified.
+Done when you have the full claim set, independent claims identified. For an office with no text source, use the family-member workaround in `flowleap-shared`.
 
 ### Step 2: Get Context
 
