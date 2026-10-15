@@ -682,7 +682,7 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
     let epo_existing = creds.epo_pair().is_some();
     let epo_prompt = match creds.epo_pair() {
         Some((key, _)) => format!("EPO OPS keys (currently {}) — replace?", mask(key)),
-        None => "Add EPO OPS keys? (worldwide patent data)".to_string(),
+        None => "Add EPO OPS keys? (worldwide bibliographic patent data)".to_string(),
     };
     println!("{}", step(3, "EPO keys"));
     println!("  Get free EPO keys: {} → My apps", EPO_SIGNUP.underline());
