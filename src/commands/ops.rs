@@ -80,11 +80,15 @@ enum OpsCommand {
         /// EP publication number (e.g., EP1000000)
         doc: String,
     },
-    /// EP Register search by register CQL: re=<representative>, op=<opponent> (EP only)
+    /// EP Register search by register CQL: re=<representative>, op=<opponent>, nm=<name in any role> (EP only)
     ///
     /// The one search with a representative index. `re=` is the professional
     /// representative of record, `op=` an opponent, `ia=` inventor or
     /// applicant; `pa`, `in`, `ti`, `pn`, `ap`, `pr`, `pd`, `ic` work too.
+    /// `nm=` is a name in any role (applicant, inventor, representative,
+    /// opponent): use it when a role index (re/op/ia/pa/in) returns 0 to find
+    /// which role the person holds. The register stores names surname-first,
+    /// so use the surname alone or nm="Surname, First".
     /// `total` counts the whole query (capped at 10000); one row per EP
     /// application.
     RegisterSearch {
@@ -190,11 +194,25 @@ fn register_row(doc: &Value) -> Value {
     row
 }
 
+/// The `Hint: <text>` line for the table and human printers, from the
+/// optional top-level `hint` string the backend adds on a zero-result
+/// role-index query (for example "No results for re=Boniberger. The name may
+/// appear in another role; retry with nm=Boniberger."). None when the field
+/// is absent or not a string, so a result without a hint prints as before.
+fn register_hint_line(result: &Value) -> Option<String> {
+    result
+        .get("hint")
+        .and_then(Value::as_str)
+        .map(|hint| format!("Hint: {hint}"))
+}
+
 /// Print an EP Register search result. JSON keeps the tool's `data` payload
-/// verbatim (`total`, `returned`, `range`, `docs`). Table and human output
-/// render the `docs` rows, then the whole-query `total` on its own line: OPS
-/// counts the whole query (capped at 10000) while the page is only a sample,
-/// and the count is the usual question ("how many filings does X handle").
+/// verbatim (`total`, `returned`, `range`, `docs`, `hint`). Table and human
+/// output render the `docs` rows, then the whole-query `total` on its own
+/// line: OPS counts the whole query (capped at 10000) while the page is only
+/// a sample, and the count is the usual question ("how many filings does X
+/// handle"). The backend `hint`, when present, follows the total on its own
+/// line.
 fn print_register_result(ctx: &Context, result: &Value) {
     if ctx.output_format == "json" {
         output::print_json(result);
@@ -211,6 +229,9 @@ fn print_register_result(ctx: &Context, result: &Value) {
         println!(
             "Total: {total} EP application(s) for the whole query (OPS caps the count at 10000)"
         );
+    }
+    if let Some(line) = register_hint_line(result) {
+        println!("{line}");
     }
 }
 
@@ -253,7 +274,7 @@ async fn document_with(
 
 #[cfg(test)]
 mod tests {
-    use super::{register_row, register_search_input};
+    use super::{register_hint_line, register_row, register_search_input};
     use serde_json::json;
 
     #[test]
@@ -286,5 +307,24 @@ mod tests {
     fn a_register_row_without_representatives_renders_an_empty_list() {
         let row = register_row(&json!({ "applicationNumber": "EP1" }));
         assert_eq!(row["representativeNames"], json!([]));
+    }
+
+    #[test]
+    fn the_backend_hint_prints_as_its_own_hint_line() {
+        let result = json!({
+            "total": 0,
+            "docs": [],
+            "hint": "No results for re=Boniberger. The name may appear in another role; retry with nm=Boniberger."
+        });
+        assert_eq!(
+            register_hint_line(&result).as_deref(),
+            Some("Hint: No results for re=Boniberger. The name may appear in another role; retry with nm=Boniberger.")
+        );
+    }
+
+    #[test]
+    fn a_result_without_a_hint_prints_no_hint_line() {
+        let result = json!({ "total": 3, "docs": [], "hint": null });
+        assert_eq!(register_hint_line(&result), None);
     }
 }

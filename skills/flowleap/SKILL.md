@@ -91,7 +91,8 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
 - **EPO document data** (biblio, claims, description, family, legal, EP
   Register representatives and opponents) → `flowleap-ops`. "How many EP
   filings does representative X handle" is `ops register-search --cql 're=X'`
-  there — the one search with a representative index.
+  there — the one search with a representative index. When a role index
+  returns 0, `nm=X` (name in any role, surname-first) finds the role.
 - **Non-patent literature** → `flowleap-npl` first (OpenAlex search, and
   `npl-work` to resolve a paper an office cited), `flowleap-academic`
   (Semantic Scholar + arXiv) as the second pass.
