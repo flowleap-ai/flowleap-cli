@@ -90,6 +90,8 @@ flowleap --json ops claims <reference>
 flowleap --json ops description <reference>
 ```
 
+For an office with no text source, use the family-member workaround in `flowleap-shared`.
+
 ## Step 6: Ground the Legal Standard
 
 ```bash

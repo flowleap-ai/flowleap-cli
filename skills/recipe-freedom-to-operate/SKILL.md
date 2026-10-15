@@ -94,6 +94,8 @@ every element of each independent claim:
 flowleap --json ops claims <patent-number>
 ```
 
+For an office with no text source, use the family-member workaround in `flowleap-shared`.
+
 A claim clears only if at least one of its elements is absent from the product.
 Done when every independent claim of every survivor is either cleared (≥1 element
 absent) or flagged as a live infringement risk.

@@ -267,3 +267,26 @@ fn no_skill_lists_a_text_tool_under_a_worldwide_lead() {
         "text tools listed under a worldwide / any-publication-number lead: {offenders:#?}"
     );
 }
+
+/// The skills that read claims point at the shared block, never copy it: one
+/// pointer phrase each, in the tools skill, the OPS skill and the four
+/// recipes that read claims.
+#[test]
+fn text_reading_skills_point_at_the_family_member_workaround() {
+    const POINTER: &str = "family-member workaround in `flowleap-shared`";
+    let missing: Vec<&str> = [
+        "flowleap-tools",
+        "flowleap-ops",
+        "recipe-freedom-to-operate",
+        "recipe-prior-art-search",
+        "recipe-claim-analysis",
+        "recipe-invalidity-analysis",
+    ]
+    .into_iter()
+    .filter(|name| !skill(name).contains(POINTER))
+    .collect();
+    assert!(
+        missing.is_empty(),
+        "skills without the pointer {POINTER:?}: {missing:?}"
+    );
+}

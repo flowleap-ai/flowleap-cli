@@ -98,6 +98,9 @@ flowleap ops register-biblio <EP-doc>      # EP Register: representatives, oppon
 flowleap ops register-search --cql <query>  # EP Register search: re=<representative>, op=<opponent>, nm=<name in any role>
 ```
 
+`claims` serves EP and WO from EPO OPS and US from BigQuery (English only);
+`description` serves EP and WO. For an office with no text source, use the family-member workaround in `flowleap-shared`.
+
 `biblio --resolve-npl` looks each `citedReferences[].npl` string up in
 OpenAlex and attaches `nplWork` (`status` `matched` | `candidates` |
 `not_found` | `lookup_failed`, and on a match the title, DOI and abstract
