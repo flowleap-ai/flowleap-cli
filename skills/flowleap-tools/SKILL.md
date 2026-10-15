@@ -81,7 +81,8 @@ read it rather than trusting this snapshot when the two disagree.
 
 Search: `search_patents` (`provider=epo_ops` CQL | `uspto` Lucene),
 `search_register` (EP Register CQL, EP applications only — the one search
-with a representative index: `re=` representative, `op=` opponent;
+with a representative index: `re=` representative, `op=` opponent, `nm=`
+name in any role, surname-first, for when a role index returns 0;
 `search_patents` has none at any office), `get_search_syntax` (`provider`
 `epo_ops` | `uspto` | `epo_register`), `search_uspto_portfolio_by_customer_number`.
 

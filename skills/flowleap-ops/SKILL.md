@@ -57,6 +57,17 @@ the page as examples.
 
 - Indexes that work: `re` (professional representative), `op` (opponent),
   `ia` (inventor or applicant), `pa`, `in`, `ti`, `pn`, `ap`, `pr`, `pd`, `ic`.
+- `nm` = a name in any role (applicant, inventor, representative, opponent).
+  Use it when a role index (`re`/`op`/`ia`/`pa`/`in`) returns 0, to find
+  which role the person holds. The register stores names surname-first, so
+  use the surname alone or `nm="Surname, First"`. Measured 2026-10-15:
+  `re=Boniberger` 0, `op=Boniberger` 3, `nm=Boniberger` 5,
+  `nm="Bernhard Boniberger"` 0, `nm="Boniberger, Bernhard"` 3.
+- A zero-result role-index query can carry a top-level `hint` string from
+  the backend (for example "No results for re=Boniberger. The name may
+  appear in another role; retry with nm=Boniberger."). Human and table
+  output print it as `Hint: <text>` after the Total line; `--json` keeps it
+  in the data. Follow the hint before you retry a spelling.
 - Not register indexes: `ag`, `rep`, `ab`, `cpc`, `st`, `ps`, `fd`, `ctr`.
   `flowleap --json tools run get_search_syntax provider=epo_register` lists
   both sets.
@@ -84,7 +95,7 @@ flowleap ops family <doc>                  # Patent family members
 flowleap ops legal <doc>                   # Legal status events + designated states
 flowleap ops abstract <doc>                # Abstract text
 flowleap ops register-biblio <EP-doc>      # EP Register: representatives, opponents, status
-flowleap ops register-search --cql <query>  # EP Register search: re=<representative>, op=<opponent>
+flowleap ops register-search --cql <query>  # EP Register search: re=<representative>, op=<opponent>, nm=<name in any role>
 ```
 
 `biblio --resolve-npl` looks each `citedReferences[].npl` string up in
@@ -205,6 +216,10 @@ flowleap --json ops register-search --cql 're=Kreuels' --end 3
 
 # Oppositions one party filed, published since 2020
 flowleap ops register-search --cql 'op=Siemens and pd>=20200101' --end 50
+
+# A role index returned 0: find which role the person holds (surname alone, or surname-first)
+flowleap --json ops register-search --cql 'nm=Boniberger' --end 5
+flowleap --json ops register-search --cql 'nm="Boniberger, Bernhard"' --end 5
 
 # Verbose shows cache status and timing
 flowleap ops biblio EP1234567 --verbose

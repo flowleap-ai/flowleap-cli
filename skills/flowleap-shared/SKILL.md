@@ -39,7 +39,7 @@ so no `flowleap …` command can run there.
 |---|---|---|
 | `ops biblio` / `claims` / `description` / `family` / `legal` / `abstract` | `get_bibliography`, `get_claims`, `get_description`, `get_family`, `get_legal_status`, `get_abstract` | `get_family` is the INPADOC extended family; `--resolve-npl` is `resolve_npl: true` |
 | `ops register-biblio` | `get_register_biblio` | EP only: representatives of record, opponents |
-| `ops register-search` | `search_register` | EP Register CQL (`query`, `range`); the one search with a representative index (`re=`), opponent (`op=`); EP applications only |
+| `ops register-search` | `search_register` | EP Register CQL (`query`, `range`); the one search with a representative index (`re=`), opponent (`op=`), name in any role (`nm=`, surname-first — use it when a role index returns 0); EP applications only |
 | `patent search`, `ops search` | `search_patents` | `provider: "epo_ops"`, CQL |
 | `uspto search` | `search_patents` | `provider: "uspto"`, Lucene |
 | `uspto application` / `grant` / `continuity` | `get_us_application`, `get_us_grant`, `get_continuity` | |
