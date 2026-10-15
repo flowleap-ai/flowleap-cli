@@ -478,7 +478,14 @@ fn example_text_reads() -> Vec<TextRead> {
 
 /// An example reads text only at an office the vendored block serves for
 /// that command, and asks for a language other than English only where the
-/// source is EPO OPS (the BigQuery claims are English only).
+/// source is EPO OPS.
+///
+/// The "English only" rule is not in the vendored block. Language is a fact
+/// of the BigQuery US source, documented in the backend
+/// (`src/lib/office-coverage.ts`), and `officeCoverage` does not carry it.
+/// The test holds it as an assumption: every source other than `epo_ops` is
+/// English only. Revisit it when a source that serves another language is
+/// added.
 #[test]
 fn example_text_reads_use_offices_the_backend_serves() {
     let coverage = office_coverage();
@@ -525,12 +532,24 @@ fn example_text_reads_use_offices_the_backend_serves() {
     assert!(wrong.is_empty(), "example text reads: {wrong:#?}");
 }
 
+/// "EP and WO", "EP, WO and US": the offices as a sentence names them.
+fn office_list(offices: &[(String, String)]) -> String {
+    let codes: Vec<&str> = offices.iter().map(|(o, _)| o.as_str()).collect();
+    match codes.as_slice() {
+        [] => String::new(),
+        [one] => one.to_string(),
+        [init @ .., last] => format!("{} and {last}", init.join(", ")),
+    }
+}
+
 /// The OPS skill uses the backend's word for a document EPO OPS does not
 /// hold, "holding gap", never "coverage gap" (CONTEXT.md reserves "coverage"
 /// for named senses), and its description states the office coverage of its
-/// text reads.
+/// text reads: "claims and description for" the vendored `get_description`
+/// offices, and for each office with claims only, "<office> claims".
 #[test]
 fn ops_skill_says_holding_gap_and_states_its_text_coverage() {
+    let coverage = office_coverage();
     let text = skill("flowleap-ops");
     assert!(
         text.contains("holding gap"),
@@ -544,10 +563,25 @@ fn ops_skill_says_holding_gap_and_states_its_text_coverage() {
         .lines()
         .find(|line| line.starts_with("description:"))
         .expect("flowleap-ops: a description line");
-    assert!(
-        description.contains("claims and description for EP and WO"),
-        "flowleap-ops: the description does not state \"claims and description for EP and WO\""
+    let both = format!(
+        "claims and description for {}",
+        office_list(&coverage.description)
     );
+    assert!(
+        description.contains(&both),
+        "flowleap-ops: the description does not state {both:?}"
+    );
+    let claims_only: Vec<&(String, String)> = coverage
+        .claims
+        .iter()
+        .filter(|(office, _)| !coverage.description.iter().any(|(o, _)| o == office))
+        .collect();
+    for (office, _) in claims_only {
+        assert!(
+            description.contains(&format!("{office} claims")),
+            "flowleap-ops: the description does not state \"{office} claims\""
+        );
+    }
 }
 
 /// The freedom-to-operate recipe never clears a claim it did not read: a
