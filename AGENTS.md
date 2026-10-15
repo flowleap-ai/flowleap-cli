@@ -31,7 +31,7 @@ before trusting `skills install` output or regenerating goldens.
 | `src/output/formatter.rs` | JSON, table, and human-readable output formatting |
 | `src/commands/auth.rs` | OAuth device flow, personal API tokens (create/list/revoke), status |
 | `src/commands/tools.rs` | Agent-first tool facade: list/describe/run `/v1/tools/*`, plus `call_tool_data` — the shared seam every data command runs on (unwraps the tool envelope to its `data` payload). The exception: the `patstat` commands call `call_tool_envelope` so their typed errors come back unprinted and render their own way; both paths share `unwrap_tool_result` and `retry_policy_for` |
-| `src/commands/mcp.rs` | `flowleap mcp` stdio bridge: `tools/list` mirrors the `/v1/tools` registry verbatim and `tools/call` runs a tool; it also serves the PATSTAT doctrine read at startup through the `patstat_docs` tool as six resources (`flowleap://patstat/semantic-model`, its index `…/semantic-model/index`, `…/examples`, `…/workflow/{portfolio-analysis,guarded-sql,graph}`) and three prompts (`patstat-<workflow>`, a plain text rendering of the served workflow), plus one resource template, `flowleap://patstat/semantic-model/view/{name}`, read on demand through the same tool and cached per process (an unknown view is -32602 listing the available views). It authors no tool and no doctrine; a document that fails to load is logged to stderr and skipped. `--check` reports tool, resource, template and prompt counts |
+| `src/commands/mcp.rs` | `flowleap mcp` stdio bridge: `tools/list` mirrors the `/v1/tools` registry verbatim and `tools/call` runs a tool (one compact-JSON text block; for `get_patent_image` with `include_images` each PNG/JPEG page leaves the JSON and arrives as a `Page N of <docId>` text block plus an MCP `image` block, the same shape the hosted MCP server emits — `mcp_content`); it also serves the PATSTAT doctrine read at startup through the `patstat_docs` tool as six resources (`flowleap://patstat/semantic-model`, its index `…/semantic-model/index`, `…/examples`, `…/workflow/{portfolio-analysis,guarded-sql,graph}`) and three prompts (`patstat-<workflow>`, a plain text rendering of the served workflow), plus one resource template, `flowleap://patstat/semantic-model/view/{name}`, read on demand through the same tool and cached per process (an unknown view is -32602 listing the available views). It authors no tool and no doctrine; a document that fails to load is logged to stderr and skipped. `--check` reports tool, resource, template and prompt counts |
 | `src/commands/skills.rs` | Embedded agent-skill installer (`skills/` baked into binary): multi-harness targets (claude/claude-project/codex/cursor/gemini/--dir), version stamps, `skills update` |
 | `src/commands/patent.rs` | EPO patent search (caller-written CQL) |
 | `src/commands/examiner_baseline.rs` | `patent examiner-baseline`: the Examiner Baseline (agent-v2 ADR 0010). Calls the backend `examiner_baseline` tool when the registry lists it; otherwise walks the family itself (reads every member publication's `citedReferences` and a US grant's enriched office-action citations). Either way it prints one cited-document × office matrix with gap rows; `--verbose` names the path. No model call; `--json` prints the `Baseline` shape the human table is derived from, and a cell names each category's own claims when the search report pairs them (`categoryClaims`) |
@@ -288,7 +288,9 @@ and `attribution` (the new `cpc` carries both at the top level too); and the `gr
 
 Tool parameters are `snake_case`. `figures --out` fetches image bytes from
 `get_patent_image` itself (`include_images: true` returns base64 pages) — there
-is no separate byte-fetching endpoint.
+is no separate byte-fetching endpoint. Through MCP (stdio bridge and hosted
+server alike) those pages arrive as `image` content blocks, not as base64
+inside the text block.
 
 Every tool answers one envelope:
 

@@ -90,7 +90,10 @@ Retrieval, worldwide bibliographic (any publication number, EPO OPS):
 `get_bibliography`, `get_abstract`, `get_family` (INPADOC extended family),
 `get_patent_family` (simple family), `get_legal_status`,
 `get_register_events`, `get_register_biblio` (EP representatives and
-opponents), `get_citations`, `get_patent_image`, `convert_patent_number`.
+opponents), `get_citations`, `get_patent_image`
+(through MCP, `include_images: true` returns each PNG or JPEG page as an image
+content block you can see, with the page metadata in the text block),
+`convert_patent_number`.
 
 Text, by office: `get_claims` (EP and WO from EPO OPS; US from BigQuery, in
 English only), `get_description` (EP and WO from EPO OPS), `get_fulltext` (EP
