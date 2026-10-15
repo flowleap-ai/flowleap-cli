@@ -153,6 +153,25 @@ fn shared_section_explains_the_fulltext_unavailable_reasons() {
     }
 }
 
+/// CONTEXT.md defines the two terms the skills use, mirrored from the backend:
+/// office coverage (per tool) and office depth (per office).
+#[test]
+fn context_md_defines_office_coverage_and_office_depth() {
+    let text = read(&root().join("CONTEXT.md"));
+    assert!(
+        text.contains("**Office coverage** vs **office depth**"),
+        "CONTEXT.md: no **Office coverage** vs **office depth** entry"
+    );
+    assert!(
+        text.contains("Office coverage") && text.contains("office depth"),
+        "CONTEXT.md: the two terms are not both defined"
+    );
+    assert!(
+        text.contains("three senses"),
+        "CONTEXT.md: the conventions do not say that \"coverage\" carries three senses"
+    );
+}
+
 // T2 (#153) adds here: the pointer sentences in the tools skill, the OPS
 // skill and the four recipes; the sweep for a text tool under a "worldwide"
 // or "any publication number" heading; the example-office check for `ops
