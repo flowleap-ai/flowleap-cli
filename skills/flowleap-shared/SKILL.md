@@ -270,8 +270,10 @@ flowleap upgrade
 
 **Office coverage** is a property of a tool: the offices it answers for, and
 from which source. The three text tools serve two offices from EPO OPS and US
-claims from BigQuery; every other tool of the document family (`ops biblio`,
-`family`, `legal`, `abstract`, citations, images) is worldwide bibliographic.
+claims from BigQuery. The other document reads (`ops biblio`, `family`,
+`legal`, `abstract`) are worldwide bibliographic; `get_citations` is worldwide
+DOCDB citation data; `get_patent_image` serves EPO OPS images for the offices
+EPO OPS holds.
 
 - `ops claims` / `get_claims`: EP and WO from EPO OPS; US from BigQuery, in
   English only.
