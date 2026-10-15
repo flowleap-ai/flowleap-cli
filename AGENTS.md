@@ -374,6 +374,16 @@ the *thin* passthrough first and put the workflow in a skill on top of it.
   command in its header when the registry changes) and checks that every
   command-invoking skill has the sentence. A new command-invoking skill needs
   the sentence; a new command needs its row.
+- **Office coverage lives in one section.** The office coverage of the text
+  tools, the family-member workaround with its shares and limits, and the
+  served failure (`FULLTEXT_UNAVAILABLE`, `error.details.reason` `no_source`
+  with the `workaround` field, `not_configured` without) live in the
+  `flowleap-shared` section "Office coverage of the text tools and the
+  family-member workaround". Every other skill points there; a short
+  restatement of the offices is allowed only where
+  `tests/skills_office_coverage_test.rs` checks it against the vendored block
+  `tests/support/office-coverage.json` (refresh it with the command in that
+  test's header when `server_info` changes).
 - **Distribution is release-gated.** CLI skills ship inside the binary (next
   tag) and reach the website marketplace via the `flowleap-plugins` re-sync
   (bump `sync.json` ref, add the entry, copy byte-for-byte). Budget the

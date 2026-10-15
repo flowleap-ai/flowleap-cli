@@ -179,10 +179,9 @@ record, legal events, claims and description text, register record, file
 wrapper. Every one of the eight offices CN, JP, KR, CA, AU, FR, DE and GB has
 bibliographic, family and legal-event depth today (EPO OPS worldwide, INPADOC,
 PATSTAT); none has text, register or file-wrapper depth. A tool states its
-office coverage in its registry docs; an office outside it answers a
-structured unavailable code (`FULLTEXT_UNAVAILABLE`, reason `no_source`),
-never a raw upstream error. The skills state it once, in the `flowleap-shared`
-section "Office coverage of the text tools and the family-member workaround",
+office coverage in its registry docs; for an office outside it, the tool
+answers a structured "no text source" verdict, never a raw upstream error. The
+skills state the coverage once, in the shared reference (`flowleap-shared`),
 and every other skill points there (backend ADR 0024).
 _Avoid_: bare "coverage" for this (the word already carries extended-family
 coverage and designated-state coverage — say "office coverage"); "supported
