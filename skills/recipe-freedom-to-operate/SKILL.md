@@ -94,9 +94,21 @@ every element of each independent claim:
 flowleap --json ops claims <patent-number>
 ```
 
+For an office with no text source, use the family-member workaround in `flowleap-shared`.
+
+**An unread claim is never a cleared claim.** A survivor at an office with no
+text source answers `FULLTEXT_UNAVAILABLE`. When the workaround finds a served
+member, chart from that member's claims and label the chart
+"member text, not the office's claims": a reading aid, not a verdict on the
+office's right. When
+no member's text is served, carry the survivor into the deliverable as
+"claims not readable here", an open gap on the same footing as a missing-key
+gap: never cleared, never dropped.
+
 A claim clears only if at least one of its elements is absent from the product.
 Done when every independent claim of every survivor is either cleared (≥1 element
-absent) or flagged as a live infringement risk.
+absent), flagged as a live infringement risk, or recorded as
+"claims not readable here".
 
 ## Output
 
@@ -104,7 +116,10 @@ FTO data package per live blocking patent:
 - Legal status (active, expired, abandoned) and remaining term
 - Geographic reach against your sales jurisdictions — family members for the
   offices, `designatedStates` minus lapsed states for an EP filing's countries
-- Per-claim all-elements verdict: cleared or at-risk
+- Per-claim all-elements verdict: cleared or at-risk; a chart built on a
+  family member's claims carries the label
+  "member text, not the office's claims"; a right whose claims no source
+  serves is "claims not readable here", an open gap
 
 If the full skill pack is installed, continue with `recipe-infringement-charting`
 to chart the at-risk claims element by element.

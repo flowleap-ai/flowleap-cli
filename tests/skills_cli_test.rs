@@ -2,9 +2,12 @@
 //! binary with HOME/XDG_CONFIG_HOME pointed at a temp directory so config
 //! records never touch the developer's machine.
 
-use std::path::{Path, PathBuf};
+mod support;
+
+use std::path::PathBuf;
 use std::process::{Command, Output};
 
+use support::skills::read;
 use tempfile::TempDir;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -67,10 +70,6 @@ impl Sandbox {
     fn cwd_file(&self, name: &str) -> PathBuf {
         self.cwd.path().join(name)
     }
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e))
 }
 
 #[test]

@@ -9,18 +9,13 @@
 //! - every skill that invokes `flowleap …` commands, inline or in a fenced
 //!   block, carries the one-line routing sentence.
 
+mod support;
+
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+
+use support::skills::{read, root, skill, skills};
 
 const ROUTING_SENTENCE: &str = "In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.";
-
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e))
-}
 
 fn registry_tools() -> BTreeSet<String> {
     read(&root().join("tests/support/registry-tools.txt"))
@@ -33,18 +28,18 @@ fn registry_tools() -> BTreeSet<String> {
 
 /// The backticked identifiers in column `col` (0-based) of the first markdown
 /// table after `heading` in `skill`'s SKILL.md.
-fn table_tool_names(skill: &str, heading: &str, col: usize) -> Vec<String> {
-    let text = read(&root().join("skills").join(skill).join("SKILL.md"));
+fn table_tool_names(name: &str, heading: &str, col: usize) -> Vec<String> {
+    let text = skill(name);
     let start = text
         .find(heading)
-        .unwrap_or_else(|| panic!("{skill}: heading {heading:?} not found"));
+        .unwrap_or_else(|| panic!("{name}: heading {heading:?} not found"));
     let rows: Vec<&str> = text[start..]
         .lines()
         .skip_while(|line| !line.trim_start().starts_with('|'))
         .take_while(|line| line.trim_start().starts_with('|'))
         .skip(2) // header and separator rows
         .collect();
-    assert!(!rows.is_empty(), "{skill}: no table rows after {heading:?}");
+    assert!(!rows.is_empty(), "{name}: no table rows after {heading:?}");
 
     let mut names = Vec::new();
     for row in rows {
@@ -133,14 +128,10 @@ fn every_command_invoking_skill_routes_chat_clients() {
     let exempt = ["flowleap", "flowleap-shared"];
     let mut missing = Vec::new();
     let mut checked = 0;
-    for entry in std::fs::read_dir(root().join("skills")).expect("read skills/") {
-        let dir = entry.expect("dir entry").path();
-        let name = dir.file_name().unwrap().to_string_lossy().to_string();
-        let skill_md = dir.join("SKILL.md");
-        if exempt.contains(&name.as_str()) || !skill_md.exists() {
+    for (name, text) in skills() {
+        if exempt.contains(&name.as_str()) {
             continue;
         }
-        let text = read(&skill_md);
         if !text.contains("`flowleap ") && !text.lines().any(invokes_flowleap) {
             continue;
         }

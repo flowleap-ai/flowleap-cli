@@ -1,0 +1,597 @@
+//! Office coverage of the text tools in the skills (#151, #152; backend ADR
+//! 0024). The backend serves claims for EP and WO (EPO OPS) and US
+//! (BigQuery), description for EP and WO, and no text for every other
+//! office. The `flowleap-shared` skill carries that fact ONCE, with the
+//! family-member workaround (`get_family`, then the member's text), its two
+//! limits and the measured share per office. These tests read what an agent
+//! reads, the skill files, and compare the facts against the backend's
+//! `server_info` `officeCoverage` block, vendored verbatim in
+//! `tests/support/office-coverage.json`. Refresh it when the backend changes:
+//!
+//!   flowleap --json tools run server_info | jq .officeCoverage > tests/support/office-coverage.json
+//!
+//! The US `get_claims` row carries a per-server `configured` flag (the
+//! BigQuery full-text flag of the server that answered); the tests ignore
+//! it. Fetched 2026-10-15 from backend main `officeCoverageBlock({
+//! bigqueryConfigured: true })`.
+
+mod support;
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use support::skills::{read, root, skill, skills};
+
+const SECTION_HEADING: &str =
+    "## Office coverage of the text tools and the family-member workaround";
+
+/// The vendored `officeCoverage` block, the fields the skills restate.
+struct OfficeCoverage {
+    /// `get_claims` rows: (office, source).
+    claims: Vec<(String, String)>,
+    /// `get_description` rows: (office, source).
+    description: Vec<(String, String)>,
+    no_text_source: Vec<String>,
+    workaround_tool: String,
+    shares: BTreeMap<String, u64>,
+    data_edition: String,
+}
+
+fn office_coverage() -> OfficeCoverage {
+    let value: serde_json::Value =
+        serde_json::from_str(&read(&root().join("tests/support/office-coverage.json")))
+            .expect("tests/support/office-coverage.json is JSON");
+    let workaround = &value["workaround"];
+    let rows = |tool: &str| -> Vec<(String, String)> {
+        value[tool]
+            .as_array()
+            .unwrap_or_else(|| panic!("{tool} is an array"))
+            .iter()
+            .map(|row| {
+                (
+                    row["office"].as_str().expect("office").to_string(),
+                    row["source"].as_str().expect("source").to_string(),
+                )
+            })
+            .collect()
+    };
+    OfficeCoverage {
+        claims: rows("get_claims"),
+        description: rows("get_description"),
+        no_text_source: value["noTextSource"]
+            .as_array()
+            .expect("noTextSource is an array")
+            .iter()
+            .map(|o| o.as_str().expect("office").to_string())
+            .collect(),
+        workaround_tool: workaround["tool"]
+            .as_str()
+            .expect("workaround.tool")
+            .to_string(),
+        shares: workaround["shares"]
+            .as_object()
+            .expect("workaround.shares")
+            .iter()
+            .map(|(office, share)| (office.clone(), share.as_u64().expect("share percent")))
+            .collect(),
+        data_edition: workaround["dataEdition"]
+            .as_str()
+            .expect("workaround.dataEdition")
+            .to_string(),
+    }
+}
+
+/// The shared section's text: from its heading to the next `## ` heading.
+fn shared_section() -> String {
+    let text = skill("flowleap-shared");
+    let count = text.matches(SECTION_HEADING).count();
+    assert_eq!(
+        count, 1,
+        "flowleap-shared: expected the section once, found {count}"
+    );
+    let start = text.find(SECTION_HEADING).unwrap();
+    let body = &text[start + SECTION_HEADING.len()..];
+    let end = body.find("\n## ").unwrap_or(body.len());
+    body[..end].to_string()
+}
+
+#[test]
+fn shared_section_exists_once_and_names_the_workaround_tool() {
+    let section = shared_section();
+    let tool = office_coverage().workaround_tool;
+    assert!(
+        section.contains(&format!("`{tool}`")),
+        "flowleap-shared: the workaround section does not name `{tool}`"
+    );
+}
+
+/// The share table: one row per office of `noTextSource`, the share equal to
+/// the vendored `workaround.shares` value, and the data edition it was
+/// measured on.
+#[test]
+fn shared_section_lists_every_office_without_text_with_its_vendored_share() {
+    let section = shared_section();
+    let coverage = office_coverage();
+    assert_eq!(
+        coverage.no_text_source.len(),
+        coverage.shares.len(),
+        "vendored file: every office without text has a share"
+    );
+    let mut wrong = Vec::new();
+    for office in &coverage.no_text_source {
+        let share = coverage.shares[office];
+        let row = section
+            .lines()
+            .find(|line| line.trim_start().starts_with(&format!("| {office} ")));
+        match row {
+            Some(row) if row.contains(&format!("| {share}%")) => {}
+            Some(row) => wrong.push(format!("{office}: expected {share}%, row {row:?}")),
+            None => wrong.push(format!("{office}: no table row")),
+        }
+    }
+    assert!(wrong.is_empty(), "flowleap-shared share table: {wrong:?}");
+    assert!(
+        section.contains(&coverage.data_edition),
+        "flowleap-shared: the share table does not name the data edition {:?}",
+        coverage.data_edition
+    );
+}
+
+/// The two limits, a phrase from each: a member's claims are not the office's
+/// claims, and the member's text must itself be served.
+#[test]
+fn shared_section_states_both_limits_of_the_workaround() {
+    let section = shared_section();
+    for phrase in ["not the office's claims", "must itself be served"] {
+        assert!(
+            section.contains(phrase),
+            "flowleap-shared: the workaround section lacks the limit phrase {phrase:?}"
+        );
+    }
+}
+
+/// The served failure: `FULLTEXT_UNAVAILABLE` with reason `no_source` carries
+/// the `workaround` field under `error.details`; reason `not_configured` is a
+/// server configuration gap and carries no workaround.
+#[test]
+fn shared_section_explains_the_fulltext_unavailable_reasons() {
+    let section = shared_section();
+    for phrase in [
+        "`FULLTEXT_UNAVAILABLE`",
+        "`no_source`",
+        "`error.details`",
+        "`workaround`",
+        "`not_configured`",
+    ] {
+        assert!(
+            section.contains(phrase),
+            "flowleap-shared: the workaround section lacks {phrase}"
+        );
+    }
+}
+
+/// The paragraph of `text` that holds `marker`: its lines up to the next
+/// blank line, joined with spaces.
+fn paragraph(text: &str, marker: &str) -> String {
+    let at = text
+        .find(marker)
+        .unwrap_or_else(|| panic!("no paragraph holds {marker:?}"));
+    let start = text[..at].rfind("\n\n").map_or(0, |i| i + 2);
+    let end = text[at..].find("\n\n").map_or(text.len(), |i| at + i);
+    text[start..end]
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The office codes in `text`: every token of exactly two ASCII uppercase
+/// letters (`EP`, `WO`, `US`, `CN`…; `EPO` and `OPS` are not codes).
+fn office_codes(text: &str) -> BTreeSet<String> {
+    text.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| t.len() == 2 && t.chars().all(|c| c.is_ascii_uppercase()))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The office codes a restatement names for `tool`: the clause after the
+/// backticked tool name, up to the next backtick.
+fn restated_offices(paragraph: &str, tool: &str) -> BTreeSet<String> {
+    let name = format!("`{tool}`");
+    let at = paragraph
+        .find(&name)
+        .unwrap_or_else(|| panic!("the paragraph does not name {name}: {paragraph:?}"));
+    let clause = &paragraph[at + name.len()..];
+    let clause = &clause[..clause.find('`').unwrap_or(clause.len())];
+    office_codes(clause)
+}
+
+/// A short restatement of the text tools' office coverage (a skill may carry
+/// one; the spec asked for them) names, per tool, exactly the vendored
+/// offices, and names no office without a text source anywhere in it.
+fn assert_restatement(skill: &str, paragraph: &str, tools: &[(&str, &[(String, String)])]) {
+    let coverage = office_coverage();
+    for (tool, rows) in tools {
+        let vendored: BTreeSet<String> = rows.iter().map(|(o, _)| o.clone()).collect();
+        let named = restated_offices(paragraph, tool);
+        assert_eq!(
+            named, vendored,
+            "{skill}: the offices named for `{tool}` differ from the vendored block"
+        );
+    }
+    let named = office_codes(paragraph);
+    let served_without_source: Vec<&String> = coverage
+        .no_text_source
+        .iter()
+        .filter(|o| named.contains(*o))
+        .collect();
+    assert!(
+        served_without_source.is_empty(),
+        "{skill}: names an office with no text source in its restatement: {served_without_source:?}"
+    );
+}
+
+/// The "Text, by office" list of the tools skill is checked against the
+/// vendored block, per tool.
+#[test]
+fn tools_skill_text_by_office_list_matches_the_vendored_block() {
+    let coverage = office_coverage();
+    let text = skill("flowleap-tools");
+    let list = paragraph(&text, "Text, by office:");
+    assert_restatement(
+        "flowleap-tools",
+        &list,
+        &[
+            ("get_claims", &coverage.claims),
+            ("get_description", &coverage.description),
+        ],
+    );
+}
+
+/// The `claims` / `description` coverage line of the OPS skill is checked
+/// against the vendored block, per command.
+#[test]
+fn ops_skill_claims_and_description_line_matches_the_vendored_block() {
+    let coverage = office_coverage();
+    let text = skill("flowleap-ops");
+    let line = paragraph(&text, "`claims` serves");
+    assert_restatement(
+        "flowleap-ops",
+        &line,
+        &[
+            ("claims", &coverage.claims),
+            ("description", &coverage.description),
+        ],
+    );
+}
+
+/// The shares and the two limits of the workaround live in the shared
+/// section only. No other skill, and no other part of `flowleap-shared`,
+/// carries a vendored share next to its office code on one line, or a limit
+/// sentence. (The FTO recipe's label "member text, not the office's claims"
+/// is a label on charted text, not the limit sentence.)
+#[test]
+fn shares_and_limits_appear_only_in_the_shared_section() {
+    const LIMIT_SENTENCES: [&str; 2] = [
+        "member's claims are not the office's claims",
+        "must itself be served",
+    ];
+    let coverage = office_coverage();
+    let section = shared_section();
+    let mut offenders = Vec::new();
+    for (name, text) in skills() {
+        let text = if name == "flowleap-shared" {
+            text.replace(&section, "")
+        } else {
+            text
+        };
+        for (i, line) in text.lines().enumerate() {
+            let codes = office_codes(line);
+            for (office, share) in &coverage.shares {
+                if codes.contains(office) && line.contains(&format!("{share}%")) {
+                    offenders.push(format!("{name}:{}: share of {office}: {line:?}", i + 1));
+                }
+            }
+            for sentence in LIMIT_SENTENCES {
+                if line.contains(sentence) {
+                    offenders.push(format!("{name}:{}: limit {sentence:?}", i + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "shares or limits outside the shared section: {offenders:#?}"
+    );
+}
+
+/// CONTEXT.md defines the two terms the skills use, mirrored from the backend:
+/// office coverage (per tool) and office depth (per office).
+#[test]
+fn context_md_defines_office_coverage_and_office_depth() {
+    // Line wraps do not matter: match on the text with one space per run of
+    // whitespace.
+    let text = read(&root().join("CONTEXT.md"))
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        text.contains("**Office coverage** vs **office depth**"),
+        "CONTEXT.md: no **Office coverage** vs **office depth** entry"
+    );
+    assert!(
+        text.contains("**Office coverage** is a property of a *tool*"),
+        "CONTEXT.md: office coverage is not defined as a property of a tool"
+    );
+    assert!(
+        text.contains("**Office depth** is a property of an *office*"),
+        "CONTEXT.md: office depth is not defined as a property of an office"
+    );
+    assert!(
+        text.contains("three senses"),
+        "CONTEXT.md: the conventions do not say that \"coverage\" carries three senses"
+    );
+}
+
+const TEXT_TOOLS: [&str; 5] = [
+    "get_claims",
+    "get_description",
+    "get_fulltext",
+    "ops claims",
+    "ops description",
+];
+
+/// The lead sentence of a block: its first line up to the first full stop,
+/// or the whole first line.
+fn lead_sentence(block: &str) -> String {
+    let first = block.lines().next().unwrap_or("");
+    let end = first.find(". ").unwrap_or(first.len());
+    first[..end].trim_end_matches('.').to_lowercase()
+}
+
+/// A skill must not list a text tool (`get_claims`, `get_description`,
+/// `get_fulltext`, `ops claims`, `ops description`) in a paragraph or list
+/// whose heading or lead sentence promises "worldwide" or "any publication
+/// number": the text tools answer for EP, WO and US only (ADR 0024).
+#[test]
+fn no_skill_lists_a_text_tool_under_a_worldwide_lead() {
+    const PROMISES: [&str; 2] = ["worldwide", "any publication number"];
+    let mut offenders = Vec::new();
+    for (name, text) in skills() {
+        let mut heading = String::new();
+        let mut block: Vec<&str> = Vec::new();
+        let mut check = |heading: &str, block: &mut Vec<&str>| {
+            if block.is_empty() {
+                return;
+            }
+            let body = block.join("\n");
+            let lead = lead_sentence(&body);
+            let promised = PROMISES
+                .iter()
+                .any(|p| heading.contains(p) || lead.contains(p));
+            if promised {
+                for tool in TEXT_TOOLS {
+                    if body.contains(tool) {
+                        offenders.push(format!(
+                            "{name}: `{tool}` under heading {heading:?}, lead {lead:?}"
+                        ));
+                    }
+                }
+            }
+            block.clear();
+        };
+        for line in text.lines() {
+            if line.starts_with('#') {
+                check(&heading, &mut block);
+                heading = line.to_lowercase();
+            } else if line.trim().is_empty() {
+                check(&heading, &mut block);
+            } else {
+                block.push(line);
+            }
+        }
+        check(&heading, &mut block);
+    }
+    assert!(
+        offenders.is_empty(),
+        "text tools listed under a worldwide / any-publication-number lead: {offenders:#?}"
+    );
+}
+
+/// The skills that read claims point at the shared block, never copy it: one
+/// pointer phrase each, in the tools skill, the OPS skill and the four
+/// recipes that read claims.
+#[test]
+fn text_reading_skills_point_at_the_family_member_workaround() {
+    const POINTER: &str = "family-member workaround in `flowleap-shared`";
+    let missing: Vec<&str> = [
+        "flowleap-tools",
+        "flowleap-ops",
+        "recipe-freedom-to-operate",
+        "recipe-prior-art-search",
+        "recipe-claim-analysis",
+        "recipe-invalidity-analysis",
+    ]
+    .into_iter()
+    .filter(|name| !skill(name).contains(POINTER))
+    .collect();
+    assert!(
+        missing.is_empty(),
+        "skills without the pointer {POINTER:?}: {missing:?}"
+    );
+}
+
+/// One example `ops claims` / `ops description` command in a skill whose
+/// number carries a country prefix.
+struct TextRead {
+    skill: String,
+    line_no: usize,
+    /// `claims` or `description`.
+    command: String,
+    /// The number's two-letter office prefix.
+    office: String,
+    /// The `--lang` value on the same line, if any.
+    lang: Option<String>,
+    /// The whole line.
+    line: String,
+}
+
+/// Every example text read with a country prefix, in every skill.
+fn example_text_reads() -> Vec<TextRead> {
+    let mut reads = Vec::new();
+    for (name, text) in skills() {
+        for (i, line) in text.lines().enumerate() {
+            let words: Vec<&str> = line.split_whitespace().collect();
+            for window in words.windows(3) {
+                let [ops, command, number] = [window[0], window[1], window[2]];
+                if ops != "ops" || !["claims", "description"].contains(&command) {
+                    continue;
+                }
+                let number = number.trim_matches('`');
+                let office: String = number.chars().take(2).collect();
+                let prefixed = office.chars().all(|c| c.is_ascii_uppercase())
+                    && number.chars().nth(2).is_some_and(|c| c.is_ascii_digit());
+                if !prefixed {
+                    continue;
+                }
+                let lang = words
+                    .iter()
+                    .position(|w| *w == "--lang")
+                    .and_then(|at| words.get(at + 1))
+                    .map(|l| l.to_string());
+                reads.push(TextRead {
+                    skill: name.clone(),
+                    line_no: i + 1,
+                    command: command.to_string(),
+                    office,
+                    lang,
+                    line: line.to_string(),
+                });
+            }
+        }
+    }
+    reads
+}
+
+/// An example reads text only at an office the vendored block serves for
+/// that command, and asks for a language other than English only where the
+/// source is EPO OPS.
+///
+/// The "English only" rule is not in the vendored block. Language is a fact
+/// of the BigQuery US source, documented in the backend
+/// (`src/lib/office-coverage.ts`), and `officeCoverage` does not carry it.
+/// The test holds it as an assumption: every source other than `epo_ops` is
+/// English only. Revisit it when a source that serves another language is
+/// added.
+#[test]
+fn example_text_reads_use_offices_the_backend_serves() {
+    let coverage = office_coverage();
+    let reads = example_text_reads();
+    assert!(
+        !reads.is_empty(),
+        "no example text read with a country prefix found"
+    );
+    let mut wrong = Vec::new();
+    for TextRead {
+        skill,
+        line_no,
+        command,
+        office,
+        lang,
+        line,
+    } in reads
+    {
+        let rows = match command.as_str() {
+            "claims" => &coverage.claims,
+            _ => &coverage.description,
+        };
+        let source = rows.iter().find(|(o, _)| *o == office).map(|(_, s)| s);
+        match source {
+            None => wrong.push(format!(
+                "{skill}:{line_no}: `ops {command} {office}…` but {office} has no {command} source"
+            )),
+            Some(source) => {
+                if lang.as_deref().is_some_and(|l| l != "en") && source != "epo_ops" {
+                    wrong.push(format!(
+                        "{skill}:{line_no}: `--lang {}` on {office}, whose {command} source {source} is English only",
+                        lang.unwrap()
+                    ));
+                }
+                if source == "bigquery" && !(line.contains("BigQuery") && line.contains("English"))
+                {
+                    wrong.push(format!(
+                        "{skill}:{line_no}: a {office} {command} example must say BigQuery, English"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "example text reads: {wrong:#?}");
+}
+
+/// "EP and WO", "EP, WO and US": the offices as a sentence names them.
+fn office_list(offices: &[(String, String)]) -> String {
+    let codes: Vec<&str> = offices.iter().map(|(o, _)| o.as_str()).collect();
+    match codes.as_slice() {
+        [] => String::new(),
+        [one] => one.to_string(),
+        [init @ .., last] => format!("{} and {last}", init.join(", ")),
+    }
+}
+
+/// The OPS skill uses the backend's word for a document EPO OPS does not
+/// hold, "holding gap", never "coverage gap" (CONTEXT.md reserves "coverage"
+/// for named senses), and its description states the office coverage of its
+/// text reads: "claims and description for" the vendored `get_description`
+/// offices, and for each office with claims only, "<office> claims".
+#[test]
+fn ops_skill_says_holding_gap_and_states_its_text_coverage() {
+    let coverage = office_coverage();
+    let text = skill("flowleap-ops");
+    assert!(
+        text.contains("holding gap"),
+        "flowleap-ops: no \"holding gap\""
+    );
+    assert!(
+        !text.contains("coverage gap"),
+        "flowleap-ops: \"coverage gap\" is the retired wording"
+    );
+    let description = text
+        .lines()
+        .find(|line| line.starts_with("description:"))
+        .expect("flowleap-ops: a description line");
+    let both = format!(
+        "claims and description for {}",
+        office_list(&coverage.description)
+    );
+    assert!(
+        description.contains(&both),
+        "flowleap-ops: the description does not state {both:?}"
+    );
+    let claims_only: Vec<&(String, String)> = coverage
+        .claims
+        .iter()
+        .filter(|(office, _)| !coverage.description.iter().any(|(o, _)| o == office))
+        .collect();
+    for (office, _) in claims_only {
+        assert!(
+            description.contains(&format!("{office} claims")),
+            "flowleap-ops: the description does not state \"{office} claims\""
+        );
+    }
+}
+
+/// The freedom-to-operate recipe never clears a claim it did not read: a
+/// candidate at an office with no text source is charted from the served
+/// member's claims, labelled as member text, or carried as an open gap.
+#[test]
+fn fto_recipe_records_unreadable_claims_as_an_open_gap() {
+    let text = skill("recipe-freedom-to-operate");
+    for phrase in [
+        "claims not readable here",
+        "member text, not the office's claims",
+    ] {
+        assert!(
+            text.contains(phrase),
+            "recipe-freedom-to-operate: lacks the phrase {phrase:?}"
+        );
+    }
+}

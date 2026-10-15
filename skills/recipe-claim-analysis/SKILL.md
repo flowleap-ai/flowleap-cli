@@ -20,7 +20,7 @@ In a chat client with the FlowLeap connector, call the tools named in the `flowl
 flowleap --json ops claims <patent-number>
 ```
 
-Done when you have the full claim set, independent claims identified.
+Done when you have the full claim set, independent claims identified. For an office with no text source, use the family-member workaround in `flowleap-shared`.
 
 ### Step 2: Get Context
 
@@ -64,7 +64,7 @@ element breakdown and each dependent claim's added limitation is recorded.
 Complete claim data with supporting context:
 - Full claims text (independent and dependent)
 - Abstract, bibliographic data, and description for interpretation
-- Family members for jurisdiction coverage
+- Family members by office (the extended family)
 - Element breakdown (verbatim language, structural/functional tag, keywords)
   and self-written follow-up search queries per independent claim, plus the
   narrowing limitation added by each dependent claim

@@ -266,6 +266,68 @@ flowleap upgrade --check --json
 flowleap upgrade
 ```
 
+## Office coverage of the text tools and the family-member workaround
+
+**Office coverage** is a property of a tool: the offices it answers for, and
+from which source. The three text tools serve two offices from EPO OPS and US
+claims from BigQuery. The other document reads (`ops biblio`, `family`,
+`legal`, `abstract`) are worldwide bibliographic; `get_citations` is worldwide
+DOCDB citation data; `get_patent_image` serves EPO OPS images for the offices
+EPO OPS holds.
+
+- `ops claims` / `get_claims`: EP and WO from EPO OPS; US from BigQuery, in
+  English only.
+- `ops description` / `get_description`: EP and WO from EPO OPS. US description
+  is not served.
+- `get_fulltext` (no command): probes the EPO OPS holdings only, so it answers
+  for EP and WO. A negative probe means EPO OPS holds no text, not that no text
+  exists.
+
+Eight offices have bibliographic, family and legal-event depth and **no text
+source**: CN, JP, KR, CA, AU, FR, DE and GB. Backend ADR 0024 adds no source
+until a customer names an office, so never call one of them "pending".
+
+**Family-member workaround** for a publication at one of those offices, two
+steps:
+
+1. `flowleap --json ops family <number>` / `get_family` (the extended INPADOC
+   family) to find the EP, WO or US member.
+2. `flowleap --json ops claims <member>` or `ops description <member>` /
+   `get_claims` or `get_description` on that member.
+
+Two limits apply, always. The member's claims are not the office's claims: use
+them for prior art and reading only, never for a freedom-to-operate,
+infringement or validity verdict on that office's right, and label the text as
+the member's. The member's text must itself be served: only EP, WO or US text
+is served, and US description is not.
+
+How likely the workaround is: the share of A filings 2015 to 2024 whose
+extended family has an EP, WO or US member, measured on PATSTAT 2026 Spring.
+Tell the human the share before you spend a family read.
+
+| Office | Share with such a member |
+|---|---|
+| CA | 95% |
+| AU | 88% |
+| FR | 60% |
+| DE | 55% |
+| GB | 54% |
+| JP | 48% |
+| KR | 38% |
+| CN | 13% |
+
+The share for CN is low. For a CN prior-art question go to the abstract, the
+bibliography and the citations first, and try the family after.
+
+**The served failure.** A text read for an office with no text source answers
+`FULLTEXT_UNAVAILABLE` (HTTP 404, exit 5; a data verdict, never retry). Under
+`error.details`, `reason` is `no_source` and the `workaround` field beside it
+is `{ tool: "get_family", note }`: act on that field, not on the message text. A
+US publication the BigQuery table does not hold answers `no_source` with no
+workaround (a holding gap). Reason `not_configured` means the server has no
+BigQuery configured: a server configuration gap, no workaround, and
+`server_info` shows it on the US `get_claims` row (`officeCoverage`).
+
 ## Safety
 
 - Use `--dry-run` before executing mutating operations

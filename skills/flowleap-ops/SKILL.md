@@ -1,6 +1,6 @@
 ---
 name: flowleap-ops
-description: Direct EPO Open Patent Services access through the FlowLeap backend — CQL search, EP Register search by representative or opponent, plus per-document bibliography, claims, description, family, legal status, and abstract. Trigger when an agent needs authoritative EPO document data for a known publication number, full claims or description text, family members, legal-status events, a raw OPS CQL search, or how many EP filings a professional representative handles. For query-building or ranked discovery use flowleap-patent; use OPS for authoritative per-document data.
+description: Direct EPO Open Patent Services access through the FlowLeap backend — CQL search, EP Register search by representative or opponent, plus per-document bibliography, family, legal status and abstract worldwide, and claims and description for EP and WO (US claims from BigQuery, English only). Trigger when an agent needs authoritative EPO document data for a known publication number, claims or description text for EP, WO or US, family members, legal-status events, a raw OPS CQL search, or how many EP filings a professional representative handles. For query-building or ranked discovery use flowleap-patent; use OPS for authoritative per-document data.
 ---
 
 # FlowLeap OPS
@@ -98,6 +98,9 @@ flowleap ops register-biblio <EP-doc>      # EP Register: representatives, oppon
 flowleap ops register-search --cql <query>  # EP Register search: re=<representative>, op=<opponent>, nm=<name in any role>
 ```
 
+`claims` serves EP and WO from EPO OPS and US from BigQuery (English only);
+`description` serves EP and WO. For an office with no text source, use the family-member workaround in `flowleap-shared`.
+
 `biblio --resolve-npl` looks each `citedReferences[].npl` string up in
 OpenAlex and attaches `nplWork` (`status` `matched` | `candidates` |
 `not_found` | `lookup_failed`, and on a match the title, DOI and abstract
@@ -119,7 +122,7 @@ number), convert it to DOCDB first so OPS can match it:
 flowleap convert-number US5443036.A --to docdb
 ```
 
-A `SERVER.EntityNotFound` on some KR/CN documents is an OPS coverage gap, not a
+A `SERVER.EntityNotFound` on some KR/CN documents is an OPS holding gap, not a
 retryable error — don't retry it; fall back to another source for that document.
 
 ### Response envelope
@@ -202,8 +205,8 @@ flowleap ops biblio EP1234567
 # Bibliography plus the EPC states the filing designates (extra EPO read)
 flowleap ops biblio EP1234567 --designated-states
 
-# Get claims in German
-flowleap ops claims US10123456 --lang de
+# Get claims in German (EP and WO only; US claims are BigQuery, English)
+flowleap ops claims EP1234567 --lang de
 
 # Get family members (JSON for agents)
 flowleap ops family EP1234567 --json

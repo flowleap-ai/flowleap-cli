@@ -163,8 +163,36 @@ state** is a non-member state the applicant additionally asked the EP right be
 extended or validated in (`AX` event, `extensionStates`). For an EP regional
 filing the designation IS its **designated-state coverage** — which countries
 the right can reach.
-_Avoid_: bare "coverage" for this (that word means the extended family across
-FlowLeap — say "designated-state coverage"); "the countries the family covers"
+_Avoid_: bare "coverage" for this (that word carries three senses across
+FlowLeap, see Conventions — say "designated-state coverage"); "the countries the family covers"
 (a family names the **offices** a filing published in, and an EP regional
 filing is one "EP" entry); reading an empty list as "unknown" — empty means the
 record designates no states, and every non-EP publication designates none.
+
+**Office coverage** vs **office depth**:
+**Office coverage** is a property of a *tool*: the set of patent offices it
+answers for, and at what depth. `ops claims` / `get_claims` has office coverage
+"EP and WO from EPO OPS; US from BigQuery"; `ops register-biblio` /
+`get_register_biblio` has office coverage "EP". **Office depth** is a property
+of an *office*: which tiers of its data FlowLeap can serve — bibliographic
+record, legal events, claims and description text, register record, file
+wrapper. Every one of the eight offices CN, JP, KR, CA, AU, FR, DE and GB has
+bibliographic, family and legal-event depth today (EPO OPS worldwide, INPADOC,
+PATSTAT); none has text, register or file-wrapper depth. A tool states its
+office coverage in its registry docs; for an office outside it, the tool
+answers a structured "no text source" verdict, never a raw upstream error. The
+skills state the coverage once, in the shared reference (`flowleap-shared`),
+and every other skill points there (backend ADR 0024).
+_Avoid_: bare "coverage" for this (the word already carries extended-family
+coverage and designated-state coverage — say "office coverage"); "supported
+countries" (a country is not an office: WO is an office with no country, and
+an EP right reaches states that are not offices); "worldwide" for a tool whose
+text tier serves two offices (worldwide is true of the bibliographic tier
+only, and the sentence must say which tier: "worldwide bibliographic").
+
+## Conventions
+
+- "coverage" carries three senses: **extended-family** coverage (which related
+  inventions a right reaches, PATSTAT), **designated-state** coverage (which
+  EPC states an EP filing designates, EPO OPS) and **office** coverage (which
+  offices a tool answers for, and at what depth). Always qualify which.
