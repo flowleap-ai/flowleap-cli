@@ -339,17 +339,12 @@ const TEXT_TOOLS: [&str; 5] = [
     "ops description",
 ];
 
-/// The lead sentence of a block: its first line up to the first colon or
-/// full stop.
+/// The lead sentence of a block: its first line up to the first full stop,
+/// or the whole first line.
 fn lead_sentence(block: &str) -> String {
     let first = block.lines().next().unwrap_or("");
-    let end = first
-        .find(':')
-        .into_iter()
-        .chain(first.find(". "))
-        .min()
-        .unwrap_or(first.len());
-    first[..end].to_lowercase()
+    let end = first.find(". ").unwrap_or(first.len());
+    first[..end].trim_end_matches('.').to_lowercase()
 }
 
 /// A skill must not list a text tool (`get_claims`, `get_description`,

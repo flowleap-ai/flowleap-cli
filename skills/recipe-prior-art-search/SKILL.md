@@ -71,9 +71,10 @@ Done when you have one probed EPO CQL query and one USPTO ODP query.
 
 Run **both** databases — they are not interchangeable:
 
-- `patent search` hits EPO OPS: worldwide DOCDB coverage, including EPO's own
-  bibliographic copy of US documents. `--countries US` narrows this EPO
-  collection to US members; it does **not** reach USPTO's Open Data Portal.
+- `patent search` hits EPO OPS: the worldwide bibliographic tier (DOCDB),
+  including EPO's own bibliographic copy of US documents. `--countries US`
+  narrows this EPO collection to US members; it does **not** reach USPTO's
+  Open Data Portal.
 - `uspto search` hits USPTO ODP directly, returning US application and
   prosecution metadata (the `patentFileWrapperDataBag`) that the EPO copy lacks.
 

@@ -64,7 +64,7 @@ element breakdown and each dependent claim's added limitation is recorded.
 Complete claim data with supporting context:
 - Full claims text (independent and dependent)
 - Abstract, bibliographic data, and description for interpretation
-- Family members for jurisdiction coverage
+- Family members by office (the extended family)
 - Element breakdown (verbatim language, structural/functional tag, keywords)
   and self-written follow-up search queries per independent claim, plus the
   narrowing limitation added by each dependent claim

@@ -43,7 +43,7 @@ Done when both databases have been searched and the closest hits noted.
 ```bash
 flowleap --json patent search --query "smart thermostat reinforcement learning" --limit 30
 flowleap ops legal US10123456      # still active?
-flowleap ops family US10123456     # geographic coverage
+flowleap ops family US10123456     # family members by office (extended family)
 ```
 
 Done when every candidate blocker has a legal-status and jurisdiction verdict.
