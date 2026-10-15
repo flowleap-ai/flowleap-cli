@@ -97,13 +97,12 @@ flowleap --json ops claims <patent-number>
 For an office with no text source, use the family-member workaround in `flowleap-shared`.
 
 **An unread claim is never a cleared claim.** A survivor at an office with no
-text source (CN, JP, KR, CA, AU, FR, DE, GB) answers `FULLTEXT_UNAVAILABLE`.
-When its family has a served EP, WO or US member, chart from that member's
-claims and label the chart "member text, not the office's claims" — the
-member's claims are not that right's claims, so the chart is a reading aid,
-not a verdict on the office's right. When no member's text is served, carry
-the survivor into the deliverable as "claims not readable here", an open gap
-on the same footing as a missing-key gap: never cleared, never dropped.
+text source answers `FULLTEXT_UNAVAILABLE`. When the workaround finds a served
+member, chart from that member's claims and label the chart "member text, not
+the office's claims": a reading aid, not a verdict on the office's right. When
+no member's text is served, carry the survivor into the deliverable as "claims
+not readable here", an open gap on the same footing as a missing-key gap:
+never cleared, never dropped.
 
 A claim clears only if at least one of its elements is absent from the product.
 Done when every independent claim of every survivor is either cleared (≥1 element
