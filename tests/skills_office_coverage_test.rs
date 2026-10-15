@@ -281,9 +281,23 @@ fn text_reading_skills_point_at_the_family_member_workaround() {
     );
 }
 
-/// Every example `ops claims` / `ops description` command whose number has a
-/// country prefix: (skill, line, command, office, `--lang` value, line text).
-fn example_text_reads() -> Vec<(String, usize, String, String, Option<String>, String)> {
+/// One example `ops claims` / `ops description` command in a skill whose
+/// number carries a country prefix.
+struct TextRead {
+    skill: String,
+    line_no: usize,
+    /// `claims` or `description`.
+    command: String,
+    /// The number's two-letter office prefix.
+    office: String,
+    /// The `--lang` value on the same line, if any.
+    lang: Option<String>,
+    /// The whole line.
+    line: String,
+}
+
+/// Every example text read with a country prefix, in every skill.
+fn example_text_reads() -> Vec<TextRead> {
     let mut reads = Vec::new();
     for (name, text) in skills() {
         for (i, line) in text.lines().enumerate() {
@@ -305,14 +319,14 @@ fn example_text_reads() -> Vec<(String, usize, String, String, Option<String>, S
                     .position(|w| *w == "--lang")
                     .and_then(|at| words.get(at + 1))
                     .map(|l| l.to_string());
-                reads.push((
-                    name.clone(),
-                    i + 1,
-                    command.to_string(),
+                reads.push(TextRead {
+                    skill: name.clone(),
+                    line_no: i + 1,
+                    command: command.to_string(),
                     office,
                     lang,
-                    line.to_string(),
-                ));
+                    line: line.to_string(),
+                });
             }
         }
     }
@@ -331,7 +345,15 @@ fn example_text_reads_use_offices_the_backend_serves() {
         "no example text read with a country prefix found"
     );
     let mut wrong = Vec::new();
-    for (skill, line, command, office, lang, text) in reads {
+    for TextRead {
+        skill,
+        line_no,
+        command,
+        office,
+        lang,
+        line,
+    } in reads
+    {
         let rows = match command.as_str() {
             "claims" => &coverage.claims,
             _ => &coverage.description,
@@ -339,19 +361,19 @@ fn example_text_reads_use_offices_the_backend_serves() {
         let source = rows.iter().find(|(o, _)| *o == office).map(|(_, s)| s);
         match source {
             None => wrong.push(format!(
-                "{skill}:{line}: `ops {command} {office}…` but {office} has no {command} source"
+                "{skill}:{line_no}: `ops {command} {office}…` but {office} has no {command} source"
             )),
             Some(source) => {
                 if lang.as_deref().is_some_and(|l| l != "en") && source != "epo_ops" {
                     wrong.push(format!(
-                        "{skill}:{line}: `--lang {}` on {office}, whose {command} source {source} is English only",
+                        "{skill}:{line_no}: `--lang {}` on {office}, whose {command} source {source} is English only",
                         lang.unwrap()
                     ));
                 }
-                if source == "bigquery" && !(text.contains("BigQuery") && text.contains("English"))
+                if source == "bigquery" && !(line.contains("BigQuery") && line.contains("English"))
                 {
                     wrong.push(format!(
-                        "{skill}:{line}: a {office} {command} example must say BigQuery, English"
+                        "{skill}:{line_no}: a {office} {command} example must say BigQuery, English"
                     ));
                 }
             }
