@@ -17,7 +17,7 @@
 
 mod support;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use support::skills::{read, root, skill, skills};
 
@@ -167,6 +167,140 @@ fn shared_section_explains_the_fulltext_unavailable_reasons() {
             "flowleap-shared: the workaround section lacks {phrase}"
         );
     }
+}
+
+/// The paragraph of `text` that holds `marker`: its lines up to the next
+/// blank line, joined with spaces.
+fn paragraph(text: &str, marker: &str) -> String {
+    let at = text
+        .find(marker)
+        .unwrap_or_else(|| panic!("no paragraph holds {marker:?}"));
+    let start = text[..at].rfind("\n\n").map_or(0, |i| i + 2);
+    let end = text[at..].find("\n\n").map_or(text.len(), |i| at + i);
+    text[start..end]
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The office codes in `text`: every token of exactly two ASCII uppercase
+/// letters (`EP`, `WO`, `US`, `CN`…; `EPO` and `OPS` are not codes).
+fn office_codes(text: &str) -> BTreeSet<String> {
+    text.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| t.len() == 2 && t.chars().all(|c| c.is_ascii_uppercase()))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The office codes a restatement names for `tool`: the clause after the
+/// backticked tool name, up to the next backtick.
+fn restated_offices(paragraph: &str, tool: &str) -> BTreeSet<String> {
+    let name = format!("`{tool}`");
+    let at = paragraph
+        .find(&name)
+        .unwrap_or_else(|| panic!("the paragraph does not name {name}: {paragraph:?}"));
+    let clause = &paragraph[at + name.len()..];
+    let clause = &clause[..clause.find('`').unwrap_or(clause.len())];
+    office_codes(clause)
+}
+
+/// A short restatement of the text tools' office coverage (a skill may carry
+/// one; the spec asked for them) names, per tool, exactly the vendored
+/// offices, and names no office without a text source anywhere in it.
+fn assert_restatement(skill: &str, paragraph: &str, tools: &[(&str, &[(String, String)])]) {
+    let coverage = office_coverage();
+    for (tool, rows) in tools {
+        let vendored: BTreeSet<String> = rows.iter().map(|(o, _)| o.clone()).collect();
+        let named = restated_offices(paragraph, tool);
+        assert_eq!(
+            named, vendored,
+            "{skill}: the offices named for `{tool}` differ from the vendored block"
+        );
+    }
+    let named = office_codes(paragraph);
+    let served_without_source: Vec<&String> = coverage
+        .no_text_source
+        .iter()
+        .filter(|o| named.contains(*o))
+        .collect();
+    assert!(
+        served_without_source.is_empty(),
+        "{skill}: names an office with no text source in its restatement: {served_without_source:?}"
+    );
+}
+
+/// The "Text, by office" list of the tools skill is checked against the
+/// vendored block, per tool.
+#[test]
+fn tools_skill_text_by_office_list_matches_the_vendored_block() {
+    let coverage = office_coverage();
+    let text = skill("flowleap-tools");
+    let list = paragraph(&text, "Text, by office:");
+    assert_restatement(
+        "flowleap-tools",
+        &list,
+        &[
+            ("get_claims", &coverage.claims),
+            ("get_description", &coverage.description),
+        ],
+    );
+}
+
+/// The `claims` / `description` coverage line of the OPS skill is checked
+/// against the vendored block, per command.
+#[test]
+fn ops_skill_claims_and_description_line_matches_the_vendored_block() {
+    let coverage = office_coverage();
+    let text = skill("flowleap-ops");
+    let line = paragraph(&text, "`claims` serves");
+    assert_restatement(
+        "flowleap-ops",
+        &line,
+        &[
+            ("claims", &coverage.claims),
+            ("description", &coverage.description),
+        ],
+    );
+}
+
+/// The shares and the two limits of the workaround live in the shared
+/// section only. No other skill, and no other part of `flowleap-shared`,
+/// carries a vendored share next to its office code on one line, or a limit
+/// sentence. (The FTO recipe's label "member text, not the office's claims"
+/// is a label on charted text, not the limit sentence.)
+#[test]
+fn shares_and_limits_appear_only_in_the_shared_section() {
+    const LIMIT_SENTENCES: [&str; 2] = [
+        "member's claims are not the office's claims",
+        "must itself be served",
+    ];
+    let coverage = office_coverage();
+    let section = shared_section();
+    let mut offenders = Vec::new();
+    for (name, text) in skills() {
+        let text = if name == "flowleap-shared" {
+            text.replace(&section, "")
+        } else {
+            text
+        };
+        for (i, line) in text.lines().enumerate() {
+            let codes = office_codes(line);
+            for (office, share) in &coverage.shares {
+                if codes.contains(office) && line.contains(&format!("{share}%")) {
+                    offenders.push(format!("{name}:{}: share of {office}: {line:?}", i + 1));
+                }
+            }
+            for sentence in LIMIT_SENTENCES {
+                if line.contains(sentence) {
+                    offenders.push(format!("{name}:{}: limit {sentence:?}", i + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "shares or limits outside the shared section: {offenders:#?}"
+    );
 }
 
 /// CONTEXT.md defines the two terms the skills use, mirrored from the backend:
