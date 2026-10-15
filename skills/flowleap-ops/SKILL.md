@@ -205,8 +205,8 @@ flowleap ops biblio EP1234567
 # Bibliography plus the EPC states the filing designates (extra EPO read)
 flowleap ops biblio EP1234567 --designated-states
 
-# Get claims in German
-flowleap ops claims US10123456 --lang de
+# Get claims in German (EP and WO only; US claims are BigQuery, English)
+flowleap ops claims EP1234567 --lang de
 
 # Get family members (JSON for agents)
 flowleap ops family EP1234567 --json

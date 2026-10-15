@@ -35,6 +35,10 @@ fn skill(name: &str) -> String {
 
 /// The vendored `officeCoverage` block, the fields the skills restate.
 struct OfficeCoverage {
+    /// `get_claims` rows: (office, source).
+    claims: Vec<(String, String)>,
+    /// `get_description` rows: (office, source).
+    description: Vec<(String, String)>,
     no_text_source: Vec<String>,
     workaround_tool: String,
     shares: BTreeMap<String, u64>,
@@ -46,7 +50,22 @@ fn office_coverage() -> OfficeCoverage {
         serde_json::from_str(&read(&root().join("tests/support/office-coverage.json")))
             .expect("tests/support/office-coverage.json is JSON");
     let workaround = &value["workaround"];
+    let rows = |tool: &str| -> Vec<(String, String)> {
+        value[tool]
+            .as_array()
+            .unwrap_or_else(|| panic!("{tool} is an array"))
+            .iter()
+            .map(|row| {
+                (
+                    row["office"].as_str().expect("office").to_string(),
+                    row["source"].as_str().expect("source").to_string(),
+                )
+            })
+            .collect()
+    };
     OfficeCoverage {
+        claims: rows("get_claims"),
+        description: rows("get_description"),
         no_text_source: value["noTextSource"]
             .as_array()
             .expect("noTextSource is an array")
@@ -289,4 +308,83 @@ fn text_reading_skills_point_at_the_family_member_workaround() {
         missing.is_empty(),
         "skills without the pointer {POINTER:?}: {missing:?}"
     );
+}
+
+/// Every example `ops claims` / `ops description` command whose number has a
+/// country prefix: (skill, line, command, office, `--lang` value, line text).
+fn example_text_reads() -> Vec<(String, usize, String, String, Option<String>, String)> {
+    let mut reads = Vec::new();
+    for (name, text) in skills() {
+        for (i, line) in text.lines().enumerate() {
+            let words: Vec<&str> = line.split_whitespace().collect();
+            for window in words.windows(3) {
+                let [ops, command, number] = [window[0], window[1], window[2]];
+                if ops != "ops" || !["claims", "description"].contains(&command) {
+                    continue;
+                }
+                let number = number.trim_matches('`');
+                let office: String = number.chars().take(2).collect();
+                let prefixed = office.chars().all(|c| c.is_ascii_uppercase())
+                    && number.chars().nth(2).is_some_and(|c| c.is_ascii_digit());
+                if !prefixed {
+                    continue;
+                }
+                let lang = words
+                    .iter()
+                    .position(|w| *w == "--lang")
+                    .and_then(|at| words.get(at + 1))
+                    .map(|l| l.to_string());
+                reads.push((
+                    name.clone(),
+                    i + 1,
+                    command.to_string(),
+                    office,
+                    lang,
+                    line.to_string(),
+                ));
+            }
+        }
+    }
+    reads
+}
+
+/// An example reads text only at an office the vendored block serves for
+/// that command, and asks for a language other than English only where the
+/// source is EPO OPS (the BigQuery claims are English only).
+#[test]
+fn example_text_reads_use_offices_the_backend_serves() {
+    let coverage = office_coverage();
+    let reads = example_text_reads();
+    assert!(
+        !reads.is_empty(),
+        "no example text read with a country prefix found"
+    );
+    let mut wrong = Vec::new();
+    for (skill, line, command, office, lang, text) in reads {
+        let rows = match command.as_str() {
+            "claims" => &coverage.claims,
+            _ => &coverage.description,
+        };
+        let source = rows.iter().find(|(o, _)| *o == office).map(|(_, s)| s);
+        match source {
+            None => wrong.push(format!(
+                "{skill}:{line}: `ops {command} {office}…` but {office} has no {command} source"
+            )),
+            Some(source) => {
+                if lang.as_deref().is_some_and(|l| l != "en") && source != "epo_ops" {
+                    wrong.push(format!(
+                        "{skill}:{line}: `--lang {}` on {office}, whose {command} source {source} is English only",
+                        lang.unwrap()
+                    ));
+                }
+                if source == "bigquery" && !(text.contains("BigQuery") && text.contains("English"))
+                {
+                    wrong.push(format!(
+                        "{skill}:{line}: a {office} {command} example must say BigQuery, English"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "example text reads: {wrong:#?}");
 }
