@@ -1,6 +1,6 @@
 ---
 name: flowleap-ops
-description: Direct EPO Open Patent Services access through the FlowLeap backend — CQL search, EP Register search by representative or opponent, plus per-document bibliography, claims, description, family, legal status, and abstract. Trigger when an agent needs authoritative EPO document data for a known publication number, full claims or description text, family members, legal-status events, a raw OPS CQL search, or how many EP filings a professional representative handles. For query-building or ranked discovery use flowleap-patent; use OPS for authoritative per-document data.
+description: Direct EPO Open Patent Services access through the FlowLeap backend — CQL search, EP Register search by representative or opponent, plus per-document bibliography, family, legal status and abstract worldwide, and claims and description for EP and WO (US claims from BigQuery, English only). Trigger when an agent needs authoritative EPO document data for a known publication number, claims or description text for EP, WO or US, family members, legal-status events, a raw OPS CQL search, or how many EP filings a professional representative handles. For query-building or ranked discovery use flowleap-patent; use OPS for authoritative per-document data.
 ---
 
 # FlowLeap OPS
@@ -122,7 +122,7 @@ number), convert it to DOCDB first so OPS can match it:
 flowleap convert-number US5443036.A --to docdb
 ```
 
-A `SERVER.EntityNotFound` on some KR/CN documents is an OPS coverage gap, not a
+A `SERVER.EntityNotFound` on some KR/CN documents is an OPS holding gap, not a
 retryable error — don't retry it; fall back to another source for that document.
 
 ### Response envelope

@@ -388,3 +388,28 @@ fn example_text_reads_use_offices_the_backend_serves() {
     }
     assert!(wrong.is_empty(), "example text reads: {wrong:#?}");
 }
+
+/// The OPS skill uses the backend's word for a document EPO OPS does not
+/// hold, "holding gap", never "coverage gap" (CONTEXT.md reserves "coverage"
+/// for named senses), and its description states the office coverage of its
+/// text reads.
+#[test]
+fn ops_skill_says_holding_gap_and_states_its_text_coverage() {
+    let text = skill("flowleap-ops");
+    assert!(
+        text.contains("holding gap"),
+        "flowleap-ops: no \"holding gap\""
+    );
+    assert!(
+        !text.contains("coverage gap"),
+        "flowleap-ops: \"coverage gap\" is the retired wording"
+    );
+    let description = text
+        .lines()
+        .find(|line| line.starts_with("description:"))
+        .expect("flowleap-ops: a description line");
+    assert!(
+        description.contains("claims and description for EP and WO"),
+        "flowleap-ops: the description does not state \"claims and description for EP and WO\""
+    );
+}
