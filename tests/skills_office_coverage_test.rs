@@ -88,6 +88,38 @@ fn shared_section_exists_once_and_names_the_workaround_tool() {
     );
 }
 
+/// The share table: one row per office of `noTextSource`, the share equal to
+/// the vendored `workaround.shares` value, and the data edition it was
+/// measured on.
+#[test]
+fn shared_section_lists_every_office_without_text_with_its_vendored_share() {
+    let section = shared_section();
+    let coverage = office_coverage();
+    assert_eq!(
+        coverage.no_text_source.len(),
+        coverage.shares.len(),
+        "vendored file: every office without text has a share"
+    );
+    let mut wrong = Vec::new();
+    for office in &coverage.no_text_source {
+        let share = coverage.shares[office];
+        let row = section
+            .lines()
+            .find(|line| line.trim_start().starts_with(&format!("| {office} ")));
+        match row {
+            Some(row) if row.contains(&format!("| {share}%")) => {}
+            Some(row) => wrong.push(format!("{office}: expected {share}%, row {row:?}")),
+            None => wrong.push(format!("{office}: no table row")),
+        }
+    }
+    assert!(wrong.is_empty(), "flowleap-shared share table: {wrong:?}");
+    assert!(
+        section.contains(&coverage.data_edition),
+        "flowleap-shared: the share table does not name the data edition {:?}",
+        coverage.data_edition
+    );
+}
+
 // T2 (#153) adds here: the pointer sentences in the tools skill, the OPS
 // skill and the four recipes; the sweep for a text tool under a "worldwide"
 // or "any publication number" heading; the example-office check for `ops

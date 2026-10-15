@@ -293,6 +293,24 @@ steps:
 2. `flowleap --json ops claims <member>` or `ops description <member>` /
    `get_claims` or `get_description` on that member.
 
+How likely the workaround is: the share of A filings 2015 to 2024 whose
+extended family has an EP, WO or US member, measured on PATSTAT 2026 Spring.
+Tell the human the share before you spend a family read.
+
+| Office | Share with such a member |
+|---|---|
+| CA | 95% |
+| AU | 88% |
+| FR | 60% |
+| DE | 55% |
+| GB | 54% |
+| JP | 48% |
+| KR | 38% |
+| CN | 13% |
+
+The share for CN is low. For a CN prior-art question go to the abstract, the
+bibliography and the citations first, and try the family after.
+
 ## Safety
 
 - Use `--dry-run` before executing mutating operations
