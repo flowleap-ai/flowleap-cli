@@ -120,6 +120,39 @@ fn shared_section_lists_every_office_without_text_with_its_vendored_share() {
     );
 }
 
+/// The two limits, a phrase from each: a member's claims are not the office's
+/// claims, and the member's text must itself be served.
+#[test]
+fn shared_section_states_both_limits_of_the_workaround() {
+    let section = shared_section();
+    for phrase in ["not the office's claims", "must itself be served"] {
+        assert!(
+            section.contains(phrase),
+            "flowleap-shared: the workaround section lacks the limit phrase {phrase:?}"
+        );
+    }
+}
+
+/// The served failure: `FULLTEXT_UNAVAILABLE` with reason `no_source` carries
+/// the `workaround` field under `error.details`; reason `not_configured` is a
+/// server configuration gap and carries no workaround.
+#[test]
+fn shared_section_explains_the_fulltext_unavailable_reasons() {
+    let section = shared_section();
+    for phrase in [
+        "`FULLTEXT_UNAVAILABLE`",
+        "`no_source`",
+        "`error.details`",
+        "`workaround`",
+        "`not_configured`",
+    ] {
+        assert!(
+            section.contains(phrase),
+            "flowleap-shared: the workaround section lacks {phrase}"
+        );
+    }
+}
+
 // T2 (#153) adds here: the pointer sentences in the tools skill, the OPS
 // skill and the four recipes; the sweep for a text tool under a "worldwide"
 // or "any publication number" heading; the example-office check for `ops

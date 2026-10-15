@@ -293,6 +293,12 @@ steps:
 2. `flowleap --json ops claims <member>` or `ops description <member>` /
    `get_claims` or `get_description` on that member.
 
+Two limits apply, always. The member's claims are not the office's claims: use
+them for prior art and reading only, never for a freedom-to-operate,
+infringement or validity verdict on that office's right, and label the text as
+the member's. The member's text must itself be served: only EP, WO or US text
+is served, and US description is not.
+
 How likely the workaround is: the share of A filings 2015 to 2024 whose
 extended family has an EP, WO or US member, measured on PATSTAT 2026 Spring.
 Tell the human the share before you spend a family read.
@@ -310,6 +316,15 @@ Tell the human the share before you spend a family read.
 
 The share for CN is low. For a CN prior-art question go to the abstract, the
 bibliography and the citations first, and try the family after.
+
+**The served failure.** A text read for an office with no text source answers
+`FULLTEXT_UNAVAILABLE` (exit 1; a data verdict, never retry). Under
+`error.details`, `reason` is `no_source` and the `workaround` field beside it
+is `{ tool: "get_family", note }`: act on that field, not on the message text. A
+US publication the BigQuery table does not hold answers `no_source` with no
+workaround (a holding gap). Reason `not_configured` means the server has no
+BigQuery configured: a server configuration gap, no workaround, and
+`server_info` shows it on the US `get_claims` row (`officeCoverage`).
 
 ## Safety
 
