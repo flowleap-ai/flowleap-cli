@@ -5,7 +5,9 @@
 //! entry through verbatim (the backend already publishes MCP-shaped
 //! `{ name, description, inputSchema }` objects), so new backend tools appear
 //! in every MCP harness without a CLI release. `tools/call` runs a tool via
-//! the same facade path as `flowleap tools run`.
+//! the same facade path as `flowleap tools run` and answers one compact-JSON
+//! text block — except `get_patent_image` pages, which arrive as MCP `image`
+//! content blocks so the model can see a drawing (see `mcp_content`).
 //!
 //! Protocol discipline: nothing but JSON-RPC frames on stdout (one per line);
 //! all logging goes to stderr. Tool-level failures — including the backend's
@@ -506,7 +508,7 @@ async fn tools_call(ctx: &Context, id: Value, params: &Value) -> Value {
     if let Some(body) = ok_body(&envelope) {
         // Backend tool envelope: { success, tool, data, executionTimeMs } —
         // surface `data` (like `flowleap tools run`), whole body otherwise.
-        return text_result(id, false, &data_payload(body));
+        return tool_result(id, name, &data_payload(body));
     }
     // The envelope already carries status, body, and any structured hints
     // (providerKeysHint, retryAfterSeconds) — pass it through whole.
@@ -557,6 +559,84 @@ fn text_result(id: Value, is_error: bool, payload: &Value) -> Value {
 
 fn tool_error(id: Value, payload: Value) -> Value {
     text_result(id, true, &payload)
+}
+
+/// A successful tool result: the content blocks [`mcp_content`] shapes for
+/// this tool's payload.
+fn tool_result(id: Value, tool: &str, payload: &Value) -> Value {
+    result_response(id, json!({ "content": mcp_content(tool, payload) }))
+}
+
+/// The one tool whose pages become MCP `image` content blocks (#150).
+const IMAGE_TOOL: &str = "get_patent_image";
+
+/// The MCP content blocks for one successful tool payload.
+///
+/// Every tool answers one compact-JSON text block — except `get_patent_image`
+/// with `include_images`, whose `figures[].base64` pages would push one text
+/// block past the client's tool-output cap (59k chars for one page) and so
+/// never reach the model. For that tool, each PNG or JPEG page leaves the
+/// JSON and becomes a `Page <page> of <docId>` text block followed by an
+/// `image` block the client renders to the model. The first block is the
+/// payload with those `base64` keys removed, everything else kept. A TIFF or
+/// PDF page is not renderable image content and stays in the JSON as before.
+/// The hosted MCP server shapes the identical content (backend #590).
+fn mcp_content(tool: &str, payload: &Value) -> Vec<Value> {
+    let text_block = |text: String| json!({ "type": "text", "text": text });
+    let mut stripped = payload.clone();
+    let figures = (tool == IMAGE_TOOL)
+        .then(|| stripped.get_mut("figures").and_then(Value::as_array_mut))
+        .flatten();
+    let Some(figures) = figures else {
+        return vec![text_block(payload.to_string())];
+    };
+    let doc_id = payload
+        .get("docId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let mut pages = Vec::new();
+    for figure in figures.iter_mut() {
+        let Some(mime) = figure
+            .get("format")
+            .and_then(Value::as_str)
+            .and_then(image_mime)
+        else {
+            continue;
+        };
+        let Some(Value::String(base64)) = figure
+            .as_object_mut()
+            .and_then(|figure| figure.remove("base64"))
+        else {
+            continue;
+        };
+        let page = figure.get("page").map(page_label).unwrap_or_default();
+        pages.push(text_block(format!("Page {page} of {doc_id}")));
+        pages.push(json!({ "type": "image", "data": base64, "mimeType": mime }));
+    }
+    if pages.is_empty() {
+        return vec![text_block(payload.to_string())];
+    }
+    let mut content = vec![text_block(stripped.to_string())];
+    content.extend(pages);
+    content
+}
+
+/// The MIME type of a renderable page `format`; `None` for the rest.
+fn image_mime(format: &str) -> Option<&'static str> {
+    match format {
+        "png" => Some("image/png"),
+        "jpeg" => Some("image/jpeg"),
+        _ => None,
+    }
+}
+
+/// A page number as it reads in `Page <page> of <docId>`.
+fn page_label(page: &Value) -> String {
+    match page {
+        Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1163,5 +1243,125 @@ mod tests {
         assert_eq!(resource.name, "patstat-workflow-graph");
         assert_eq!(resource.mime_type, "application/json");
         assert!(matches!(prompt, Some(Err(_))));
+    }
+
+    /// A `get_patent_image` reply with two renderable pages, as the backend
+    /// sends it with `include_images: true`.
+    fn image_fixture() -> Value {
+        json!({
+            "docId": "EP4671722A1",
+            "totalFigures": 10,
+            "drawingStartPage": 9,
+            "availableFormats": ["png", "jpeg"],
+            "figures": [
+                { "page": 9, "format": "png", "base64": "cG5n", "width": 600, "height": 800, "bytes": 3 },
+                { "page": 10, "format": "jpeg", "base64": "anBn", "width": 600, "height": 800, "bytes": 3 },
+            ],
+            "truncated": true,
+            "remainingPages": [11, 12],
+        })
+    }
+
+    #[test]
+    fn get_patent_image_pages_are_image_blocks_after_one_text_block_without_base64() {
+        let content = mcp_content("get_patent_image", &image_fixture());
+        let text = content[0]["text"].as_str().expect("text block");
+        assert!(
+            !text.contains("base64"),
+            "base64 must leave the text block: {text}"
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(text).unwrap(),
+            json!({
+                "docId": "EP4671722A1",
+                "totalFigures": 10,
+                "drawingStartPage": 9,
+                "availableFormats": ["png", "jpeg"],
+                "figures": [
+                    { "page": 9, "format": "png", "width": 600, "height": 800, "bytes": 3 },
+                    { "page": 10, "format": "jpeg", "width": 600, "height": 800, "bytes": 3 },
+                ],
+                "truncated": true,
+                "remainingPages": [11, 12],
+            })
+        );
+        assert_eq!(
+            content[1..],
+            [
+                json!({ "type": "text", "text": "Page 9 of EP4671722A1" }),
+                json!({ "type": "image", "data": "cG5n", "mimeType": "image/png" }),
+                json!({ "type": "text", "text": "Page 10 of EP4671722A1" }),
+                json!({ "type": "image", "data": "anBn", "mimeType": "image/jpeg" }),
+            ]
+        );
+    }
+
+    #[test]
+    fn metadata_only_get_patent_image_stays_one_text_block() {
+        let payload = json!({
+            "docId": "EP4671722A1",
+            "totalFigures": 10,
+            "drawingStartPage": 9,
+            "drawingPages": [9, 10],
+            "sections": {},
+            "formats": ["png"],
+        });
+        assert_eq!(
+            mcp_content("get_patent_image", &payload),
+            [json!({ "type": "text", "text": payload.to_string() })]
+        );
+    }
+
+    #[test]
+    fn other_tools_stay_one_text_block_even_with_a_figures_list() {
+        let payload = json!({ "figures": [{ "page": 1, "format": "png", "base64": "cG5n" }] });
+        assert_eq!(
+            mcp_content("get_patent_summary", &payload),
+            [json!({ "type": "text", "text": payload.to_string() })]
+        );
+    }
+
+    #[test]
+    fn tiff_and_pdf_pages_keep_base64_in_the_text_block_and_emit_no_image() {
+        let payload = json!({
+            "docId": "US1",
+            "figures": [
+                { "page": 1, "format": "tiff", "base64": "dGlmZg==" },
+                { "page": 2, "format": "pdf", "base64": "cGRm" },
+            ],
+        });
+        assert_eq!(
+            mcp_content("get_patent_image", &payload),
+            [json!({ "type": "text", "text": payload.to_string() })]
+        );
+    }
+
+    #[test]
+    fn mixed_pages_split_only_the_renderable_ones() {
+        let payload = json!({
+            "docId": "US1",
+            "figures": [
+                { "page": 1, "format": "tiff", "base64": "dGlmZg==" },
+                { "page": 2, "format": "png", "base64": "cG5n" },
+            ],
+        });
+        let content = mcp_content("get_patent_image", &payload);
+        assert_eq!(
+            serde_json::from_str::<Value>(content[0]["text"].as_str().unwrap()).unwrap(),
+            json!({
+                "docId": "US1",
+                "figures": [
+                    { "page": 1, "format": "tiff", "base64": "dGlmZg==" },
+                    { "page": 2, "format": "png" },
+                ],
+            })
+        );
+        assert_eq!(
+            content[1..],
+            [
+                json!({ "type": "text", "text": "Page 2 of US1" }),
+                json!({ "type": "image", "data": "cG5n", "mimeType": "image/png" }),
+            ]
+        );
     }
 }
