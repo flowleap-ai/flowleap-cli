@@ -89,7 +89,9 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
   keyless as *different* data. Full doctrine: `flowleap-keys`.
 - **Patent search & CQL** → `flowleap-patent`; **USPTO ODP** → `flowleap-uspto`.
 - **EPO document data** (biblio, claims, description, family, legal, EP
-  Register representatives and opponents) → `flowleap-ops`.
+  Register representatives and opponents) → `flowleap-ops`. "How many EP
+  filings does representative X handle" is `ops register-search --cql 're=X'`
+  there — the one search with a representative index.
 - **Non-patent literature** → `flowleap-npl` first (OpenAlex search, and
   `npl-work` to resolve a paper an office cited), `flowleap-academic`
   (Semantic Scholar + arXiv) as the second pass.

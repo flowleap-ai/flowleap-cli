@@ -36,7 +36,7 @@ before trusting `skills install` output or regenerating goldens.
 | `src/commands/patent.rs` | EPO patent search (caller-written CQL) |
 | `src/commands/examiner_baseline.rs` | `patent examiner-baseline`: the Examiner Baseline (agent-v2 ADR 0010). Calls the backend `examiner_baseline` tool when the registry lists it; otherwise walks the family itself (reads every member publication's `citedReferences` and a US grant's enriched office-action citations). Either way it prints one cited-document × office matrix with gap rows; `--verbose` names the path. No model call; `--json` prints the `Baseline` shape the human table is derived from, and a cell names each category's own claims when the search report pairs them (`categoryClaims`) |
 | `src/commands/uspto.rs` | USPTO ODP search, grants, applications, continuity, file wrapper (transactions/assignments/foreign-priority/adjustment/attorney/documents + OCR document text) |
-| `src/commands/ops.rs` | EPO OPS document reads (biblio, claims, description, family, legal, abstract) |
+| `src/commands/ops.rs` | EPO OPS document reads (biblio, claims, description, family, legal, abstract), EP Register reads and the EP Register search (`register-search`, the one search with a representative index) |
 | `src/commands/academic.rs` | Academic literature search |
 | `src/commands/npl.rs` | Non-patent literature search (OpenAlex) and `npl-work`, one cited paper to its OpenAlex record |
 | `src/commands/legal.rs` | Patent-law document search (legal RAG) |
@@ -240,6 +240,7 @@ longer calls them.
 | `uspto search` | `search_patents` (`provider: uspto`) |
 | `ops biblio` / `abstract` / `claims` / `description` / `legal` | `get_bibliography` / `get_abstract` / `get_claims` / `get_description` / `get_legal_status` (`biblio --designated-states` → `include_designated_states`, `--resolve-npl` → `resolve_npl`; both opt-in, each costs extra reads) |
 | `ops register-biblio` | `get_register_biblio` (EP Register: representatives of record, opponents) |
+| `ops register-search` | `search_register` (`--cql` → `query`, `--start`/`--end` → `range: "start-end"`). EP Register CQL, EP applications only — the one search with a representative index: `re` (professional representative), `op` (opponent), `ia` (inventor or applicant); `pa`, `in`, `ti`, `pn`, `ap`, `pr`, `pd`, `ic` work too. `ag`, `rep`, `ab`, `cpc`, `st`, `ps`, `fd`, `ctr` are not register indexes (`get_search_syntax` `provider: epo_register` lists both sets). `total` counts the whole query, capped at 10000; one row per EP application, `docId` null while none is published. `search_patents` has no representative index at any office |
 | `ops family` | `get_family` — the **INPADOC extended family**. `get_patent_family` is the narrower simple-family equivalents tool |
 | `uspto grant` / `application` / `continuity` | `get_us_grant` / `get_us_application` / `get_continuity` |
 | `uspto transactions` / `assignments` / `foreign-priority` / `adjustment` / `attorney` | `get_transactions` / `get_assignments` / `get_foreign_priority` / `get_patent_term_adjustment` / `get_attorney` |

@@ -83,10 +83,11 @@ flowleap --json npl-work "SMITH J: 'Hydraulic actuator control', IEEE TRANS., 20
 flowleap --json ops biblio EP3000000A3 --resolve-npl
 ```
 
-#### flowleap-ops — Direct EPO Open Patent Services access through the FlowLeap backend — CQL search plus per-document bibliography, claims, description, family, legal status, and abstract.
+#### flowleap-ops — Direct EPO Open Patent Services access through the FlowLeap backend — CQL search, EP Register search by representative or opponent, plus per-document bibliography, claims, description, family, legal status, and abstract.
 
 ```bash
 flowleap ops search --cql <query> [flags]
+flowleap ops register-search --cql <query> [--start 1] [--end 25]
 flowleap ops biblio <doc>
 flowleap ops claims <doc> --lang en
 flowleap ops description <doc> --lang en
@@ -149,6 +150,7 @@ flowleap --json uspto transactions 14412875
 flowleap --json uspto assignments 14412875
 flowleap --json uspto foreign-priority 14412875
 flowleap --json uspto adjustment 14412875
+flowleap --json uspto attorney 14412875
 ```
 
 ### Workflow Triggers
