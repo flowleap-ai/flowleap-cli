@@ -178,8 +178,92 @@ fn context_md_defines_office_coverage_and_office_depth() {
     );
 }
 
-// T2 (#153) adds here: the pointer sentences in the tools skill, the OPS
-// skill and the four recipes; the sweep for a text tool under a "worldwide"
-// or "any publication number" heading; the example-office check for `ops
-// claims` / `ops description` numbers and `--lang`; the OPS "holding gap"
-// wording; the freedom-to-operate phrases.
+/// Every skill file, by skill name.
+fn skills() -> Vec<(String, String)> {
+    let dir = root().join("skills");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().join("SKILL.md").is_file())
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .collect();
+    names.sort();
+    assert!(!names.is_empty(), "no skills under {}", dir.display());
+    names
+        .into_iter()
+        .map(|name| {
+            let text = skill(&name);
+            (name, text)
+        })
+        .collect()
+}
+
+const TEXT_TOOLS: [&str; 5] = [
+    "get_claims",
+    "get_description",
+    "get_fulltext",
+    "ops claims",
+    "ops description",
+];
+
+/// The lead sentence of a block: its first line up to the first colon or
+/// full stop.
+fn lead_sentence(block: &str) -> String {
+    let first = block.lines().next().unwrap_or("");
+    let end = first
+        .find(':')
+        .into_iter()
+        .chain(first.find(". "))
+        .min()
+        .unwrap_or(first.len());
+    first[..end].to_lowercase()
+}
+
+/// A skill must not list a text tool (`get_claims`, `get_description`,
+/// `get_fulltext`, `ops claims`, `ops description`) in a paragraph or list
+/// whose heading or lead sentence promises "worldwide" or "any publication
+/// number": the text tools answer for EP, WO and US only (ADR 0024).
+#[test]
+fn no_skill_lists_a_text_tool_under_a_worldwide_lead() {
+    const PROMISES: [&str; 2] = ["worldwide", "any publication number"];
+    let mut offenders = Vec::new();
+    for (name, text) in skills() {
+        let mut heading = String::new();
+        let mut block: Vec<&str> = Vec::new();
+        let mut check = |heading: &str, block: &mut Vec<&str>| {
+            if block.is_empty() {
+                return;
+            }
+            let body = block.join("\n");
+            let lead = lead_sentence(&body);
+            let promised = PROMISES
+                .iter()
+                .any(|p| heading.contains(p) || lead.contains(p));
+            if promised {
+                for tool in TEXT_TOOLS {
+                    if body.contains(tool) {
+                        offenders.push(format!(
+                            "{name}: `{tool}` under heading {heading:?}, lead {lead:?}"
+                        ));
+                    }
+                }
+            }
+            block.clear();
+        };
+        for line in text.lines() {
+            if line.starts_with('#') {
+                check(&heading, &mut block);
+                heading = line.to_lowercase();
+            } else if line.trim().is_empty() {
+                check(&heading, &mut block);
+            } else {
+                block.push(line);
+            }
+        }
+        check(&heading, &mut block);
+    }
+    assert!(
+        offenders.is_empty(),
+        "text tools listed under a worldwide / any-publication-number lead: {offenders:#?}"
+    );
+}
