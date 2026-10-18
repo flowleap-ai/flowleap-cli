@@ -95,6 +95,8 @@ Write `<target-patent>.invalidity.md` with the template in [references/fallback-
 - A "Search rounds" section: one entry per round with the ids it answered and its queries. Round 0 is the first search.
 - A Limitations line: "The ladder, the coverage counts and the round log are unvalidated: written by the agent, not checked by a tool."
 
+No tool checks the ladder, the coverage counts, the quotes or the round log in the CLI, the Agents window or the plugin pack. In the app's chat panel a writer and a completion guard enforce them. Here you write them by hand, and the reader checks them.
+
 "Not covered" is a complete result, not a failure. Done when the report holds every section above for every independent claim.
 
 ## Step 8: Round Report, Then Wait

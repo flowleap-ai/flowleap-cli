@@ -5,8 +5,11 @@ amendment drawn from the description. A chart that covers the independent
 claims but not the fallbacks stops where the litigator's work starts. This
 file is the detail for Steps 2, 7 and 8 of `recipe-invalidity-analysis`.
 
-In the CLI you build the ladder, count the coverage and log the rounds by
-hand. No tool checks them. Say so in the report, in the Limitations line.
+In the CLI, the Agents window and the plugin pack, no tool checks the
+ladder, the coverage counts, the quotes or the round log. In the app's chat
+panel a writer and a completion guard enforce them. Here you write them by
+hand, and the reader checks them. Say so in the report, in the Limitations
+line.
 
 ## Build the Fallback Ladder (Step 2)
 
