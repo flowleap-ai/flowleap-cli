@@ -155,7 +155,8 @@ what it actually is:
 - `flowleap patstat …` (portfolio, guarded SQL, graph) — aggregates from a
   twice-yearly SNAPSHOT, not documents and not current. It does not answer
   "what prior art exists for this claim".
-- `flowleap legal search …` — patent LAW (MPEP, EPC, guidelines). It gives the
+- Patent LAW (MPEP, EPC, guidelines) comes from the office's own page, read
+  with your web tool (`flowleap-legal`), not from a FlowLeap key. It gives the
   legal standard, never what has been published or filed.
 - `flowleap academic search …` / `flowleap npl …` — scholarly LITERATURE. Papers
   are prior art in their own right, but they are a different corpus from patents.

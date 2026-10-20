@@ -63,10 +63,10 @@ provenance of every document — the chart cites evidence, not impressions.
   function/way/result; flag prosecution-history estoppel risks from the
   file history
 
-```bash
-flowleap --json legal search "doctrine of equivalents function way result" --jurisdiction uspto
-flowleap --json legal search "prosecution history estoppel" --jurisdiction uspto
-```
+The doctrine of equivalents and prosecution-history estoppel are US case law,
+not MPEP text. Read the MPEP section that names the decisions from the
+office's own page with `flowleap-legal` (MPEP 2186), quote it with its URL and
+edition, and name the decisions it cites.
 
 ## Step 6: Construction Disputes
 

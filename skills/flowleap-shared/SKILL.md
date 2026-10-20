@@ -50,7 +50,6 @@ so no `flowleap …` command can run there.
 | `patent examiner-baseline` | `examiner_baseline` | In a chat client call the examiner_baseline tool; it returns the same JSON. |
 | `academic search`, `npl` | `search_academic`, `search_npl` | |
 | `npl-work` | `get_npl_work` | one cited paper: DOI, OpenAlex id or citation string |
-| `legal search` / `jurisdictions` | `reference_search`, `get_legal_jurisdictions` | |
 | `analytics` | `patent_analytics` | |
 | `ocr` | `ocr` | |
 | `patstat portfolio` / `query` / `docs` | `patstat_portfolio`, `patstat_query`, `patstat_docs` | |

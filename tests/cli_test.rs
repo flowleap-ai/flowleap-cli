@@ -788,3 +788,21 @@ fn patent_help_says_worldwide_bibliographic() {
         "patent --help does not name the tier: {stdout}"
     );
 }
+
+/// Patent law is read from the office's own page (ADR 0017 step 2, #158):
+/// the `legal` command is gone, with no alias and no stub, so an agent that
+/// still types it gets clap's normal unknown-subcommand error.
+#[test]
+fn legal_is_not_a_command() {
+    let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
+        .args(["legal", "search", "inventive step"])
+        .output()
+        .expect("run flowleap legal");
+
+    assert!(!output.status.success(), "flowleap legal still runs");
+    let stderr = String::from_utf8(output.stderr).expect("stderr is utf8");
+    assert!(
+        stderr.contains("unrecognized subcommand 'legal'"),
+        "expected clap's unknown-subcommand error, got: {stderr}"
+    );
+}

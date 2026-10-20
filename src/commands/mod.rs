@@ -9,7 +9,6 @@ pub mod examiner_baseline;
 pub mod facade;
 pub mod health;
 pub mod keys;
-pub mod legal;
 pub mod mcp;
 pub mod npl;
 pub mod ocr;

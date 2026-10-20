@@ -321,29 +321,6 @@ fn citation_novelty_is_a_recipe_over_citation_search() {
 }
 
 #[test]
-fn legal_commands_map_onto_the_reference_tools() {
-    assert_tool_call(
-        &[
-            "legal",
-            "search",
-            "inventive step",
-            "--jurisdiction",
-            "epo",
-            "--limit",
-            "5",
-        ],
-        "reference_search",
-        &[
-            ("query", json!("inventive step")),
-            ("jurisdiction", json!("EPO")),
-            ("limit", json!(5)),
-            ("search_mode", json!("hybrid")),
-        ],
-    );
-    assert_tool_call(&["legal", "jurisdictions"], "get_legal_jurisdictions", &[]);
-}
-
-#[test]
 fn literature_commands_map_onto_their_search_tools() {
     assert_tool_call(
         &[
@@ -592,8 +569,6 @@ fn patstat_graph_verbs_map_onto_the_graph_tools() {
 #[test]
 fn retired_subcommands_are_no_longer_offered() {
     for args in [
-        ["legal", "stats"].as_slice(),
-        ["legal", "docs"].as_slice(),
         ["uspto", "associated-documents", "14412875"].as_slice(),
         ["health", "cache"].as_slice(),
         ["health", "redis"].as_slice(),

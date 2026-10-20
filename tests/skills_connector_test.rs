@@ -146,3 +146,33 @@ fn every_command_invoking_skill_routes_chat_clients() {
         "skills without the chat-client routing sentence: {missing:?}"
     );
 }
+
+/// Patent law is read from the office's own page (ADR 0017 step 2, #158).
+/// The backend retires `reference_search` and `get_legal_jurisdictions` one
+/// release after this one, so no skill may name the two tools or the
+/// `legal` command that mapped onto them.
+#[test]
+fn no_skill_names_the_retired_legal_search() {
+    let retired = [
+        "reference_search",
+        "get_legal_jurisdictions",
+        "flowleap legal",
+        "--json legal",
+        "legal search",
+        "legal jurisdictions",
+    ];
+    let mut hits = Vec::new();
+    for (name, text) in skills() {
+        for (number, line) in text.lines().enumerate() {
+            for token in retired {
+                if line.contains(token) {
+                    hits.push(format!("{name}:{}: {token}", number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "skills still name the retired legal search: {hits:#?}"
+    );
+}
