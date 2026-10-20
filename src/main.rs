@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{error::ErrorKind, Parser, Subcommand};
 use flowleap_cli::commands::{
-    academic, analytics, api, auth, citation, config_cmd, doctor, facade, health, keys, legal, mcp,
-    npl, ocr, ops, patent, patstat, skills, tools, upgrade, uspto,
+    academic, analytics, api, auth, citation, config_cmd, doctor, facade, health, keys, mcp, npl,
+    ocr, ops, patent, patstat, skills, tools, upgrade, uspto,
 };
 use flowleap_cli::{client, config, update};
 use serde_json::json;
@@ -92,8 +92,6 @@ enum Commands {
     Npl(npl::NplArgs),
     /// Resolve a cited paper (DOI, OpenAlex id or citation string) to its OpenAlex record
     NplWork(npl::NplWorkArgs),
-    /// Search patent-law documents
-    Legal(legal::LegalArgs),
     /// Search USPTO citation/prior-art data
     Citation(citation::CitationArgs),
     /// Full-corpus patent analytics (filing trends, countries, assignees, CPC)
@@ -346,7 +344,6 @@ async fn dispatch(command: Commands, ctx: &client::Context) -> Result<()> {
         Commands::Academic(args) => academic::run(ctx, args).await,
         Commands::Npl(args) => npl::run(ctx, args).await,
         Commands::NplWork(args) => npl::run_work(ctx, args).await,
-        Commands::Legal(args) => legal::run(ctx, args).await,
         Commands::Citation(args) => citation::run(ctx, args).await,
         Commands::Analytics(args) => analytics::run(ctx, args).await,
         Commands::Patstat(args) => patstat::run(ctx, args).await,
