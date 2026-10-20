@@ -2,7 +2,7 @@
 
 ## Overview
 
-`flowleap` is a Rust CLI for the FlowLeap Patent AI backend API. It provides patent search, EPO OPS and USPTO document reads, citation and legal-reference search, academic/NPL literature search, analytics and OCR — designed for both human users and AI agents. Every one of those runs on the backend's `/v1/tools` facade; queries are written by the caller, locally.
+`flowleap` is a Rust CLI for the FlowLeap Patent AI backend API. It provides patent search, EPO OPS and USPTO document reads, citation search, academic/NPL literature search, analytics and OCR — designed for both human users and AI agents. Every one of those runs on the backend's `/v1/tools` facade; queries are written by the caller, locally.
 
 ## Build & Test
 
@@ -39,7 +39,6 @@ before trusting `skills install` output or regenerating goldens.
 | `src/commands/ops.rs` | EPO OPS document reads (biblio, claims, description, family, legal, abstract), EP Register reads and the EP Register search (`register-search`, the one search with a representative index) |
 | `src/commands/academic.rs` | Academic literature search |
 | `src/commands/npl.rs` | Non-patent literature search (OpenAlex) and `npl-work`, one cited paper to its OpenAlex record |
-| `src/commands/legal.rs` | Patent-law document search (legal RAG) |
 | `src/commands/citation.rs` | USPTO enriched citation search |
 | `src/commands/api.rs` | Profile/usage + raw API escape hatch |
 | `src/commands/health.rs` / `doctor.rs` | Health probes and environment diagnosis |
@@ -160,7 +159,7 @@ inferred — only that explicit code means gated, so empty results, truncated
 payloads, and 5xx keep the normal fallbacks. With the other office live, deliver
 its results in full, name the gap as a missing-key gap, ask once at the end, and
 never silently narrow a prior-art or FTO scope. Keyless commands (`patstat`,
-`legal`, `academic`, `npl`) may be offered as *different* data, never as a
+`academic`, `npl`) may be offered as *different* data, never as a
 substitute. After the key lands, re-run only the gated office and merge. Keep
 this wording aligned with the app prompt when either side changes
 (abdullahatrash/flowleap-agent-v2#173).
@@ -203,7 +202,7 @@ renders each hint as an info box on stderr:
 ## API Endpoints
 
 **The `/v1/tools/*` facade is the only patent-data surface.** Every data
-command — `patent`, `ops`, `uspto`, `citation`, `legal`, `npl`, `academic`,
+command — `patent`, `ops`, `uspto`, `citation`, `npl`, `academic`,
 `analytics`, `ocr`, and the ergonomic verbs — POSTs to `/v1/tools/<name>`; the
 provider-specific routes they used to call are retired (backend ADR 0013).
 `flowleap tools list` discovers every tool with its JSON input schema and
@@ -248,7 +247,6 @@ longer calls them.
 | `citation search` / `forward` / `stats` | `search_office_action_citations` / `search_enriched_citations` / `get_citation_stats` |
 | `citation novelty` | `search_office_action_citations` with `category: "X"`, `examiner_cited_only: true` — a recipe, not a tool of its own |
 | `patent examiner-baseline` | `examiner_baseline` (`publication`), after a `GET /v1/tools` check. When the registry does not list it (older backend), the fallback walk: `get_family`, then `get_bibliography` per member publication, `get_us_grant` per US grant (resolves the application number) and `search_office_action_citations` (`size: 1000`) per resolved application. A per-document failure becomes a gap row; a key gate, 401/403, 402, 429 or 410 stops the verb with its usual exit code |
-| `legal search` / `jurisdictions` | `reference_search` / `get_legal_jurisdictions` |
 | `academic search`, `npl` | `search_academic` / `search_npl` (human output names a failed `search_academic` source on stderr) |
 | `npl-work` | `get_npl_work` (`<reference>` → `reference`) |
 | `analytics`, `ocr` | `patent_analytics` / `ocr` |

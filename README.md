@@ -35,7 +35,7 @@ The CLI itself is open source (MIT) and free to install. The patent-data command
 
 Some data sources additionally need your own **patent-data keys** — free signups at each office: EPO OPS (key + secret) and USPTO ODP (API key). Run `flowleap setup` for the guided wizard, or see `flowleap keys --help`. `provider_keys_required` / `provider_keys_invalid` / `trial_budget_exhausted` are the wire codes that name them in error envelopes (the last one meaning today's shared trial data budget is spent — it resets daily, and your own free keys lift it permanently).
 
-**Agent behavior when a key is missing** (the key-gate doctrine, shipped in full in the `flowleap-keys` skill): a `provider_keys_required` error is a **user-action stop for that office, never an exhausted route**. An agent must not substitute web-scraped patent data for the gated office — searches and single-document reads alike — and must not frame the free key as a paywall. With the other office live it delivers those results in full, names the gap as a *missing-key gap* rather than a coverage finding, and asks once at the end of the turn; it never silently narrows a prior-art or FTO scope to the office whose key happens to be set. Keyless commands (`patstat`, `legal`, `academic`, `npl`) stay available meanwhile, offered as *different* data rather than a replacement for live patent search. A gate is read, never inferred: only that explicit code means gated, so an empty result, a truncated payload, or a 5xx keeps the normal retry paths. Once the key is added, only the previously gated office is re-run — no restart, no new session.
+**Agent behavior when a key is missing** (the key-gate doctrine, shipped in full in the `flowleap-keys` skill): a `provider_keys_required` error is a **user-action stop for that office, never an exhausted route**. An agent must not substitute web-scraped patent data for the gated office — searches and single-document reads alike — and must not frame the free key as a paywall. With the other office live it delivers those results in full, names the gap as a *missing-key gap* rather than a coverage finding, and asks once at the end of the turn; it never silently narrows a prior-art or FTO scope to the office whose key happens to be set. Keyless commands (`patstat`, `academic`, `npl`) stay available meanwhile, offered as *different* data rather than a replacement for live patent search. A gate is read, never inferred: only that explicit code means gated, so an empty result, a truncated payload, or a 5xx keeps the normal retry paths. Once the key is added, only the previously gated office is re-run — no restart, no new session.
 
 `doctor`, `health`, `auth`, and `keys test` work without a subscription, so you can always diagnose your setup.
 
@@ -149,7 +149,6 @@ To stay current:
 | `uspto` | USPTO Open Data Portal: search, grants, applications, continuity |
 | `academic` | Search academic literature (Semantic Scholar, arXiv) |
 | `npl` | Search non-patent literature (OpenAlex) |
-| `legal` | Search patent-law reference documents (EPC, EPO Guidelines, MPEP, …) |
 | `citation` | USPTO enriched citation data: search, forward, stats, novelty |
 | `analytics` | Full-corpus patent analytics (filing trends, countries, assignees, CPC) |
 | `patstat` | PATSTAT analytics: portfolio aggregates for one applicant, guarded SQL, and `graph` — a named node and the relationships around it |
@@ -182,10 +181,9 @@ flowleap compare EP1000000 US5443036
 flowleap figures EP1000000 --out fig1.png
 flowleap convert-number US5443036.A --to epodoc
 
-# Literature, law, citations, analytics
+# Literature, citations, analytics
 flowleap academic search "machine learning patent classification"
 flowleap npl "battery thermal management" --limit 10
-flowleap legal search "doctrine of equivalents" --limit 10
 flowleap citation search 16000001 --size 20
 flowleap analytics --keyword battery --country US --date-from 2020-01-01
 flowleap patstat portfolio Siemens --from-year 2015 --to-year 2024
@@ -402,7 +400,7 @@ skills/                            # 33 skills, embedded in the binary
   flowleap-ops/SKILL.md            # Direct EPO OPS document data
   flowleap-academic/SKILL.md       # Academic literature search
   flowleap-npl/SKILL.md            # Non-patent literature (OpenAlex)
-  flowleap-legal/SKILL.md          # Patent-law reference search (RAG)
+  flowleap-legal/SKILL.md          # Patent law from the office's own page
   flowleap-citation/SKILL.md       # USPTO enriched citation data
   flowleap-tools/SKILL.md          # Agent-first /v1/tools facade
   flowleap-patstat/SKILL.md        # PATSTAT portfolio analytics + guarded SQL
