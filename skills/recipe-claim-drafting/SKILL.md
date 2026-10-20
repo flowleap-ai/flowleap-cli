@@ -54,15 +54,12 @@ least one novel element for allowance.
 
 ## Step 4: Check Formal Drafting Rules
 
-```bash
-# EPO clarity/support requirements
-flowleap --json legal search "claim clarity conciseness support Article 84" --jurisdiction epo --comprehensive
+Read the rules from the office's own page with `flowleap-legal`: EPC Art. 84
+and Guidelines F-IV (clarity, conciseness, support); 35 USC 112 and MPEP 2173
+(definiteness) and MPEP 2181 (means-plus-function). Quote each rule with its
+URL and edition.
 
-# US definiteness and functional-language rules
-flowleap --json legal search "claim definiteness functional language means plus function" --jurisdiction uspto --comprehensive
-```
-
-Check each claim against the found rules: antecedent basis, single-sentence
+Check each claim against the fetched rules: antecedent basis, single-sentence
 form, no result-only language without structure, support in the description.
 
 ## Step 5: Iterate Against the Art

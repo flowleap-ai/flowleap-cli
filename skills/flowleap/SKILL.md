@@ -100,7 +100,10 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
 - **Non-patent literature** → `flowleap-npl` first (OpenAlex search, and
   `npl-work` to resolve a paper an office cited), `flowleap-academic`
   (Semantic Scholar + arXiv) as the second pass.
-- **Patent-law RAG** → `flowleap-legal`; **enriched citations** → `flowleap-citation`.
+- **Patent law** (the MPEP, 35 USC, 37 CFR, the EPC, the EPO Guidelines, the
+  PCT rules) → `flowleap-legal`: the method reads the office's own page with
+  your web tool and quotes it with its URL and edition; **enriched citations**
+  → `flowleap-citation`.
 - **Examiner Baseline** (`flowleap --json patent examiner-baseline <pub>` —
   every document cited across a granted patent's family, by office, with gaps)
   and **Find Better** (earlier or closer art than the examiners cited) →
@@ -130,7 +133,7 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
 
 ## One surface for patent data
 
-Every data command — `patent`, `ops`, `uspto`, `citation`, `legal`, `npl`,
+Every data command — `patent`, `ops`, `uspto`, `citation`, `npl`,
 `academic`, `analytics`, `ocr`, `patstat`, and the one-call verbs — runs on the
 **Tools facade**: named tools invoked through `/v1/tools`, one success envelope, one
 error contract, a self-describing registry. The per-source **provider routes**

@@ -84,18 +84,17 @@ The argument lives where the mapping breaks.
 
 ## Step 5: Ground the Arguments in Law
 
-```bash
-# US obviousness framework
-flowleap --json legal search "obviousness motivation to combine rationale" --jurisdiction uspto --comprehensive
+Read the law from the office's own page with `flowleap-legal`, per rejection
+type, and quote the section with its URL and edition:
 
-# EPO inventive step framework
-flowleap --json legal search "inventive step problem solution approach" --jurisdiction epo --comprehensive
+- **103 / inventive step**: MPEP 2141 to 2145 (motivation to combine,
+  hindsight, teaching away); EPC Art. 56 and Guidelines G-VII, 5
+  (problem-solution approach)
+- **102**: MPEP 2131 (every element in a single reference); EPC Art. 54
+- **112 / amendments**: MPEP 2161 to 2164 (written description, enablement),
+  MPEP 2163.06; EPC Art. 123(2) and Guidelines H-V
 
-# Claim amendments support
-flowleap --json legal search "written description support for amendments" --jurisdiction uspto
-```
-
-Cite `section` + `source_url` from each result next to the argument it backs.
+Put each quote next to the argument it backs.
 
 ## Step 6: Draft the Response Shell
 

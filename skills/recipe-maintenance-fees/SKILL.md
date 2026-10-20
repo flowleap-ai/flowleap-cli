@@ -67,12 +67,9 @@ All dates run from **grant date** (PTA does not move them):
 | 8th-year | grant + 7y | grant + 7.5y | grant + 8y | grant + 8y |
 | 12th-year | grant + 11y | grant + 11.5y | grant + 12y | grant + 12y |
 
-Ground the rule text rather than asserting it (37 CFR 1.362, MPEP Chapter
-2500):
-
-```bash
-flowleap --json legal search "maintenance fee due dates surcharge" --jurisdiction uspto
-```
+Ground the rule text rather than asserting it: read 37 CFR 1.362 and MPEP
+Chapter 2500 from the office's own page with `flowleap-legal`, and quote the
+rule with its URL and edition.
 
 If all three windows are past, report historical status only.
 

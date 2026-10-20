@@ -80,10 +80,11 @@ For an office with no text source, use the family-member workaround in `flowleap
 
 ## Step 6: Ground the Legal Standard
 
-```bash
-flowleap --json legal search "anticipation single reference disclosure" --jurisdiction uspto
-flowleap --json legal search "inventive step problem solution approach" --jurisdiction epo --comprehensive
-```
+Read the standard from the office's own page with `flowleap-legal`: MPEP 2131
+(anticipation, every element in a single reference) and MPEP 2141 to 2145
+(obviousness) for the US; EPC Art. 54 and 56 and Guidelines G-VI and G-VII, 5
+(problem-solution approach) for the EPO. Quote each section with its URL and
+edition.
 
 ## Step 7: Write the Report
 

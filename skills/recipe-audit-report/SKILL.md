@@ -70,11 +70,9 @@ State plainly:
 - Known limitations: search recall is not exhaustive; OCR and summarization
   can introduce errors; results reflect database coverage on the query date
 
-For filings, check the current duty-of-disclosure guidance:
-
-```bash
-flowleap --json legal search "duty of candor AI assisted tools" --jurisdiction uspto
-```
+For filings, read the current duty-of-disclosure guidance from the office's
+own page with `flowleap-legal` (37 CFR 1.56, MPEP 2001) and quote it with its
+URL and edition.
 
 ## Visual deliverable
 

@@ -51,7 +51,7 @@ For anything close, pull claims and record how the invention differs:
 flowleap --json ops claims <close-patent>
 ```
 
-This is a sanity check, not a legal search — say so in the IDF.
+This is a sanity check, not a professional prior-art search — say so in the IDF.
 
 ## Step 3: Landscape Context
 

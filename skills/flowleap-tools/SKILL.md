@@ -1,6 +1,6 @@
 ---
 name: flowleap-tools
-description: Discover and run FlowLeap backend tools through the agent-first /v1/tools facade — one stable contract (search_patents, get_bibliography, get_claims, get_patent_summary, compare_patents, reference_search, …) instead of provider-specific endpoints. Trigger when an agent needs patent data and wants a uniform tool interface, needs to discover what the backend can do, or wants compound operations like patent summaries, comparisons, or prosecution timelines.
+description: Discover and run FlowLeap backend tools through the agent-first /v1/tools facade — one stable contract (search_patents, get_bibliography, get_claims, get_patent_summary, compare_patents, …) instead of provider-specific endpoints. Trigger when an agent needs patent data and wants a uniform tool interface, needs to discover what the backend can do, or wants compound operations like patent summaries, comparisons, or prosecution timelines.
 ---
 
 # FlowLeap Tools (agent-first facade)
@@ -111,10 +111,9 @@ Citations: `search_office_action_citations` (by application),
 Compound (one call, multiple sources): `get_patent_summary`, `compare_patents`
 (2-10 patents), `get_prosecution_timeline`, `get_patent_term`.
 
-Literature and reference: `search_academic` (Semantic Scholar + arXiv),
-`search_npl` (OpenAlex), `get_npl_work` (one cited paper to its OpenAlex
-record), `reference_search` (patent-law RAG: EPC, EPO
-Guidelines, MPEP, …), `get_legal_jurisdictions`.
+Literature: `search_academic` (Semantic Scholar + arXiv), `search_npl`
+(OpenAlex), `get_npl_work` (one cited paper to its OpenAlex record). Patent law
+is not a tool: read it from the office's own page with `flowleap-legal`.
 
 Analytics and documents: `patent_analytics` (Topic Analytics, free-text
 keywords), `ocr`. Meta: `server_info`.
