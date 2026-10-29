@@ -73,6 +73,7 @@ flowleap --json ops description <cited>      # EP and WO only
 ```
 
 - **Date check.** Compare the publication date of each document with the earliest priority date of the application. A document published after that date is a complete answer to a 102 or Art. 54(2) objection; at the EPO it can still be prior art under Art. 54(3).
+- **A refusal that names another tool.** When a text tool answers that another tool serves the text (for example a paid route for US claims), call that tool before you write a gap.
 - **Text that the tools do not serve** (US description; CN, JP, KR and the other offices): use the family-member workaround in `flowleap-shared`, section "Office coverage of the text tools and the family-member workaround". Label the text of the member as the member's text. Its paragraph numbers can be different from the cited numbers.
 - **Last step:** fetch the public page of the document (for example `https://patents.google.com/patent/<number>/en`) with your web tool. Quote only text that the page returned, and give the URL as the source.
 - The comparison verb (`compare` / `compare_patents`) can show you where to look. It is not a source: quote the text of the document itself.
@@ -109,7 +110,7 @@ Give the response deadline as the OA states it, and tell the attorney to confirm
 
 Write the report in the [analysis layout](references/analysis-layout.md): one block for each objection, then the claim-by-claim comparison, the response plan, and the sources and gaps. Done when the report is saved and the chat answer gives its path and the open gaps.
 
-- In the FlowLeap app (the Patent AI web app and the IDE), save it with `write_patent_results`, `template: "office-action-scaffold"`, `filePath: "office-actions/<application>/<OA date>-analysis.md"` and `matter` set to the application number. The writer adds the provenance appendix, and the evidence ledger of the session records each tool result that the report cites. When the writer refuses a save, correct the content and save again. Do not edit the saved file directly.
+- In the FlowLeap app (the Patent AI web app and the IDE), save it with `write_patent_results`, `template: "office-action-scaffold"`, `filePath: "office-actions/<application>/<OA date>-analysis.md"` and `matter` set to the application number. Put the reader link of the claim (`[US1111111A1 claim 1](flowleap://flowleap.patent-ai/patent?publication=US1111111A1&section=claims&claim=1)`) directly before each quotation from a claim: the writer then checks the quotation against the recorded claim text. The writer adds the provenance appendix, and the evidence ledger of the session records each tool result that the report cites. When the writer refuses a save, correct the content and save again. Do not edit the saved file directly.
 - With the CLI only, write the same Markdown file yourself. No tool checks the quotes or the anchors there: mark the report "unvalidated: written by the agent, not checked by a tool".
 
 End the report and the chat answer with: "AI-assisted analysis for review by a registered patent attorney. Not legal advice. Nothing was filed or sent. Confirm the response deadline independently."
