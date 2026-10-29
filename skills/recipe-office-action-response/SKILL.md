@@ -112,7 +112,7 @@ For each objection, give the options and what speaks for and against each. Do no
 
 - **Argue**: the element, the arrangement or the test step that the argument rests on, with its quote. US: say that an argument can also narrow the claims (argument-based disclaimer).
 - **Amend**: list candidate features from dependent claims and the description. Which feature to choose is the attorney's decision. For each feature, give its basis and test it as [legal tests](references/legal-tests.md), section "Amendments", says (EP: Rule 137(4) basis, "directly and unambiguously derivable", intermediate generalisation, Rule 137(5) unsearched subject-matter; US: written description, 35 U.S.C. 112(a)). Check the amended claim against each cited document. Say which scope it gives up (US: amendment-based and argument-based estoppel or disclaimer; EP: effect on scope, for the attorney).
-- **Accept or cancel**: the claims, and what stays.
+- **Accept or cancel**: the claims, and what stays. "Accept" is never "do nothing": an unanswered action ends in abandonment (US) or in a deemed withdrawal (EP, also for a search opinion under Rule 70a).
 - **Interview** (US) or **informal consultation** with the examiner (EP).
 - **After a final action** (US): a 37 CFR 1.116 amendment, an RCE (1.114), or an appeal.
 - **Terminal disclaimer** (US double patenting) or **divisional application** (EP unity), where they apply.
