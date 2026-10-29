@@ -3,16 +3,23 @@
 Write the report body in this order, with these headings and field labels. Keep the labels as they are: a reader (or a later work page) finds each objection and its fields by them. Use one `### Objection` block for each objection, also for a formal objection.
 
 ```markdown
+## 0. Summary
+
+3 to 5 lines: the action type, final or not, the number of objections, the main problems, and the last date without extension. For an EP search report without its opinion, the first line is: "SEARCH REPORT ONLY: no examination communication or search opinion text was read. The 'objections' below are inferred from search categories, not raised by the EPO."
+
 ## 1. Action
 
 | Field | Value | Source |
 |---|---|---|
 | Application | US 17/000,001 | get_us_application |
 | Office and action | USPTO, non-final rejection (CTNF) | get_application_documents |
-| Action date | 2026-01-15 | OA page 1 |
-| Response deadline (as stated) | 3 months, extendable | OA page 1; the attorney confirms |
+| Action type | Non-final; restriction withdrawn | OA page 1 |
+| Action date | 2026-01-15 (mailing date as the OA states it) | OA page 1 |
+| Response deadline (as stated) | 3 months SSP; extendable to 6 months under 1.136(a); attorney confirms | OA page 1 |
+| Last date without extension / with maximum extension | 2026-04-15 / 2026-07-15 (computed by the agent; the attorney confirms) | computed |
+| Later filings after this action | None found | get_application_documents |
 | Claims examined | 1-20, listing of 2025-06-02 | CLM document of 2025-06-02 |
-| Earliest priority date | 2024-03-01 | get_us_application |
+| Effective filing date per claim | 1-20: 2024-03-01 (priority document not read) | get_us_application |
 | Cited documents | D1 US1111111A1; D2 EP2222222A1 | OA page 3; form 892 |
 | Assumptions | Started from a routine: the newest CTNF on or after 2026-01-15 | routine instruction |
 
@@ -31,32 +38,35 @@ Write the report body in this order, with these headings and field labels. Keep 
 |---|---|---|---|---|
 | D1 US1111111A1 | applied alone | ¶[0059], Fig. 6 | "…" | [source anchor: …] |
 
-- **Assessment:** one or two sentences, with the passage that decides it.
-- **Options:** Argue (…); Amend (…, support ¶[00xx] "…"); Accept or cancel (…); Ask (…)
+- **Assessment:** one or two sentences, with the passage that decides it. For 102: the arrangement and any inherency. For 103 / Art. 56: the test block (problem-solution, or Graham and KSR).
+- **Options:** Argue (…); Amend (…, basis ¶[00xx] "…"); Accept or cancel (…); Interview (…); Ask (…)
+- **Reply must address:** each ground of this objection, the specific distinctions, and how an amendment avoids each reference (37 CFR 1.111(b), (c)).
+- **Confidence and gaps:** what the assessment rests on, and what was not read.
 - **Sources:** the anchors and URLs used in this block
 
 ### Objection 2: …
 
 ## 3. Claim-by-claim comparison
 
-One table for each independent claim that an objection hits:
+For each independent claim that an objection hits, first the interpretation of the disputed terms (term, reading, the definition quoted, why it is disputed). Then one table:
 
 | Element (verbatim) | Examiner says (OA page) | Cited passage says (quote, passage, anchor) | Assessment |
 |---|---|---|---|
 | 1a "a housing …" | D1 ¶[0059] (OA page 4) | "…" US1111111A1 ¶[0059] [source anchor: …] | disclosed |
 
-Assessment is one of `disclosed`, `not disclosed`, `disputable`, `not read`. After the tables, write one line for each dependent claim that the OA names: its added feature, and whether a cited passage discloses it.
+Assessment is one of `disclosed`, `not disclosed`, `disputable`, `not read`. Below the table, one line on the arrangement of the elements. After the tables, write one line for each dependent claim that the OA names: its added feature, and whether a cited passage discloses it.
 
 ## 4. Response plan
 
 | Objection | Option | For | Against | Open question for the attorney |
 |---|---|---|---|---|
 
-Then a short list of the facts that the attorney or the applicant must supply. No option is a decision: write "for the attorney's decision".
+Then a short list of the facts that the attorney or the applicant must supply, and the check items (law or periods that were not read in this run). No option is a decision: write "for the attorney's decision".
 
 ## 5. Sources and gaps
 
 - Each tool call and page that the report cites, with what it gave.
+- Family art: the documents and arguments of other family members that you found, or that you did not check.
 - Each gap: what was not read (an OA text that no tool serves, a description outside the text coverage, a law page that did not load), what you tried, and what the attorney can supply.
 ```
 
