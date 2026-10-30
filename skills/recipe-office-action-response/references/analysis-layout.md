@@ -2,6 +2,13 @@
 
 Write the report body in this order, with these headings and field labels. Keep the labels as they are: a reader (or a later work page) finds each objection and its fields by them. Use one `### Objection` block for each objection, also for a formal objection.
 
+In the FlowLeap app, sections 0 to 3 are the fields of `officeAction`, and `content` holds only sections 4 and 5 and the closing sentence. Do not write the headings of sections 0 to 3 in `content`: the writer refuses that save.
+
+- Section 0 is `summary`. Section 1 is `application`, `communication`, `issued` and `deadline` (each date as YYYY-MM-DD, or null), one `action` row (`field`, `value`, `source`) for each row of the table, and one `documents` entry (`label`, `text`) for each cited document.
+- `communication` holds only the office and the action, for example "EPO, communication under Art. 94(3) EPC" or "EPO, European search report". The board shows it as the heading. Write no remark in it, also not in parentheses: put a remark, such as the SEARCH REPORT ONLY line or "no examination communication read", in the first line of `summary`, and an assumption in the Assumptions row of `action`.
+- Each objection block is one entry of `officeAction.objections[]`: `id` ("1", or "1.2" for a part of objection 1; each objection has a different id), `title` (the line after "Objection 1:"), and one field for each label. Ground → `ground`, Legal basis → `legalBasis`, Claims hit → `claims` as whole numbers from 1 to 9999 (write a range as each number), Examiner's reasoning → `reasoning`, Source of the objection → `source`, Cited documents → `citations` (one `document`, `role`, `passage`, `says`, `anchor` entry for each row of the table), Assessment → `assessment`, Options → `options` (one `label`, `text` entry for each option), Reply must address → `replyMustAddress`, Confidence and gaps → `confidence`, Sources → `sources`.
+- Section 3 is `comparison`, one entry for each claim table: `claim` (an independent claim that the `claims` of an objection lists), `heading`, `interpretation`, `rows` (`element`, `examiner`, `cited`, `assessment`) and `arrangement`. The lines on the dependent claims are `dependentClaims`.
+
 ```markdown
 ## 0. Summary
 
