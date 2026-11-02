@@ -1,7 +1,7 @@
 # Reading the Examiner Baseline JSON
 
 `flowleap --json patent examiner-baseline <publication>` prints one object.
-In a chat client the `examiner_baseline` tool returns the same object.
+In a chat client or the FlowLeap Patent AI app, the `examiner_baseline` tool returns the same object.
 Code computes every value from the offices' own records. Read it; do not
 rebuild it from other calls. Fields are only added, never renamed.
 

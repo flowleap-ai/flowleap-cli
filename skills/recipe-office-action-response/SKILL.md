@@ -10,7 +10,7 @@ metadata:
 
 Turn the newest office action (OA) of one application into an analysis and a response plan. The attorney decides. You read, compare and propose.
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. The steps stay the same.
 
 Read the two references before Step 1: [action types and deadlines](references/action-types-and-deadlines.md) and [legal tests](references/legal-tests.md). Write the report in the [analysis layout](references/analysis-layout.md).
 
@@ -81,7 +81,7 @@ flowleap --json ops description <cited>      # EP and WO only
 - **Date check.** Use [legal tests](references/legal-tests.md), section "Date check". Never write that a date is a "complete answer": write "date issue for the attorney".
 - **A refusal that names another tool.** When a text tool answers that another tool serves the text (for example a paid route for US claims), call that tool before you write a gap.
 - **Text that the tools do not serve** (US description; CN, JP, KR and the other offices): use the family-member workaround in `flowleap-shared`, section "Office coverage of the text tools and the family-member workaround". Label the text of the member as the member's text. Its paragraph numbers can be different from the cited numbers.
-- **Last step:** fetch the public page of the document (for example `https://patents.google.com/patent/<number>/en`) with your web tool. Quote only text that the page returned, and give the URL as the source.
+- **Last step:** fetch the public page of the document (for example `https://patents.google.com/patent/<number>/en`) with your web tool. Quote only text that the page returned, and give the URL as the source. The FlowLeap Patent AI app has no web tool: there, skip this step and write that the page was not read.
 - The comparison verb (`compare` / `compare_patents`) can show you where to look. It is not a source: quote the text of the document itself.
 - US: `flowleap --json citation search <application-number> --examiner-cited-only` gives the office's record of how the examiner applied each document.
 - **Family art.** Look at the other members of the family (`flowleap --json ops family <publication>`) for the same documents and the arguments made there. Record art from a counterpart that the attorney may need to cite (US duty of disclosure: check 37 CFR 1.56).

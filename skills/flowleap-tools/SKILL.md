@@ -1,11 +1,12 @@
 ---
 name: flowleap-tools
 description: Discover and run FlowLeap backend tools through the agent-first /v1/tools facade — one stable contract (search_patents, get_bibliography, get_claims, get_patent_summary, compare_patents, …) instead of provider-specific endpoints. Trigger when an agent needs patent data and wants a uniform tool interface, needs to discover what the backend can do, or wants compound operations like patent summaries, comparisons, or prosecution timelines.
+user-invocable: false
 ---
 
 # FlowLeap Tools (agent-first facade)
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The connector lists the same registry under the same names.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. The connector and the app list the same registry under the same names; in the app a paid tool carries the `mcp__flowleap__` prefix.
 
 The **Tools facade** is the single agent surface for patent data: named tools
 invoked through `/v1/tools`, one success envelope, one error contract, a

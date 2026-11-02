@@ -1,13 +1,13 @@
 ---
 name: flowleap-patstat-graph
-description: Graph Analytics over the PATSTAT snapshot — a named node and the relationships around it. Worldwide DOCDB citation networks (who cites a patent, examiner vs applicant origin), citation/family paths between two patents, family coverage, an applicant's co-applicant network with top CPC and jurisdictions, the CPC codes that cover a technology keyword (`graph cpc`), and one CPC area's landscape (`graph technology`: top applicants, filing trend, grant rate, new entrants), every edge carrying a confidence tag (EXTRACTED/INFERRED/AMBIGUOUS) and a PATSTAT row provenance ref. Trigger when an agent needs a traversal answer about a specific patent or applicant — "who cites EP3477840", "how are patent X and patent Y connected", "why does this patent matter", "who does this company file with", where a family has coverage — or asks "which CPC codes cover X", "who dominates <technology area>", or wants the technology landscape for a CPC area; as opposed to other corpus aggregate counts (flowleap-patstat), free-text keyword analytics (flowleap analytics), or document retrieval (flowleap-patent/flowleap-ops).
+description: "Graph Analytics over the PATSTAT snapshot — a named node and the relationships around it. Worldwide DOCDB citation networks (who cites a patent, examiner vs applicant origin), citation/family paths between two patents, family coverage, an applicant's co-applicant network with top CPC and jurisdictions, the CPC codes that cover a technology keyword (`graph cpc`), and one CPC area's landscape (`graph technology`: top applicants, filing trend, grant rate, new entrants), every edge carrying a confidence tag (EXTRACTED/INFERRED/AMBIGUOUS) and a PATSTAT row provenance ref. Trigger when an agent needs a traversal answer about a specific patent or applicant — 'who cites EP3477840', 'how are patent X and patent Y connected', 'why does this patent matter', 'who does this company file with', where a family has coverage — or asks 'which CPC codes cover X', 'who dominates <technology area>', or wants the technology landscape for a CPC area; as opposed to other corpus aggregate counts (flowleap-patstat), free-text keyword analytics (flowleap analytics), or document retrieval (flowleap-patent/flowleap-ops)."
 ---
 
 # FlowLeap Patstat Graph (Graph Analytics)
 
 Auth and global flags: see `flowleap-shared`.
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there.
 
 Eight native commands under `flowleap patstat graph`. Each one runs one
 **PATSTAT tool** on the Tools facade, the same tool `flowleap mcp` serves under

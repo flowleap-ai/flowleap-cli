@@ -1,6 +1,6 @@
 [package]
 name = "flowleap-cli"
-version = "0.12.2"
+version = "0.12.3"
 edition = "2021"
 description = "One CLI for FlowLeap Patent AI — built for humans and AI agents"
 authors = ["FlowLeap"]
@@ -56,6 +56,7 @@ tempfile = "3"
 wiremock = "0.6"
 # Skill↔CLI validation test: tokenize `flowleap …` examples in SKILL.md files
 shell-words = "1"
+yaml-rust2 = "0.13.0"
 
 [profile.release]
 opt-level = "z"

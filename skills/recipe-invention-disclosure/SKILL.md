@@ -10,7 +10,7 @@ metadata:
 
 Capture an invention completely enough that an attorney can draft from it.
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. The steps stay the same.
 
 ## Step 1: Structured Capture
 
