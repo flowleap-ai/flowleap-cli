@@ -58,12 +58,11 @@ firm administrator or the desktop user sets up outside the chat.
   user that the step needs FlowLeap Data, and continue with the native tools.
 - **Data keys are the firm's or the desktop user's.** The app's data keys are
   the Patent-Data Keys (EPO OPS, USPTO ODP) and the Semantic Scholar and
-  Mistral OCR keys. On the firm OS the administrator sets them for the whole
-  firm, and an attorney cannot change them: when a tool answers that its key
-  is missing, tell the attorney to ask the firm administrator. On the desktop
-  the user adds them in Settings > Patent data connectors: relay the tool's
-  message, which names the connector. The flowleap.co keys page does not apply
-  in the app.
+  Mistral OCR keys. When a tool answers that its key is missing, relay its
+  message, which names the connector, and add: on the desktop the user adds the
+  key in Settings > Patent data connectors; on the firm OS the firm
+  administrator sets the keys for the whole firm, and an attorney cannot change
+  them there. The flowleap.co keys page does not apply in the app.
 - **No network outside the tools.** Shell commands have no network, so use the
   shell only for local files, such as a skill's `references/`. The app has no
   web search or web fetch tool.

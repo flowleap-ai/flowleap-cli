@@ -105,7 +105,8 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
   (Semantic Scholar + arXiv) as the second pass.
 - **Patent law** (the MPEP, 35 USC, 37 CFR, the EPC, the EPO Guidelines, the
   PCT rules) → `flowleap-legal`: the method reads the office's own page with
-  your web tool and quotes it with its URL and edition; **enriched citations**
+  your web tool and quotes it with its URL and edition (the FlowLeap Patent AI
+  app has no web tool; see that skill); **enriched citations**
   → `flowleap-citation`.
 - **Examiner Baseline** (`flowleap --json patent examiner-baseline <pub>` —
   every document cited across a granted patent's family, by office, with gaps)
