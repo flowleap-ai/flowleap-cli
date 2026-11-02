@@ -1,6 +1,6 @@
 ---
 name: flowleap
-description: "Start here for patent research with FlowLeap. Maps the patent, legal, literature, citation and analytics methods of the FlowLeap pack and sends each task to the right specialist skill or recipe. Use it when the user asks to use FlowLeap for patent work and the right method is not yet clear, or to check that FlowLeap patent data is reachable."
+description: "Start here for patent research with FlowLeap. Maps the patent, legal, literature, citation and analytics methods of the FlowLeap pack and sends each task to the right specialist skill or recipe. Use it when the user asks to use FlowLeap for patent work and the right method is not yet clear, or to check that FlowLeap patent data is reachable, or to set up or debug the FlowLeap command-line tool."
 ---
 
 # FlowLeap CLI
@@ -186,5 +186,6 @@ a `refresh-skills` next step.
 - Shared reference: `flowleap-shared` (auth, flags, config), `flowleap-auth`, `flowleap-keys`
 - Data sources: `flowleap-patent` (EPO CQL), `flowleap-uspto` (ODP Lucene), `flowleap-ops` (EPO documents), `flowleap-academic`, `flowleap-npl`, `flowleap-legal`, `flowleap-citation`, `flowleap-patstat` (Portfolio Analytics), `flowleap-patstat-graph` (Graph Analytics), `flowleap-tools` (facade)
 - Personas: `persona-patent-attorney`, `persona-ip-analyst`, `persona-researcher`, `persona-startup-founder`
-- Recipes (search/analysis): `recipe-prior-art-search`, `recipe-find-better`, `recipe-patent-landscape`, `recipe-freedom-to-operate`, `recipe-claim-analysis`, `recipe-patent-to-report`, `recipe-academic-literature-review`
-- Recipes (prosecution/litigation, full pack only): `recipe-office-action-response`, `recipe-invalidity-analysis`, `recipe-infringement-charting`, `recipe-claim-drafting`, `recipe-invention-disclosure`, `recipe-audit-report`
+- Recipes (search/analysis): `recipe-prior-art-search`, `recipe-find-better`, `recipe-patent-landscape`, `recipe-freedom-to-operate`, `recipe-claim-analysis`, `recipe-patent-to-report`, `recipe-academic-literature-review`, `recipe-custom-dashboard`
+- Recipes (prosecution/litigation): `recipe-office-action-response`, `recipe-maintenance-fees`, `recipe-invalidity-analysis`, `recipe-infringement-charting`, `recipe-claim-drafting`, `recipe-invention-disclosure`, `recipe-audit-report`
+- The recipes name tools, not commands. With the command-line tool only, run each named tool with `flowleap --json tools run <name> key=value` (see `flowleap-tools`).

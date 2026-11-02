@@ -4,7 +4,7 @@ description: "Common rules for every FlowLeap skill: the tool to call for each m
 user-invocable: false
 ---
 
-# FlowLeap CLI — Shared Reference
+# FlowLeap — Shared Reference
 
 Shared authentication, configuration, and global-flag reference used by every
 other FlowLeap skill. For the overall map of commands, skills, and workflows,
@@ -58,11 +58,13 @@ firm administrator or the desktop user sets up outside the chat.
   user that the step needs FlowLeap Data, and continue with the native tools.
 - **Data keys are the firm's or the desktop user's.** The app's data keys are
   the Patent-Data Keys (EPO OPS, USPTO ODP) and the Semantic Scholar and
-  Mistral OCR keys. When a tool answers that its key is missing, relay its
-  message, which names the connector, and add: on the desktop the user adds the
-  key in Settings > Patent data connectors; on the firm OS the firm
-  administrator sets the keys for the whole firm, and an attorney cannot change
-  them there. The flowleap.co keys page does not apply in the app.
+  Mistral OCR keys. A tool without a usable key answers `<Connector> key not
+  configured. …` or `<Connector> rejected the stored key. …`, naming the
+  Settings card. On the desktop, relay that message: the user adds or replaces
+  the key in Settings > Patent data connectors. On the firm OS the firm
+  administrator sets the keys for the whole firm and an attorney cannot change
+  them, so tell the attorney to ask the administrator. The flowleap.co keys
+  page does not apply in the app.
 - **No network outside the tools.** Shell commands have no network, so use the
   shell only for local files, such as a skill's `references/`. The app has no
   web search or web fetch tool.
@@ -108,10 +110,11 @@ not a zero-result, and not a route you have exhausted. So for the gated office:
 - **A gate is READ, never INFERRED.** An office is gated only when a call you
   actually made returned an explicit gate: with the CLI or in a chat client, one
   of the gate **codes** in `flowleap-keys` ("Which codes mean gated"); in the
-  FlowLeap Patent AI app, a tool answer that says the office's key is not
-  configured. Never conclude a gate from an empty result set, a truncated or
-  partial payload, a 5xx, a timeout, from an error message that happens to name
-  a credential, or from `keys list` showing nothing. Anything short of an
+  FlowLeap Patent AI app, one of the two fixed answers `<Connector> key not
+  configured. …` and `<Connector> rejected the stored key. …`. Never conclude a
+  gate from an empty result set, a truncated or partial payload, a 5xx, a
+  timeout, from any other error message that happens to name a credential, or
+  from `keys list` showing nothing. Anything short of an
   explicit gate is an ordinary dead or empty route, and normal
   persistence and fallbacks apply to it in full — reformulate, try the alternate
   office or route, then the usual web fallback where a web tool exists.
@@ -159,8 +162,10 @@ live search.
 **Resume — merge, do not restart.** When the user says they added the missing
 key, re-run ONLY the previously gated office and merge its results into the
 deliverable you already produced. Do not redo the live office's work. With the
-CLI, a new key reaches the next command; on the desktop app, a key saved in
-Settings reaches the next tool call. Neither needs a new session.
+CLI, a new key reaches the next command; in a chat client, a key stored on the
+Patent-data keys page reaches the next tool call; on the desktop app, a key
+saved in Settings reaches the next tool call; on the firm OS, the administrator
+sets the key and tells the attorney. None needs a new session.
 
 ## Authentication
 

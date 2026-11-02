@@ -93,7 +93,7 @@ mappings:
   statement, `flowleap --json uspto search --query '<statement>' --count-only` returns
   `{ query, count }`.
 - **Record**: the CLI has no `purpose` tag and keeps no log of its own. Write each version that
-  ran into the working record of the task (the recipe's query log, or the command log of
+  ran into the working record of the task (the recipe's query log, or the tool-call log of
   `recipe-audit-report`): `Search Statement v<N>`, the exact command, and its `total`.
 - **Not run**: when the probe fails (no sign-in, a key gate, a backend error), still show the
   block with `not run — <reason>`. A key gate is a user-action stop: follow `flowleap-shared` ("The key gate").
