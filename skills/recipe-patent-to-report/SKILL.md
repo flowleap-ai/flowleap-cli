@@ -29,7 +29,7 @@ Read all data of one patent document and assemble it into one structured dossier
 
 Office coverage: `get_claims` and `get_description` serve EP and WO; US claims come in English; US description is not served. For another office (CN, JP, KR, …) or a missing text, read a family member (`get_family`) in an office the tool serves, and label the text as the member's text.
 
-For a US patent, read the as-filed specification from the file wrapper: `get_application_documents` (`application_number`, `document_code: "SPEC"`), then `read_application_document` (`application_number`, `document_id`: the `documentIdentifier`). Label it as the as-filed US specification, not as a family member's text.
+For a US patent, read the as-filed specification from the file wrapper: `get_application_documents` (`application_number`, `document_code: "SPEC"`), then `read_application_document` (`application_number`, `document_id`: the `documentIdentifier`). Label it as the as-filed US specification, not as a family member's text. `read_application_document` reads the document with Mistral OCR: without a Mistral key this text is a missing-key gap.
 
 ### Step 3: Family, status and the US family chain
 
@@ -42,7 +42,7 @@ For a US patent, read the as-filed specification from the file wrapper: `get_app
 
 - `get_bibliography` (`patent_number`): `citedReferences`, the documents this patent cites and the search report categories.
 - `get_citations` (`patent_number`, `type: "all"`, `range: "1-100"`): the documents that cite this patent, and `total`. When `total` is more than 100, read the next pages (`range: "101-200"`, …, at most 100 per page) and give `total` with the count read.
-- For each US member: `search_enriched_citations` (`cited_document`: the US publication number) for the USPTO office actions that cite it. With FlowLeap Data, `patstat_patent` gives the citation origin (for example examiner search, applicant) of every citation.
+- For each US member: `search_enriched_citations` (`cited_document`: the US publication number as the office prints it, with spaces, for example `US 20150284881 A1`; the compact form returns 0) for the USPTO office actions that cite it. With FlowLeap Data, `patstat_patent` gives the citation origin (for example examiner search, applicant) of every citation.
 - The forward-citation count names every route checked. A zero is a zero from the routes checked, not a verified absence.
 
 ### Step 5: Figures

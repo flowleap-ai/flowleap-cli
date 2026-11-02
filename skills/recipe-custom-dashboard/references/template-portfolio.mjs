@@ -111,7 +111,7 @@ function readToolAnswer(source) {
 }
 
 /** The two ways an answer file can be saved (recipe rule 2), as data/saved-how.json names them. */
-const SAVE_METHODS = { copied: 'copied from the stored result', written: 'written out by the agent' };
+const SAVE_METHODS = { copied: 'recorded by the agent as copied from the stored result', written: 'recorded by the agent as written out' };
 
 /**
  * How the agent saved one answer file, from data/saved-how.json

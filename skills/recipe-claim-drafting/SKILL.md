@@ -1,6 +1,6 @@
 ---
 name: recipe-claim-drafting
-description: "Draft patent claims on the basis of the prior art: find the closest art, study its claim language, break the invention into old and novel elements, draft independent and dependent claim sets, check the formal rules of the EPC, the EPO Guidelines, 35 USC 112, 37 CFR 1.75 and the MPEP, and search again from each novel element until the closest art lacks one and that element is not obvious over the closest art combined with one other document. Use it when the user asks to draft or improve claims, to write independent and dependent claims, or to test draft claims against known art and formal requirements."
+description: "Draft patent claims on the basis of the prior art: find the closest art, study its claim language, break the invention into old and novel elements, draft independent and dependent claim sets, check the formal rules of the EPC, the EPO Guidelines, 35 USC 112, 37 CFR 1.75 and the MPEP, and search again from each novel element until the closest art lacks one and that element is not obvious over the closest art with common general knowledge or other documents, stated as a check for the attorney. Use it when the user asks to draft or improve claims, to write independent and dependent claims, or to test draft claims against known art and formal requirements."
 metadata:
   requires:
     skills: ["recipe-prior-art-search", "recipe-claim-analysis"]
@@ -53,9 +53,9 @@ Check each claim for antecedent basis, single-sentence form, no result-only lang
 
 For each draft independent claim, write a search from its novel element in the same way as Step 1; the phrase of the novel element is the discriminating term. Call `search_patents` (`provider: "epo_ops"`, `query: "<CQL from the novel element>"`, `range: "1-10"`).
 
-If the searches find art that reads on the draft, narrow the novel element and search again. Novelty is not enough: check obviousness too (EPC Art. 56; 35 USC 103). Take the closest document, find the element it lacks, and ask whether one other document found in Steps 1 or 5 discloses that element for the same technical purpose, so that a skilled person would combine the two. If one does, narrow the claim and search again.
+If the searches find art that reads on the draft, narrow the novel element and search again. Novelty is not enough: check obviousness too (EPC Art. 56; 35 USC 103). Take the closest document, find the element it lacks, and ask whether that element follows for a skilled person from common general knowledge or from one or more other documents found in Steps 1 or 5. At the EPO apply the problem-solution approach (check: Guidelines G-VII 5); in the US do not require an explicit teaching or motivation in the art (check: MPEP 2141, KSR). If the element is obvious, narrow the claim and search again.
 
-Stop when the closest art lacks an element and no other document found supplies it. Name the element, the closest document, and each second document you checked.
+Stop when the closest art lacks an element and neither common general knowledge nor the other documents found make it obvious. Name the element, the closest document and each other document you checked, and state the result as a check for the attorney, not as a finding of inventive step.
 
 ## Output
 

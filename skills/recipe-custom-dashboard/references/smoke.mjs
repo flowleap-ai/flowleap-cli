@@ -128,7 +128,7 @@ console.log('\n[saved as text blocks]');
 assertRendered('text blocks', runTemplate('template-portfolio.mjs', { 'portfolio.json': JSON.stringify([{ type: 'text', text: PORTFOLIO['portfolio.json'] }]) }), ['38,658 patent applications']);
 
 console.log('\n[footer: how each file was saved]');
-assertRendered('saved-how', runTemplate('template-portfolio.mjs', { ...PORTFOLIO, 'saved-how.json': JSON.stringify({ 'portfolio.json': 'written' }) }), ['written out by the agent']);
+assertRendered('saved-how', runTemplate('template-portfolio.mjs', { ...PORTFOLIO, 'saved-how.json': JSON.stringify({ 'portfolio.json': 'written' }) }), ['recorded by the agent as written out']);
 assertStopped('saved-how bad value', runTemplate('template-portfolio.mjs', { ...PORTFOLIO, 'saved-how.json': JSON.stringify({ 'portfolio.json': 'typed' }) }), 4, /use "copied" or "written"/);
 
 console.log('\n[guardrail: ambiguous applicant]');

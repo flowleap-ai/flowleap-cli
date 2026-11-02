@@ -22,7 +22,7 @@ Map asserted claims onto an accused product, element by element.
 
 `get_claims` and `get_description` serve EP and WO; US claims come in English; US description is not served. For another office (CN, JP, KR, …) or a missing text, read a family member (`get_family`) in an office the tool serves, and label the text as the member's text.
 
-For a US patent, construe the claims against the as-filed US specification from the file wrapper: `get_us_grant` (`patent_number`) gives `applicationNumberText`; then `get_application_documents` (`application_number`, `document_code: "SPEC"`) and `read_application_document` (`application_number`, `document_id`: the `documentIdentifier`). Label it as the as-filed US specification, not as a foreign family member's text.
+For a US patent, construe the claims against the as-filed US specification from the file wrapper: `get_us_grant` (`patent_number`) gives `applicationNumberText`; then `get_application_documents` (`application_number`, `document_code: "SPEC"`) and `read_application_document` (`application_number`, `document_id`: the `documentIdentifier`). Label it as the as-filed US specification, not as a foreign family member's text. `read_application_document` reads the document with Mistral OCR: without a Mistral key this text is a missing-key gap.
 
 Done when you have the asserted claims verbatim and the description (or the gap named).
 

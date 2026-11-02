@@ -24,13 +24,13 @@ Terms used in this skill:
 
 These are product decisions, not style preferences. A dashboard that breaks one of them is wrong even if it looks right.
 
-1. **Numbers only from code, including prose.** Every value in the HTML (chart, table, and every narrative sentence) is interpolated from a variable that the program computed from the saved answers. Never type a figure into the program or the chat. A data file holds only a tool answer, copied or written out unchanged (rule 2). Use the template's `renderNarrative(c)` helper for sentences; embed tool-authored `summary` strings **verbatim** as captions. In chat, quote the summary block that the program prints; never re-type numbers from memory.
+1. **Numbers only from code, including prose.** Every value in the HTML (chart, table, and every narrative sentence) is interpolated from a variable that the program computed from the saved answers. Never type a figure into the program or the chat. A data file holds only a tool answer, copied or written out unchanged (rule 2); the one exception is `saved-how.json`, the agent's own record of how it saved each file. Use the template's `renderNarrative(c)` helper for sentences; embed tool-authored `summary` strings **verbatim** as captions. In chat, quote the summary block that the program prints; never re-type numbers from memory.
 2. **Data only from saved tool answers.** The program never calls a tool, holds a key, or reaches the network. Save each answer to the `data/` file that `node generate.mjs --plan` names, **right after the call**, before the next call:
    - When the answer says that the full result is stored in a file, copy that file with the shell (`cp <stored path> data/<file>`).
    - Otherwise write the answer text exactly as the tool returned it, with the file-write tool. In the FlowLeap Patent AI app this is the usual path.
    - Never edit, reformat, shorten, or summarize an answer. Never merge two answers into one file.
    - When the copy is refused and the answer is too long to write unchanged, make the call smaller (for example smaller citation pages) and save each part.
-   - After each save, record how you saved the file in `data/saved-how.json` (`{ "<file>": "copied" }` or `"written"`). The footer row of each source shows "copied from the stored result" or "written out by the agent"; a file without an entry shows "save method not recorded".
+   - After each save, record how you saved the file in `data/saved-how.json` (`{ "<file>": "copied" }` or `"written"`). The footer row of each source shows "recorded by the agent as copied from the stored result" or "recorded by the agent as written out"; a file without an entry shows "save method not recorded".
 
    The program checks each file: it must echo the pinned input, and its rows must add up to its totals where the answer carries both. A failed check exits 4 and names the file: call the tool again and save the new answer. Never edit the file to pass a check. The checks find a file for another input and a file whose rows do not add up. They cannot prove that a written-out file is the unchanged answer: the footer says which files the agent wrote out.
 3. **Node only, zero dependencies.** One self-contained `.mjs` per dashboard (Node 18 or later). No `npm install`, no build step, no chart library. The inline SVG chart helper is **copied into** each program; keep it copied, not imported. Run `node --version` first. When it fails, write no dashboard file: report the verified numbers as described in **Without a dashboard file**.
@@ -90,7 +90,7 @@ Per tool call:
   dataset identity        data_edition: PATSTAT 2026 Spring   (or data_slice: ...)
                           or the literal "dataset identity unavailable"
   retrieved               <ISO time the answer file was saved>
-  saved                   copied from the stored result | written out by the agent | save method not recorded
+  saved                   recorded by the agent as copied from the stored result | recorded by the agent as written out | save method not recorded
 Reproduce:      every tool call with its input and data/ file, then node generate.mjs
 Data:           links to ./data/*.json, the saved answers
 ```

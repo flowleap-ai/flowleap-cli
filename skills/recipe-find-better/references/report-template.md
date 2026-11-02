@@ -55,11 +55,8 @@ not scored". Show the basis of a document without X or Y, for example
 "US3980041 (examiner-cited, no category)". Flag an examiner document with a P
 category, or published after the critical date, as "published after the
 critical date; not prior art for this claim unless the priority claim fails".
-Exception: an E-category document, or any patent application filed before the
-critical date and published after it, is prior art for novelty (EPC Art. 54(3),
-35 USC 102(a)(2)) whatever the priority claim, but not for inventive step at the
-EPO. Flag it as "earlier application published after the critical date: novelty
-only at the EPO".
+Exception: an earlier application published after the critical date may be novelty art: at the EPO only a European or Euro-PCT application with an earlier effective date (EPC Art. 54(3), 89, 153(5)); in the US a US patent, a published US application or a WO application designating the US with an earlier effectively filed date (35 USC 102(a)(2), 102(d)), subject to the 102(b)(2) exceptions; a national earlier right is a check item (EPC Art. 139(2)). At the EPO such art counts for novelty only; in the US it also counts for obviousness. Flag such a document (often category E) as "earlier
+application published after the critical date: check Art. 54(3) / 102(a)(2)".
 
 ## Rules
 
