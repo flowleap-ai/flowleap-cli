@@ -40,7 +40,7 @@ Done when both offices returned their result sets, or the office without a key i
 
 With FlowLeap Data:
 
-- `patent_analytics` gives filings per year, country and CPC breakdowns and top assignees over a worldwide corpus. Give at least one criterion: `keywords` or `phrases` (title and abstract substrings), `cpc` (prefixes), `countryCode`, `dateFrom` and `dateTo` (`YYYY-MM-DD`). For example `keywords: ["<technology term>"]`, `dateFrom: "2015-01-01"`, then `cpc: ["<prefix>"]`, `countryCode: "US"`, `dateFrom: "2020-01-01"`. Cite `data_slice` with each figure. The keyword match is a substring match on the English title and abstract: check a sample of the area before you trust the count.
+- `patent_analytics` gives publication counts by publication year (`byYear`), by country (`byCountry`, where each office's publication of a family counts separately), CPC breakdowns and top assignees over a worldwide corpus. Label these figures "publications, by publication year". `topCPC` counts classification entries, not documents: one document with several codes in a class counts more than once, so never report it as a document count. Give at least one criterion: `keywords` or `phrases` (title and abstract substrings), `cpc` (prefixes), `countryCode`, `dateFrom` and `dateTo` (`YYYY-MM-DD`). For example `keywords: ["<technology term>"]`, `dateFrom: "2015-01-01"`, then `cpc: ["<prefix>"]`, `countryCode: "US"`, `dateFrom: "2020-01-01"`. Cite `data_slice` with each figure. The keyword match is a substring match on the English title and abstract: check a sample of the area before you trust the count.
 - `patstat_technology` (`cpc`: a prefix from `patstat_cpc`) gives family and application counts, top applicants by family count, the filing trend, the grant rate by office and new entrants for one CPC prefix.
 
 Without FlowLeap Data, run count probes of the Step 1 CQL: one probe for each year (add a publication-date range for that year, grammar from `get_search_syntax`) and one probe for each main office (`countries: ["<code>"]`). Each probe is `range: "1-1"`, `details: false`; read `total`.
@@ -61,7 +61,7 @@ Add a publication-date limit to the Step 1 CQL, for example `<discriminating ter
 
 ## Step 6: Flag white space
 
-Compare the CPC breakdown with the filing-year trend. Flag the subclasses or main groups that are sparse or declining while the adjacent ones grow. With FlowLeap Data, use the CPC breakdown of `patent_analytics` with a date range for each period, or the filing trend of `patstat_technology` for each prefix. Without it, run count probes of the Step 1 CQL for each candidate CPC prefix (`cpc=<prefix>` in the CQL) and each period; limit this to the few prefixes that Step 3 names.
+Compare the counts of each CPC prefix over time. Flag the subclasses or main groups that are sparse or declining while the adjacent ones grow. With FlowLeap Data, make one scoped `patent_analytics` call for each CPC code (the Step 3 criteria plus `cpc: ["<code>"]`) and read its `byYear` (publications by publication year), or read the filing trend of `patstat_technology` for each prefix. Do not compare `topCPC` counts: they count classification entries, not documents. Without it, run count probes of the Step 1 CQL for each candidate CPC prefix (`cpc=<prefix>` in the CQL) and each period; limit this to the few prefixes that Step 3 names.
 
 Done when at least one sparse or declining CPC subclass or main group is identified, or its absence is confirmed with the counts that show it.
 
@@ -69,8 +69,8 @@ Done when at least one sparse or declining CPC subclass or main group is identif
 
 A dataset by office, applicant and filing date, with the filing-trend table, the top-filers table, the jurisdiction split and the white-space notes. Each figure has its counting basis and its source. Corpus figures from `patent_analytics` and `patstat_*` are reported as returned; counts from search hits are counted by family. Name each office not searched and each tool that was not available.
 
-In the FlowLeap Patent AI app, save the report with `write_patent_results` (`template: "landscape-report"`, `subject`: the technology area, `searchStrategy`: the queries, offices and tools used, `content`: the trend, top-filer and jurisdiction tables and the white-space notes, each figure with its counting basis and source). Elsewhere, write the report as a Markdown file.
+In the FlowLeap Patent AI app, save the report with `write_patent_results` (`template: "landscape-report"`, `filePath`: for example `landscapes/<area-slug>-landscape.md`, `subject`: the technology area, `searchStrategy`: the queries, offices and tools used, `content`: the trend, top-filer and jurisdiction tables and the white-space notes, each figure with its counting basis and source). Elsewhere, write the report as a Markdown file.
 
 ## Visual deliverable
 
-To show the filing trends of Step 3 and the white space of Step 6 as a dashboard, finish this analysis, then use `recipe-custom-dashboard`: its **landscape white-space** template (CPC against year) is made for Step 6, and its **filing-trends** template shows the counts of Step 3. The analysis stays in this recipe; the dashboard recipe only presents it.
+To show the filing trends of Step 3 and the white space of Step 6 as a dashboard, finish this analysis, then use `recipe-custom-dashboard`: its **landscape white-space** template (CPC against year) is made for Step 6, and its **filing-trends** template shows the `patstat_portfolio` application counts of the Step 4 players. The analysis stays in this recipe; the dashboard recipe only presents it.

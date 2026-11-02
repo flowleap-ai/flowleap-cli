@@ -45,4 +45,4 @@ In the FlowLeap Patent AI app, save the review with `write_patent_results` witho
 
 ## Visual deliverable
 
-Present the published-against-protected map of Step 4 as a table in the report. The `recipe-custom-dashboard` templates read PATSTAT and citation answers only, so they cannot plot academic output.
+Present the published-against-protected map of Step 4 as a table in the report. The `recipe-custom-dashboard` templates read only `patstat_portfolio`, `patent_analytics` (a Google Patents slice) and `search_enriched_citations` answers, so they cannot plot academic output.

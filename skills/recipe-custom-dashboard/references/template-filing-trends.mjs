@@ -10,7 +10,9 @@
  *
  * HOW TO ADAPT
  *   1. Pin APPLICANTS to the EXACT names resolved with the user (rule 6).
- *      A saved ambiguous-name error answer is SKIPPED with a note, never
+ *      A saved ambiguous-name error answer, or an answer whose name matched
+ *      no applications of its own but other entities (totals.applications 0,
+ *      applicant.other_matches_total > 0), is SKIPPED with a note, never
  *      auto-picked.
  *   2. Set FROM_YEAR / TO_YEAR (shared window for a fair comparison).
  *   3. `node generate.mjs --plan` prints the tool calls and their files.
@@ -23,7 +25,7 @@
  *===========================================================================*/
 
 // ---- PINNED CONSTANTS (edit these) -----------------------------------------
-const APPLICANTS = ['Siemens AG', 'Robert Bosch GmbH', 'LG Electronics Inc']; // exact names
+const APPLICANTS = ['Siemens', 'Robert Bosch', 'LG Electronics']; // names pinned with the user
 const FROM_YEAR = 2015;
 const TO_YEAR = 2024;
 // ----------------------------------------------------------------------------
@@ -97,6 +99,30 @@ function readToolAnswer(source) {
 			{ code: err.code, candidates: err.candidates });
 	}
 	return { value, savedAt: statSync(path).mtime.toISOString() };
+}
+
+/** The two ways an answer file can be saved (recipe rule 2), as data/saved-how.json names them. */
+const SAVE_METHODS = { copied: 'copied from the stored result', written: 'written out by the agent' };
+
+/**
+ * How the agent saved one answer file, from data/saved-how.json
+ * ({ "<file>": "copied" | "written" }), which the agent updates after each save.
+ * Returns the footer text; a file without an entry is "save method not recorded".
+ * Throws ToolAnswerError when saved-how.json is not JSON or holds another value.
+ */
+function savedHow(sidecar) {
+	const path = join(DATA_DIR, 'saved-how.json');
+	if (!existsSync(path)) return 'save method not recorded';
+	let map;
+	try { map = JSON.parse(readFileSync(path, 'utf8')); } catch {
+		throw new ToolAnswerError('data/saved-how.json is not JSON. Write it as { "<file>": "copied" | "written" }.');
+	}
+	const file = sidecar.replace(/^data\//, '');
+	if (!Object.hasOwn(map, file)) return 'save method not recorded';
+	if (!Object.hasOwn(SAVE_METHODS, map[file])) {
+		throw new ToolAnswerError(`data/saved-how.json: ${file} is ${JSON.stringify(map[file])}; use "copied" or "written".`);
+	}
+	return SAVE_METHODS[map[file]];
 }
 
 /** Stop when a saved answer does not match its pinned input or its own totals. */
@@ -269,12 +295,14 @@ function heatmap({ title, source, rows, cols, matrix, valueLabel = 'Filings' }) 
  * Provenance + reproduce footer. `sources` is one descriptor per tool call:
  * { tool, input, datasetIdentity, savedAt, sidecar }. A null datasetIdentity
  * renders the explicit "dataset identity unavailable" row (never omitted).
+ * Each row also says how its file was saved (savedHow).
  */
 function renderFooter({ generatedAt, sources }) {
 	const rows = sources.map((s) => `<li>
 		<code>${htmlEsc(s.tool)}</code> <span class="params">${htmlEsc(JSON.stringify(s.input))}</span><br>
 		<span class="lbl">Dataset identity:</span> ${s.datasetIdentity ? htmlEsc(s.datasetIdentity) : '<em>dataset identity unavailable</em>'}<br>
-		<span class="lbl">Retrieved:</span> ${htmlEsc(s.savedAt)} (answer saved)
+		<span class="lbl">Retrieved:</span> ${htmlEsc(s.savedAt)} (answer saved)<br>
+		<span class="lbl">Saved:</span> ${htmlEsc(savedHow(s.sidecar))}
 		${s.sidecar ? ` &middot; <a href="${htmlEsc(s.sidecar)}">${htmlEsc(s.sidecar)}</a>` : ''}
 	</li>`).join('\n');
 	const reproduce = [
@@ -290,7 +318,9 @@ function renderFooter({ generatedAt, sources }) {
 	<h3>Reproduce</h3>
 	<pre class="reproduce">${htmlEsc(reproduce)}</pre>
 	<p class="note">Every figure above is computed in <code>generate.mjs</code> from the linked
-	<code>data/</code> files, each the saved answer of one tool call. None is typed by hand. Regenerate by re-running the script.</p>
+	<code>data/</code> files, each the saved answer of one tool call, copied or written out as its Saved line says.
+	The program checks that each file echoes its pinned input and, where the answer has both, that its rows add up to its totals.
+	These checks find a file for another input or an inconsistent file; they cannot prove that a written-out file is the unchanged answer. Regenerate by re-running the script.</p>
 </footer>`;
 }
 
@@ -397,6 +427,11 @@ function main() {
 		}
 		const data = answer.value;
 		const totals = data.totals ?? {};
+		if (totals.applications === 0 && (data.applicant?.other_matches_total ?? 0) > 0) {
+			// Rule 6: the name matched only other entities. Skip it, keep the rest, note it.
+			skipped.push({ name: source.input.applicant, candidates: data.applicant.other_matches ?? [] });
+			continue;
+		}
 		expectAnswer(data.applicant?.query === source.input.applicant, source, `applicant.query is ${JSON.stringify(data.applicant?.query)}`);
 		expectAnswer(data.filters?.from_year === FROM_YEAR && data.filters?.to_year === TO_YEAR, source, 'filters do not match the pinned years');
 		expectAnswer(sum(data.by_year ?? [], 'applications') === totals.applications, source, 'by_year applications do not add up to totals.applications');
@@ -435,7 +470,7 @@ function main() {
 
 	const bodyHtml = `
 <section class="card"><h2>Comparison</h2><p class="lead">${renderNarrative(c)}</p>
-${skipped.length ? `<p class="caveat">⚠ Skipped as ambiguous (resolve and pin the exact name, rule 6): ${skipped.map((s) => htmlEsc(s.name)).join(', ')}</p>` : ''}</section>
+${skipped.length ? `<p class="caveat">⚠ Skipped as ambiguous or matching only other entities (resolve and pin the name, rule 6): ${skipped.map((s) => htmlEsc(s.name)).join(', ')}</p>` : ''}</section>
 <section class="card"><h2>Filing Trend Over Time</h2>${trendChart}</section>
 <section class="card"><h2>Total Applications</h2>${totalChart}</section>
 <section class="card"><h2>Totals</h2><table><thead><tr><th>Applicant</th><th>Applications</th></tr></thead><tbody>${tableRows}</tbody></table></section>`;
@@ -451,7 +486,7 @@ ${skipped.length ? `<p class="caveat">⚠ Skipped as ambiguous (resolve and pin 
 	printSummaryBlock([
 		`Filing trends ${FROM_YEAR}-${TO_YEAR}: ${applicants.length} applicants`,
 		...[...applicants].sort((a, b) => b.total - a.total).map((a) => `  ${a.name}: ${fmtInt(a.total)} applications`),
-		skipped.length ? `Skipped (ambiguous): ${skipped.map((s) => s.name).join(', ')}` : '',
+		skipped.length ? `Skipped (ambiguous or only other entities): ${skipped.map((s) => s.name).join(', ')}` : '',
 	].filter(Boolean), htmlPath);
 }
 

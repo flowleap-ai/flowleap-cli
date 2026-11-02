@@ -53,8 +53,13 @@ Otherwise write "Search incomplete for claim N: <reason>". Name only the
 examiner documents you scored; list the rest as "Examiner's best art named but
 not scored". Show the basis of a document without X or Y, for example
 "US3980041 (examiner-cited, no category)". Flag an examiner document with a P
-or E category, or published after the critical date, as "published after the
+category, or published after the critical date, as "published after the
 critical date; not prior art for this claim unless the priority claim fails".
+Exception: an E-category document, or any patent application filed before the
+critical date and published after it, is prior art for novelty (EPC Art. 54(3),
+35 USC 102(a)(2)) whatever the priority claim, but not for inventive step at the
+EPO. Flag it as "earlier application published after the critical date: novelty
+only at the EPO".
 
 ## Rules
 

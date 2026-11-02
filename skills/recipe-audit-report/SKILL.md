@@ -22,7 +22,7 @@ Record:
 - The host: the FlowLeap Patent AI app, or the client with the FlowLeap connector.
 - The model that did the work, as the host names it.
 - The tools available that day: the office tools, and whether the FlowLeap Data tools (`patstat_*`, `patent_analytics`, `get_fulltext`) exist in the session.
-- When FlowLeap Data is available, the answer of `server_info` (no input): the backend identity, its version and the configured providers.
+- When FlowLeap Data is available, the answer of `server_info` (no input): the backend `name`, the configured `providers`, the `tools` list and the `officeCoverage`. It has no version field. In the FlowLeap Patent AI app it describes the FlowLeap Data backend only, not the app's built-in office tools: label it so.
 - Each office whose tool answered that its key is missing or not configured, as a missing-key gap.
 
 Never record key values or other credential material.
@@ -39,7 +39,7 @@ Note per call:
 - for `search_patents`, the answer's `total` and `effectiveQuery` (the query the provider received);
 - for `search_academic`, the status of each source (`ok`, `rate_limited`, `error`): a failed source is a gap, not a zero.
 
-The office tools can serve an answer from a cache (for example USPTO ODP lookups for up to 24 hours), so a recent register change can be missing: Step 4 re-runs the calls that matter.
+The office tools can serve an answer from a cache, so a recent register change can be missing: USPTO ODP lookups are cached for up to 24 hours, and EPO OPS legal status and EP Register events for up to 12 hours.
 
 ## Step 3: Verify Asset Status Claims
 
@@ -56,6 +56,8 @@ Back each statement like "patent X is in force" with a dated check, and give the
 
 At report time, call each load-bearing tool again with the same input and save the answer beside the first one (for example `audit/<nn>-<tool>.recheck.json`). Compare the two files in the shell (`diff`) or read both. Patent registers move: note each finding that changed between research and reporting, with both dates.
 
+A re-run inside the cache time can return the same cached answer, so it cannot show a register change made after the first call. Make the re-check after the cache time (24 hours after the first call for ODP lookups, 12 hours for EPO legal status and register events), or state in the report that the re-check was inside the cache time and cannot show a recent change.
+
 ## Step 5: AI-Usage Disclosure Section
 
 State plainly:
@@ -64,7 +66,7 @@ State plainly:
 - Which outputs a human verified, and how (for example claims read in full, legal-status events checked against the register).
 - Known limitations: search recall is not exhaustive; OCR and summarization can introduce errors; results reflect database coverage on the query date; the missing-key gaps of Step 1.
 
-For filings, the current duty-of-disclosure guidance is on the office's own page (37 CFR 1.56, MPEP 2001). The FlowLeap Patent AI app has no web tool: state that the page was not read, cite the two references, and tell the user to read the current text on the USPTO page. In a client with a web tool, read the page and quote it with its URL and edition.
+For filings, the current duty-of-disclosure guidance is on the office's own page (37 CFR 1.56, MPEP 2001). For AI-assisted work before the USPTO, also cite the USPTO guidance on the use of AI-based tools in practice before the USPTO (April 2024, 89 FR 25609) and the signature and certification duties of 37 CFR 11.18. The FlowLeap Patent AI app has no web tool: state that the pages were not read, cite the references, and tell the user to read the current text on the USPTO pages. In a client with a web tool, read the page and quote it with its URL and edition.
 
 ## Visual deliverable
 
@@ -74,11 +76,11 @@ In the FlowLeap Patent AI app, each report saved with a template through `write_
 
 ## Output
 
-- Environment record (date, host, model, tools available, `server_info` answer, missing-key gaps)
+- Environment record (date, host, model, tools available, `server_info` answer labelled as the FlowLeap Data backend, missing-key gaps)
 - Methodology section (sources, queries, filters, dataset identities, per finding)
 - Status-verification table with check dates and record dates
 - Call appendix: every tool call, in order, with its input and the file of its saved answer
-- Reproducibility notes: the findings that changed, with both dates
+- Reproducibility notes: the findings that changed, with both dates, and each re-check made inside the cache time
 - AI-usage disclosure with human-verification points and limitations
 
 In the FlowLeap Patent AI app, save the report with `write_patent_results` (no `template`: a free-form document, with `filePath` and `content`). Elsewhere the report is a Markdown file.

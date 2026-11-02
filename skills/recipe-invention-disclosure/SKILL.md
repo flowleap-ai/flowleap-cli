@@ -24,7 +24,7 @@ Interview for these sections. Ask past marketing language until you get the mech
 4. **Key elements**: the minimum set of elements that the invention needs to work.
 5. **Variations**: alternative embodiments, ranges, materials, algorithms.
 6. **Evidence**: prototypes, test data, figures.
-7. **People and dates**: the inventors and the contribution of each; the conception date; **each public disclosure, sale, offer or publication, with its date**. Bar dates differ by jurisdiction: flag each event older than 12 months.
+7. **People and dates**: the inventors and the contribution of each; the conception date; **each public disclosure, sale, offer or publication, with its date**. Bar dates differ by jurisdiction. For the EPO and most other offices novelty is absolute (EPC Art. 54(2)): flag each public disclosure before the filing date as prior art against the invention. EPC Art. 55 excuses only a disclosure by evident abuse and a display at an officially recognised exhibition, each within 6 months before filing. The 12-month grace period for the inventors' own disclosures applies in the US (35 USC 102(b)(1)): flag each event older than 12 months as a US bar too.
 
 ## Step 2: Novelty pre-check
 
@@ -36,7 +36,7 @@ The "key elements" list of Step 1 is the term extraction. Keep the phrases that 
 - Search the USPTO with `search_patents` (`provider: "uspto"`, `query: "<Lucene>"`, `limit: 20`). It searches US application titles and metadata, not claim text.
 - Search the literature, where the inventors' own field often publishes first: `search_academic` (`query`: the concept keywords, `max_results: 15`) and `search_npl` (`query`: the concept keywords, `limit: 10`).
 
-For each close patent hit, read the claims with `get_claims` (`patent_number`) and record how the invention differs, with the claim passage that the difference rests on. For a close paper, record the difference from its abstract and say that only the abstract was read.
+For each close patent hit, read the claims with `get_claims` (`patent_number`) and, for EP and WO, the description with `get_description` (`patent_number`): prior art is the whole disclosure, not only the claims. Record how the invention differs, with the passage that the difference rests on. Write "lacks element X" only after you read the description too; for a hit whose description is not served, say that only the claims and abstract were read. For a close paper, record the difference from its abstract and say that only the abstract was read.
 
 Office coverage: `get_claims` and `get_description` serve EP and WO; US claims come in English; US description is not served. For another office (CN, JP, KR, …) or a missing text, read a family member (`get_family`) in an office the tool serves, and label the text as the member's text.
 
@@ -44,7 +44,7 @@ This is a sanity check, not a professional prior-art search: say so in the IDF. 
 
 ## Step 3: Landscape context
 
-With FlowLeap Data, call `patent_analytics` (`keywords: ["<technology term>"]`, `dateFrom: "2018-01-01"`) for the filing trend and the top assignees, and cite its `data_slice`. Without it, give the `total` of the Step 2 count probe as a live search count and state that the corpus analytics were not available.
+With FlowLeap Data, call `patent_analytics` (`keywords: ["<technology term>"]`, `dateFrom: "2018-01-01"`) for the publication trend and the top assignees, and cite its `data_slice`. Label the trend "publications, by publication year". Without it, give the `total` of the Step 2 count probe as a live search count and state that the corpus analytics were not available.
 
 The trend and the top assignees tell the reviewer whether the area is crowded, growing or abandoned. This is context for the filing decision.
 
@@ -54,7 +54,7 @@ Sections: title; inventors and contributions; problem; prior approaches (includi
 
 ## Step 5: Recommendation
 
-Close with one of: **file now** (novelty check clean, bar clock running), **develop further** (concept not yet enabled), or **defensive publication** (crowded area, low claim scope), with the reasons.
+Close with one of: **file now** (novelty check clean; file before any planned disclosure, and note that an earlier public disclosure already counts as prior art outside the US grace period), **develop further** (concept not yet enabled), or **defensive publication** (crowded area, low claim scope), with the reasons.
 
 ## Output
 

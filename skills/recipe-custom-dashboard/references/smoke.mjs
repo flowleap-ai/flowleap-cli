@@ -11,7 +11,8 @@
  *   - NO external URL appears in any src=/href= attribute (offline-safe),
  *   - known fixture values reach the rendered HTML.
  * Plus the stop paths, each with exit code and NO dashboard: an ambiguous
- * applicant (never auto-picks a candidate), PATSTAT unavailable, a saved answer
+ * applicant (never auto-picks a candidate), a name that matches only other
+ * entities, a saved-how.json with an unknown value, PATSTAT unavailable, a saved answer
  * whose rows do not add up to its totals, a saved answer for another input,
  * and a missing citation page.
  *
@@ -78,7 +79,7 @@ function assertRendered(label, r, expectValues) {
 	check(`${label}: dashboard.html written`, !!r.html);
 	if (!r.html) return;
 	check(`${label}: has provenance footer id`, r.html.includes('id="provenance"'));
-	for (const marker of ['Provenance', 'Reproduce', 'Generated:', 'Dataset identity:', 'Retrieved:']) {
+	for (const marker of ['Provenance', 'Reproduce', 'Generated:', 'Dataset identity:', 'Retrieved:', 'Saved:']) {
 		check(`${label}: footer marker "${marker}"`, r.html.includes(marker));
 	}
 	check(`${label}: has >= 1 <svg>`, (r.html.match(/<svg/g) || []).length >= 1);
@@ -95,11 +96,11 @@ function assertStopped(label, r, status, stderrPattern) {
 	check(`${label}: says ${stderrPattern}`, stderrPattern.test(r.stderr), r.stderr);
 }
 
-const PORTFOLIO = { 'portfolio.json': fixture('portfolio-siemens-ag.json') };
+const PORTFOLIO = { 'portfolio.json': fixture('portfolio-siemens.json') };
 const TRENDS = {
-	'portfolio-siemens-ag.json': fixture('portfolio-siemens-ag.json'),
-	'portfolio-robert-bosch-gmbh.json': fixture('portfolio-robert-bosch-gmbh.json'),
-	'portfolio-lg-electronics-inc.json': fixture('portfolio-lg-electronics-inc.json'),
+	'portfolio-siemens.json': fixture('portfolio-siemens.json'),
+	'portfolio-robert-bosch.json': fixture('portfolio-robert-bosch.json'),
+	'portfolio-lg-electronics.json': fixture('portfolio-lg-electronics.json'),
 };
 const LANDSCAPE = Object.fromEntries(['analytics-overview.json', ...['g06n', 'h04l', 'g06f', 'a61b', 'g16h'].map((c) => `analytics-cpc-${c}.json`)]
 	.map((f) => [f, fixture(f)]));
@@ -109,11 +110,11 @@ console.log('Dashboard template smoke test\n=============================');
 
 console.log('\n[portfolio]');
 assertPlan('portfolio', 'template-portfolio.mjs', [['patstat_portfolio', 'data/portfolio.json']]);
-assertRendered('portfolio', runTemplate('template-portfolio.mjs', PORTFOLIO), ['15,202 patent applications', 'PATSTAT Global 2025 Spring', 'SIEMENS']);
+assertRendered('portfolio', runTemplate('template-portfolio.mjs', PORTFOLIO), ['38,658 patent applications', 'PATSTAT 2026 Spring', 'SIEMENS', 'save method not recorded']);
 
 console.log('\n[filing-trends]');
-assertPlan('filing-trends', 'template-filing-trends.mjs', [['patstat_portfolio', 'data/portfolio-robert-bosch-gmbh.json']]);
-assertRendered('filing-trends', runTemplate('template-filing-trends.mjs', TRENDS), ['LG ELECTRONICS', 'ROBERT BOSCH', 'SIEMENS', 'PATSTAT Global 2025 Spring']);
+assertPlan('filing-trends', 'template-filing-trends.mjs', [['patstat_portfolio', 'data/portfolio-robert-bosch.json']]);
+assertRendered('filing-trends', runTemplate('template-filing-trends.mjs', TRENDS), ['LG ELECTRONICS', 'ROBERT BOSCH', 'SIEMENS', 'PATSTAT 2026 Spring']);
 
 console.log('\n[landscape-whitespace]');
 assertPlan('landscape', 'template-landscape-whitespace.mjs', [['patent_analytics', 'data/analytics-overview.json'], ['patent_analytics', 'data/analytics-cpc-g16h.json']]);
@@ -124,14 +125,23 @@ assertPlan('citation-impact', 'template-citation-impact.mjs', [['search_enriched
 assertRendered('citation-impact', runTemplate('template-citation-impact.mjs', CITATIONS), ['US 20150284881 A1', 'USPTO enriched citation data', '64']);
 
 console.log('\n[saved as text blocks]');
-assertRendered('text blocks', runTemplate('template-portfolio.mjs', { 'portfolio.json': JSON.stringify([{ type: 'text', text: PORTFOLIO['portfolio.json'] }]) }), ['15,202 patent applications']);
+assertRendered('text blocks', runTemplate('template-portfolio.mjs', { 'portfolio.json': JSON.stringify([{ type: 'text', text: PORTFOLIO['portfolio.json'] }]) }), ['38,658 patent applications']);
+
+console.log('\n[footer: how each file was saved]');
+assertRendered('saved-how', runTemplate('template-portfolio.mjs', { ...PORTFOLIO, 'saved-how.json': JSON.stringify({ 'portfolio.json': 'written' }) }), ['written out by the agent']);
+assertStopped('saved-how bad value', runTemplate('template-portfolio.mjs', { ...PORTFOLIO, 'saved-how.json': JSON.stringify({ 'portfolio.json': 'typed' }) }), 4, /use "copied" or "written"/);
 
 console.log('\n[guardrail: ambiguous applicant]');
 assertStopped('ambiguous', runTemplate('template-portfolio.mjs', { 'portfolio.json': fixture('error-applicant-ambiguous.json') }), 3, /ZZZ AMBIGUOUS CO (HOLDING|TECH)/);
 
 console.log('\n[guardrail: ambiguous applicant among several]');
-const skip = runTemplate('template-filing-trends.mjs', { ...TRENDS, 'portfolio-lg-electronics-inc.json': fixture('error-applicant-ambiguous.json') });
+const skip = runTemplate('template-filing-trends.mjs', { ...TRENDS, 'portfolio-lg-electronics.json': fixture('error-applicant-ambiguous.json') });
 assertRendered('skip ambiguous', skip, ['Skipped as ambiguous', 'ROBERT BOSCH']);
+
+console.log('\n[guardrail: name matches only other entities]');
+assertStopped('only other matches', runTemplate('template-portfolio.mjs', { 'portfolio.json': fixture('error-applicant-only-other-matches.json') }, { swap: ["'Siemens'", "'Siemens AG'"] }), 3, /matched no applications of its own.*\n.*SIEMENS AG DE/);
+const onlyOthers = runTemplate('template-filing-trends.mjs', { ...TRENDS, 'portfolio-siemens-ag.json': fixture('error-applicant-only-other-matches.json') }, { swap: ["'Siemens'", "'Siemens AG'"] });
+assertRendered('skip only other matches', onlyOthers, ['matching only other entities', 'Siemens AG', 'ROBERT BOSCH']);
 
 console.log('\n[degrade: patstat unavailable]');
 assertStopped('unavailable', runTemplate('template-portfolio.mjs', { 'portfolio.json': fixture('error-patstat-unavailable.json') }), 2, /landscape and citation-impact/);
@@ -142,7 +152,7 @@ tampered.totals.applications += 1;
 assertStopped('tampered', runTemplate('template-portfolio.mjs', { 'portfolio.json': JSON.stringify(tampered) }), 4, /data\/portfolio\.json is not the answer/);
 
 console.log('\n[check: answer for another input]');
-assertStopped('other input', runTemplate('template-portfolio.mjs', PORTFOLIO, { swap: ["'Siemens AG'", "'Robert Bosch GmbH'"] }), 4, /applicant\.query/);
+assertStopped('other input', runTemplate('template-portfolio.mjs', PORTFOLIO, { swap: ["'Siemens'", "'Robert Bosch'"] }), 4, /applicant\.query/);
 
 console.log('\n[check: missing citation page]');
 const { 'citations-50.json': _omitted, ...twoPages } = CITATIONS;

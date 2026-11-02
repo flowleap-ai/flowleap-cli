@@ -72,7 +72,7 @@ Read each hit whose abstract maps to at least one independent feature of the inv
 **One hop from the closest hits** (the citation track). For each closest candidate of the keyword and classification tracks, and for each Examiner Baseline document after Step 5, read:
 
 - its cited references: `citedReferences[]` of `get_bibliography`;
-- its forward citations: `get_citations` (`type: "all"`) and, for a US document, `search_enriched_citations` (`cited_document`).
+- its forward citations: `get_citations` (`type: "all"`) and, for a US document, `search_enriched_citations` (`cited_document` with spaces, as the office prints it: `US 20150284881 A1`).
 
 Keep the documents published before the cutoff that share a CPC main group or indexing code with the subject. When the disclosure names a source or family publication, read its cited references first (for an EP family they are on the A3 search-report publication). Those documents are of record, not found by your search: keep them apart for the recall check.
 
@@ -96,21 +96,21 @@ Then search for art outside the Baseline, starting from the claim elements that 
 
 Against the invention's features, tag every retained reference:
 
-- **X**: alone anticipates a feature (novelty-destroying).
-- **Y**: anticipates only together with another reference.
+- **X**: alone discloses every feature of the invention or claim (novelty), or alone takes away inventive step.
+- **Y**: takes away inventive step only together with another reference.
 - **A**: general background.
 
 Done when every retained reference has an X/Y/A tag, X-tagged first.
 
 ### Step 7: Map the X references element by element
 
-For each X-tagged reference, show the anticipation for each element, not for the document as a whole. One table, one row for each invention feature (or claim element, when the user supplied a claim), one column for each X reference:
+For each X-tagged reference, show the disclosure for each element, not for the document as a whole. One table, one row for each invention feature (or claim element, when the user supplied a claim), one column for each X reference:
 
 ```
 | Claim element | <Reference 1> | <Reference 2> |
 ```
 
-Each cell quotes the disclosing passage from the tool result (`get_claims` or `get_description`) with its anchor: the original language and a translation where necessary. A feature that no X reference discloses is the novelty candidate; say so under the table.
+Each cell quotes the disclosing passage from the tool result (`get_claims` or `get_description`) with its anchor: the original language and a translation where necessary. A feature that no reference discloses is the novelty candidate; say so under the table.
 
 Done when each element row has a quote from at least one X reference or is named as a possible point of novelty.
 
@@ -133,4 +133,4 @@ A prior-art table with:
 - Claims and abstracts of the closest prior art.
 - The gaps: missing-key gaps, literature sources that failed, offices with no text.
 
-In the FlowLeap Patent AI app, save the report with `write_patent_results` (`template: "prior-art-report"`, `content: ""`, `subject`, `objective`, `searchStrategy`, `concepts`, `classifications`, `coverage` with one row for each feature and one essential combination row, `limitations`, `stopReason`). Copy each quote and source anchor in `coverage` verbatim from a `get_claims`, `get_description` or `get_abstract` result. Elsewhere, write the report as a Markdown file.
+In the FlowLeap Patent AI app, save the report with `write_patent_results` (`filePath`, `template: "prior-art-report"`, `content: ""`, `subject`, `objective`, `searchStrategy`, `concepts`, `classifications`, `coverage` with one row for each feature and one essential combination row, `limitations`, `stopReason`). Copy each quote and source anchor in `coverage` verbatim from a `get_claims`, `get_description` or `get_abstract` result. In the app, a paper cannot be a coverage source: name it in `limitations`, with its quote, DOI and date, as not checked by the writer. Elsewhere, write the report as a Markdown file.

@@ -3,7 +3,11 @@
  * Dashboard template: LANDSCAPE WHITE-SPACE (Topic Analytics)
  *
  * QUESTION  Where is the white space in a technology area? A CPC x year heatmap
- *           of filing intensity: sparse or absent cells are candidate white space.
+ *           of publication counts: sparse or absent cells are candidate white space.
+ * BASIS     byYear counts publications by publication year (each office's
+ *           publication is one row; the data_slice names publications_slim).
+ *           topCPC counts classification entries, not documents, so it only
+ *           picks the codes: each heatmap row is the byYear of its own scoped call.
  * DATA      Answers of the FlowLeap Data tool `patent_analytics`, each saved
  *           unchanged to data/:
  *             { searchDescription, request, analytics:{ byYear:[{year,count}],
@@ -109,6 +113,30 @@ function readToolAnswer(source) {
 			{ code: err.code, candidates: err.candidates });
 	}
 	return { value, savedAt: statSync(path).mtime.toISOString() };
+}
+
+/** The two ways an answer file can be saved (recipe rule 2), as data/saved-how.json names them. */
+const SAVE_METHODS = { copied: 'copied from the stored result', written: 'written out by the agent' };
+
+/**
+ * How the agent saved one answer file, from data/saved-how.json
+ * ({ "<file>": "copied" | "written" }), which the agent updates after each save.
+ * Returns the footer text; a file without an entry is "save method not recorded".
+ * Throws ToolAnswerError when saved-how.json is not JSON or holds another value.
+ */
+function savedHow(sidecar) {
+	const path = join(DATA_DIR, 'saved-how.json');
+	if (!existsSync(path)) return 'save method not recorded';
+	let map;
+	try { map = JSON.parse(readFileSync(path, 'utf8')); } catch {
+		throw new ToolAnswerError('data/saved-how.json is not JSON. Write it as { "<file>": "copied" | "written" }.');
+	}
+	const file = sidecar.replace(/^data\//, '');
+	if (!Object.hasOwn(map, file)) return 'save method not recorded';
+	if (!Object.hasOwn(SAVE_METHODS, map[file])) {
+		throw new ToolAnswerError(`data/saved-how.json: ${file} is ${JSON.stringify(map[file])}; use "copied" or "written".`);
+	}
+	return SAVE_METHODS[map[file]];
 }
 
 /** Stop when a saved answer does not match its pinned input or its own totals. */
@@ -281,12 +309,14 @@ function heatmap({ title, source, rows, cols, matrix, valueLabel = 'Filings' }) 
  * Provenance + reproduce footer. `sources` is one descriptor per tool call:
  * { tool, input, datasetIdentity, savedAt, sidecar }. A null datasetIdentity
  * renders the explicit "dataset identity unavailable" row (never omitted).
+ * Each row also says how its file was saved (savedHow).
  */
 function renderFooter({ generatedAt, sources }) {
 	const rows = sources.map((s) => `<li>
 		<code>${htmlEsc(s.tool)}</code> <span class="params">${htmlEsc(JSON.stringify(s.input))}</span><br>
 		<span class="lbl">Dataset identity:</span> ${s.datasetIdentity ? htmlEsc(s.datasetIdentity) : '<em>dataset identity unavailable</em>'}<br>
-		<span class="lbl">Retrieved:</span> ${htmlEsc(s.savedAt)} (answer saved)
+		<span class="lbl">Retrieved:</span> ${htmlEsc(s.savedAt)} (answer saved)<br>
+		<span class="lbl">Saved:</span> ${htmlEsc(savedHow(s.sidecar))}
 		${s.sidecar ? ` &middot; <a href="${htmlEsc(s.sidecar)}">${htmlEsc(s.sidecar)}</a>` : ''}
 	</li>`).join('\n');
 	const reproduce = [
@@ -302,7 +332,9 @@ function renderFooter({ generatedAt, sources }) {
 	<h3>Reproduce</h3>
 	<pre class="reproduce">${htmlEsc(reproduce)}</pre>
 	<p class="note">Every figure above is computed in <code>generate.mjs</code> from the linked
-	<code>data/</code> files, each the saved answer of one tool call. None is typed by hand. Regenerate by re-running the script.</p>
+	<code>data/</code> files, each the saved answer of one tool call, copied or written out as its Saved line says.
+	The program checks that each file echoes its pinned input and, where the answer has both, that its rows add up to its totals.
+	These checks find a file for another input or an inconsistent file; they cannot prove that a written-out file is the unchanged answer. Regenerate by re-running the script.</p>
 </footer>`;
 }
 
@@ -385,11 +417,11 @@ function readAnalytics(source) {
 /** Narrative white-space read: numbers interpolated from computed `c` (rule 1). */
 function renderNarrative(c) {
 	const parts = [
-		`Over ${c.years[0]}–${c.years[c.years.length - 1]}, filing intensity across ${c.rows.length} CPC subclasses spans ${fmtInt(c.min)} to ${fmtInt(c.max)} filings per cell.`,
+		`Over publication years ${c.years[0]}–${c.years[c.years.length - 1]}, ${c.rows.length} CPC subclasses span ${fmtInt(c.min)} to ${fmtInt(c.max)} publications per cell.`,
 		c.whiteSpace.length
-			? `White space (cells at or below ${fmtInt(c.threshold)} filings, 10% of the busiest cell): ${c.whiteSpace.map((w) => `${htmlEsc(w.cpc)} in ${w.years.join(', ')}`).join('; ')}.`
+			? `White space (cells at or below ${fmtInt(c.threshold)} publications, 10% of the busiest cell): ${c.whiteSpace.map((w) => `${htmlEsc(w.cpc)} in ${w.years.join(', ')}`).join('; ')}.`
 			: 'No clearly sparse cells were found in this window.',
-		`The most active subclass is ${htmlEsc(c.busiest.cpc)} (${fmtInt(c.busiest.total)} filings over the window).`,
+		`The most active subclass is ${htmlEsc(c.busiest.cpc)} (${fmtInt(c.busiest.total)} publications over the window).`,
 	];
 	return parts.filter(Boolean).join(' ');
 }
@@ -428,22 +460,22 @@ function main() {
 	const c = { years, rows, matrix, min, max, threshold, whiteSpace, busiest };
 
 	const heat = heatmap({
-		title: 'Filing Intensity: CPC × Year',
-		source: 'patent_analytics (Topic Analytics; scoped per CPC)',
-		rows, cols: years, matrix, valueLabel: 'filings',
+		title: 'Publications: CPC × Publication Year',
+		source: 'patent_analytics (Topic Analytics; publications by publication year; scoped per CPC)',
+		rows, cols: years, matrix, valueLabel: 'publications',
 	});
 	const totalsChart = barChart({
-		title: 'Total Filings by CPC (window)',
-		source: 'patent_analytics (Topic Analytics)',
+		title: 'Total Publications by CPC (window)',
+		source: 'patent_analytics (Topic Analytics; publications)',
 		categories: totals.map((t) => t.cpc),
-		series: [{ name: 'Filings', values: totals.map((t) => t.total) }], yLabel: 'Filings',
+		series: [{ name: 'Publications', values: totals.map((t) => t.total) }], yLabel: 'Publications',
 	});
 
 	const bodyHtml = `
 <section class="card"><h2>White-Space Read</h2><p class="lead">${renderNarrative(c)}</p>
-<p class="caveat">Low or empty cells (leftmost legend swatch) mark candidate white space. Validate before acting: low filings can also mean a mis-scoped class.</p></section>
+<p class="caveat">Basis: publications, by publication year; one publication per office, so one family can count more than once. Low or empty cells (leftmost legend swatch) mark candidate white space. Validate before acting: low counts can also mean a mis-scoped class, and the latest years are incomplete because applications publish about 18 months after filing.</p></section>
 <section class="card"><h2>CPC × Year Heatmap</h2>${heat}</section>
-<section class="card"><h2>Total Filings by CPC</h2>${totalsChart}</section>`;
+<section class="card"><h2>Total Publications by CPC</h2>${totalsChart}</section>`;
 
 	const footerHtml = renderFooter({ generatedAt, sources });
 	const scope = [...KEYWORDS, ...PHRASES].join(', ');
@@ -457,7 +489,7 @@ function main() {
 	printSummaryBlock([
 		`Landscape white-space: ${scope} ${years[0]}-${years[years.length - 1]}`,
 		`CPC subclasses: ${rows.join(', ')}`,
-		`Busiest: ${busiest.cpc} (${fmtInt(busiest.total)} filings). White-space cells flagged: ${whiteSpace.reduce((a, w) => a + w.years.length, 0)}.`,
+		`Busiest: ${busiest.cpc} (${fmtInt(busiest.total)} publications). White-space cells flagged: ${whiteSpace.reduce((a, w) => a + w.years.length, 0)}.`,
 	], htmlPath);
 }
 

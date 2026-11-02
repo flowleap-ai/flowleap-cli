@@ -12,6 +12,9 @@
  *               category (X/Y/A), rejectedClaims, examinerCited,
  *               officeActionDate, officeActionType, ... }] }
  *           Source: USPTO enriched citation data (office actions).
+ * SCOPE     Only citations by USPTO examiners in US office actions. Citations
+ *           by other offices, by applicants, and in literature are not in the
+ *           data, so the page states that it is a partial measure of influence.
  *
  * HOW TO ADAPT
  *   1. Pin CITED_DOCUMENT to the number as offices print it in citations,
@@ -102,6 +105,30 @@ function readToolAnswer(source) {
 			{ code: err.code, candidates: err.candidates });
 	}
 	return { value, savedAt: statSync(path).mtime.toISOString() };
+}
+
+/** The two ways an answer file can be saved (recipe rule 2), as data/saved-how.json names them. */
+const SAVE_METHODS = { copied: 'copied from the stored result', written: 'written out by the agent' };
+
+/**
+ * How the agent saved one answer file, from data/saved-how.json
+ * ({ "<file>": "copied" | "written" }), which the agent updates after each save.
+ * Returns the footer text; a file without an entry is "save method not recorded".
+ * Throws ToolAnswerError when saved-how.json is not JSON or holds another value.
+ */
+function savedHow(sidecar) {
+	const path = join(DATA_DIR, 'saved-how.json');
+	if (!existsSync(path)) return 'save method not recorded';
+	let map;
+	try { map = JSON.parse(readFileSync(path, 'utf8')); } catch {
+		throw new ToolAnswerError('data/saved-how.json is not JSON. Write it as { "<file>": "copied" | "written" }.');
+	}
+	const file = sidecar.replace(/^data\//, '');
+	if (!Object.hasOwn(map, file)) return 'save method not recorded';
+	if (!Object.hasOwn(SAVE_METHODS, map[file])) {
+		throw new ToolAnswerError(`data/saved-how.json: ${file} is ${JSON.stringify(map[file])}; use "copied" or "written".`);
+	}
+	return SAVE_METHODS[map[file]];
 }
 
 /** Stop when a saved answer does not match its pinned input or its own totals. */
@@ -274,12 +301,14 @@ function heatmap({ title, source, rows, cols, matrix, valueLabel = 'Filings' }) 
  * Provenance + reproduce footer. `sources` is one descriptor per tool call:
  * { tool, input, datasetIdentity, savedAt, sidecar }. A null datasetIdentity
  * renders the explicit "dataset identity unavailable" row (never omitted).
+ * Each row also says how its file was saved (savedHow).
  */
 function renderFooter({ generatedAt, sources }) {
 	const rows = sources.map((s) => `<li>
 		<code>${htmlEsc(s.tool)}</code> <span class="params">${htmlEsc(JSON.stringify(s.input))}</span><br>
 		<span class="lbl">Dataset identity:</span> ${s.datasetIdentity ? htmlEsc(s.datasetIdentity) : '<em>dataset identity unavailable</em>'}<br>
-		<span class="lbl">Retrieved:</span> ${htmlEsc(s.savedAt)} (answer saved)
+		<span class="lbl">Retrieved:</span> ${htmlEsc(s.savedAt)} (answer saved)<br>
+		<span class="lbl">Saved:</span> ${htmlEsc(savedHow(s.sidecar))}
 		${s.sidecar ? ` &middot; <a href="${htmlEsc(s.sidecar)}">${htmlEsc(s.sidecar)}</a>` : ''}
 	</li>`).join('\n');
 	const reproduce = [
@@ -295,7 +324,9 @@ function renderFooter({ generatedAt, sources }) {
 	<h3>Reproduce</h3>
 	<pre class="reproduce">${htmlEsc(reproduce)}</pre>
 	<p class="note">Every figure above is computed in <code>generate.mjs</code> from the linked
-	<code>data/</code> files, each the saved answer of one tool call. None is typed by hand. Regenerate by re-running the script.</p>
+	<code>data/</code> files, each the saved answer of one tool call, copied or written out as its Saved line says.
+	The program checks that each file echoes its pinned input and, where the answer has both, that its rows add up to its totals.
+	These checks find a file for another input or an inconsistent file; they cannot prove that a written-out file is the unchanged answer. Regenerate by re-running the script.</p>
 </footer>`;
 }
 
@@ -438,7 +469,8 @@ function main() {
 	const catRows = ['X', 'Y', 'A'].map((k) => `<tr><td>${k}: ${htmlEsc(CAT_MEANING[k])}</td><td>${fmtInt(byCategory[k])}</td></tr>`).join('');
 
 	const bodyHtml = `
-<section class="card"><h2>Impact Summary</h2><p class="lead">${renderNarrative(c)}</p></section>
+<section class="card"><h2>Impact Summary</h2><p class="lead">${renderNarrative(c)}</p>
+<p class="caveat">Scope: only citations by USPTO examiners in US office actions. Citations by the EPO and other offices, by applicants, and in literature are not in this data, so this is a partial measure of influence.</p></section>
 <section class="card"><h2>By Examiner Category</h2>${catChart}
 <table><thead><tr><th>Category</th><th>Citations</th></tr></thead><tbody>${catRows}</tbody></table></section>
 <section class="card"><h2>Over Time</h2>${yearChart}</section>`;

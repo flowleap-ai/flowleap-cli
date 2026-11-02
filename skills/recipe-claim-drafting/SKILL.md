@@ -1,6 +1,6 @@
 ---
 name: recipe-claim-drafting
-description: "Draft patent claims on the basis of the prior art: find the closest art, study its claim language, break the invention into old and novel elements, draft independent and dependent claim sets, check the formal rules of the EPC, the EPO Guidelines, 35 USC 112 and the MPEP, and search again from each novel element until the closest art clearly lacks one. Use it when the user asks to draft or improve claims, to write independent and dependent claims, or to test draft claims against known art and formal requirements."
+description: "Draft patent claims on the basis of the prior art: find the closest art, study its claim language, break the invention into old and novel elements, draft independent and dependent claim sets, check the formal rules of the EPC, the EPO Guidelines, 35 USC 112, 37 CFR 1.75 and the MPEP, and search again from each novel element until the closest art lacks one and that element is not obvious over the closest art combined with one other document. Use it when the user asks to draft or improve claims, to write independent and dependent claims, or to test draft claims against known art and formal requirements."
 metadata:
   requires:
     skills: ["recipe-prior-art-search", "recipe-claim-analysis"]
@@ -25,7 +25,7 @@ Tune the queries for precision: the goal is the few closest documents to read in
 - Probe the count with `search_patents` (`provider: "epo_ops"`, `query: "<CQL>"`, `range: "1-1"`, `details: false`) and read `total`. Then search with `range: "1-20"`.
 - Search the USPTO with `search_patents` (`provider: "uspto"`, `query: "<Lucene>"`, `limit: 20`). It searches US application titles and metadata, not claim text.
 
-Read the claims of the 3 to 5 closest hits with `get_claims` (`patent_number`) and their abstracts with `get_abstract` (`patent_number`), and study their claim language. Quote claim 1 of each from the tool result.
+Read the claims of the 3 to 5 closest hits with `get_claims` (`patent_number`) and their abstracts with `get_abstract` (`patent_number`), and study their claim language. Quote claim 1 of each from the tool result. Prior art is the whole disclosure, not only the claims: for EP and WO hits, also read the description with `get_description` (`patent_number`) before you decide that a hit lacks an element. For a hit whose description is not served, say that only the claims and abstract were read.
 
 Office coverage: `get_claims` and `get_description` serve EP and WO; US claims come in English; US description is not served. For another office (CN, JP, KR, …) or a missing text, read a family member (`get_family`) in an office the tool serves, and label the text as the member's text.
 
@@ -43,7 +43,7 @@ Sort the elements: which are old (in the closest art, with the document and pass
 
 ## Step 4: Check the formal drafting rules
 
-The rules: EPC Art. 84 and Guidelines F-IV (clarity, conciseness, support); 35 USC 112 and MPEP 2173 (definiteness); MPEP 2181 (means-plus-function).
+The rules: EPC Art. 84 and Guidelines F-IV (clarity, conciseness, support); EPC Rule 43 (two-part form where appropriate, Rule 43(1); one independent claim per category, Rule 43(2), with its exceptions); 35 USC 112 and MPEP 2173 (definiteness); MPEP 2181 (means-plus-function); 37 CFR 1.75 (claim form, dependent and multiple dependent claims).
 
 No FlowLeap tool reads these rule pages, and the FlowLeap Patent AI app has no web tool. In the app, check each claim against the rules as you know them, write each rule as "check: <citation>" for the attorney, and state that the rule page was not read in this run. In a client with a tool that reads web pages, read each rule from the office's own page and quote it with its URL and edition.
 
@@ -53,11 +53,14 @@ Check each claim for antecedent basis, single-sentence form, no result-only lang
 
 For each draft independent claim, write a search from its novel element in the same way as Step 1; the phrase of the novel element is the discriminating term. Call `search_patents` (`provider: "epo_ops"`, `query: "<CQL from the novel element>"`, `range: "1-10"`).
 
-If the searches find art that reads on the draft, narrow the novel element and search again. Stop when the closest art found clearly lacks an element, and name that element and the document.
+If the searches find art that reads on the draft, narrow the novel element and search again. Novelty is not enough: check obviousness too (EPC Art. 56; 35 USC 103). Take the closest document, find the element it lacks, and ask whether one other document found in Steps 1 or 5 discloses that element for the same technical purpose, so that a skilled person would combine the two. If one does, narrow the claim and search again.
+
+Stop when the closest art lacks an element and no other document found supplies it. Name the element, the closest document, and each second document you checked.
 
 ## Output
 
-- Closest-art table: reference, claim 1 language (quoted from `get_claims`), and the element it lacks.
+- Closest-art table: reference, claim 1 language (quoted from `get_claims`), the element it lacks, and whether its description was read.
+- Obviousness check: for each independent claim, the closest document, the second documents checked, and why none supplies the missing element.
 - Element inventory, split into old and novel elements.
 - The full claim set (independent and dependent claims) with a support map into the description.
 - Formal-rules checklist with the citation of each rule, and for each rule whether its page was read or it is a check item.

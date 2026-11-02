@@ -35,7 +35,9 @@ Done when both offices are searched for each feature, or the office without a ke
 
 ## Step 3: Keep only live candidates in the sales markets
 
-For each candidate, call `get_patent_summary` (`patent_number`) for the bibliography, legal status, family and estimated term in one call. For the separate parts, call `get_legal_status` (`patent_number`) and `get_family` (`patent_number`). Keep only patents that are **in force** and that cover **a jurisdiction where the product is sold**.
+For each candidate, call `get_patent_summary` (`patent_number`) for the bibliography, legal status, family and estimated term in one call. For the separate parts, call `get_legal_status` (`patent_number`) and `get_family` (`patent_number`). Keep each granted patent that is **in force** and each published application that is still **pending**, when it covers **a jurisdiction where the product is sold**.
+
+A pending application is a live risk: it can grant with claims that read on the product, and a published application can give provisional protection (EPC Art. 67; 35 USC 154(d)). Keep it as "pending, claims may change", chart its current claims in Step 4, and name it for a watch. Drop only applications that are withdrawn, refused or deemed withdrawn.
 
 Read the jurisdiction from the correct field. `get_family` names the **offices** where the invention was published; for an EP member that is one entry ("EP") and it tells nothing about countries. The countries are the `designatedStates` of the legal status (`extensionStates` for extension and validation states). For a European regional filing, these are its designated states. Then remove the states that lapsed according to the `PG25` and `PGFP` events, which each carry their own `state`. A patent that designates DE and still pays fees there blocks in Germany; a patent that lapsed in DE does not.
 
@@ -43,7 +45,7 @@ The designated states come from the `AK` event with the latest date. If that eve
 
 Read the remaining term from `get_patent_term` (`patent_number`); it is an estimate of 20 years from filing, without term adjustment or SPC. For a US patent, `get_patent_term_adjustment` (`application_number`) gives the official adjustment.
 
-Done when each candidate that remains is in force and covers a sales jurisdiction. Drop the others and record why.
+Done when each candidate that remains is in force or pending and covers a sales jurisdiction. Drop the others and record why.
 
 ## Step 4: Check all elements of each independent claim
 
@@ -59,11 +61,11 @@ A claim clears only if at least one of its elements is absent from the product. 
 
 An FTO data package for each live blocking patent:
 
-- Legal status (in force, expired, abandoned) and remaining term, each from the tool result that gave it.
+- Legal status (in force; pending, claims may change; expired; abandoned) and remaining term, each from the tool result that gave it.
 - Geographic reach against the sales jurisdictions: family members for the offices, and `designatedStates` minus lapsed states for the countries of an EP filing.
 - An all-elements result for each independent claim: cleared (with the absent element) or at risk. A chart built on a family member's claims carries the label "member text, not the office's claims". A right whose claims no source serves is "claims not readable here", an open gap.
 - The queries, the counts, the offices searched, and each missing-key gap.
 
-In the FlowLeap Patent AI app, save the report with `write_patent_results` (`template: "fto-memo"`, `subject`: the product, `jurisdictions`: the sales markets, `matter` when the user gave one, `content`: the analysis for each feature, which names each candidate blocking claim, its legal status and its jurisdiction). Elsewhere, write the report as a Markdown file.
+In the FlowLeap Patent AI app, save the report with `write_patent_results` (`template: "fto-memo"`, `filePath`: for example `fto/<product-slug>-fto-memo.md`, `subject`: the product, `jurisdictions`: the sales markets, `matter` when the user gave one, `content`: the analysis for each feature, which names each candidate blocking claim, its legal status and its jurisdiction). Elsewhere, write the report as a Markdown file.
 
 To chart the at-risk claims element by element, continue with `recipe-infringement-charting`.

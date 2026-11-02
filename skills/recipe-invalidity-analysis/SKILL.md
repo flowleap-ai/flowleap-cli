@@ -24,7 +24,7 @@ Build each query with the search method of `recipe-prior-art-search` (`reference
 
 - `get_patent_summary` (`patent_number`: the target): bibliography, legal status, family and term.
 - `get_claims` (`patent_number`: the target). Keep the result: Step 2 builds the ladder from it.
-- `get_prosecution_timeline` (`patent_number`: the target): filing and priority events.
+- `get_bibliography` (`patent_number`: the target): the filing date and `dates.priority[]`. For a US target, also `get_foreign_priority` (`application_number`) for the foreign priority claims.
 
 The earliest priority date is the critical date. Prior art must be earlier (mind grace periods and jurisdiction differences). Record it, with the tool result it came from, before you search.
 
@@ -54,7 +54,7 @@ Log every query with its tool and count, empty results too. The round log of Ste
 ## Step 4: Read the prosecution record
 
 - `examiner_baseline` (`publication`: the target): the art of record, for every family member and office.
-- `get_citations` (`patent_number`: the target, `type: "all"`) and, for a US target, `search_enriched_citations` (`cited_document`: the target): the documents that cite it since.
+- `get_citations` (`patent_number`: the target, `type: "all"`) and, for a US target, `search_enriched_citations` (`cited_document`: the target as the office prints it, with spaces: `US 20150284881 A1`): the documents that cite it since.
 
 Read the Examiner Baseline as `recipe-find-better` Step 1 does: any X or Y category is examiner's art, and each gap is a gap, not "nothing cited". Art the examiner never saw is stronger than art already of record.
 
@@ -80,7 +80,7 @@ Write `<target-patent>.invalidity.md` with the template in [references/fallback-
 - A "Search rounds" section: one entry for each round, with the ids it answered and its queries. Round 0 is the first search.
 - A Limitations line. Outside the app: "The ladder, the coverage counts and the round log are unvalidated: written by the agent, not checked by a tool."
 
-In the FlowLeap Patent AI app, save the report with `write_patent_results` (`template: "invalidity-claim-chart"`, `content: ""`, `challengedPublication`, `criticalDate`, `objective` with the basis of the date, `coverage` with the element rows `"Claim 1 — element (b): …"`, one combination row for each independent claim and one `fallback` row for each rung with `claimNumber` and `fallbackOf`, `fallbacksNotCharted`, `rounds` from round 1, `limitations`). Copy each quote and source anchor verbatim from a `get_claims`, `get_description` or `get_abstract` result. Elsewhere, write the report as a Markdown file.
+In the FlowLeap Patent AI app, save the report with `write_patent_results` (`filePath`, `template: "invalidity-claim-chart"`, `content: ""`, `challengedPublication`, `criticalDate`, `objective` with the basis of the date, `coverage` with the element rows `"Claim 1 — element (b): …"`, one combination row for each independent claim and one `fallback` row for each rung with `claimNumber` and `fallbackOf`, `fallbacksNotCharted`, `rounds` from round 1, `limitations`). Copy each quote and source anchor verbatim from a `get_claims`, `get_description` or `get_abstract` result. In the app, a paper cannot be a coverage source: name it, with its quote, DOI and date, in the chart prose or the open points, as not checked by the writer. Each round in `rounds` needs at least one `search_patents` query exactly as it ran; the writer refuses a round of only `search_npl` or `search_academic` queries. Elsewhere, write the report as a Markdown file.
 
 "Not covered" is a complete result, not a failure. Done when the report holds every section above for every independent claim.
 

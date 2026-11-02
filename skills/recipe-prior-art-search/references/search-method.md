@@ -19,6 +19,7 @@ Every field in the query must be in this table.
 |---|---|---|
 | `ta` | title and abstract together (preferred: one term instead of two) | yes |
 | `ti` / `ab` | title only / abstract only | yes |
+| `txt` | title, abstract, applicant and inventor | yes |
 | `pa` | applicant (`pa=GOOGLE*`, `pa="TESLA INC"`) | yes |
 | `in` | inventor (`in="SMITH JOHN"`) | yes |
 | `ic` / `cpc` / `cl` | IPC / CPC / all classifications | no |
@@ -36,11 +37,11 @@ These rules give an error answer, not a bad result:
 
 Put the synonyms of one row in one OR group, AND the rows together, and add the date limit. `ta=` matches the English title and abstract, so English synonyms come first; add German or French terms when DE or FR documents may carry only original-language text. Two or three discriminating terms usually bring a count to a workable size.
 
-**Recall or precision.** For novelty, invalidity and FTO, start broad (no classification, synonyms OR-ed, parent CPC class, wide dates) and narrow from the count. For the few closest documents, add a second `ta` term, narrow to a subgroup and tighten the dates. You cannot see what a too-narrow query did not return.
+**Recall or precision.** For novelty, invalidity and FTO, start broad (no classification, synonyms OR-ed, parent CPC class, wide dates) and narrow from the count. For the few closest documents, add a second `ta` term, narrow to a subgroup and tighten the dates. You cannot see what a too-narrow query did not return. The default balanced query has one discriminating `ta` term, one classification and one date bound.
 
 **Classification-only track.** A main group AND 2-3 indexing codes that map to essential elements, with the date limit and no terms, gives a set small enough to read in full. It finds documents whose wording no keyword query matches. Example: `cpc=F15B7/006 AND cpc=F15B2211/7053 AND cpc=F15B2211/785 AND pd<20230810` (45 hits, probed 2026-10-11). One code alone is a neighbourhood, not a set.
 
-**Verify each CPC code.** Never guess a code: CPC reclassifies (photovoltaics moved from `H01L31` to `H10F` in 2023). With FlowLeap Data, `patstat_cpc` (`q`: a keyword) gives classes and main groups, and `patstat_query` on `flowleap.cpc_scheme` gives subgroups and indexing codes (for example `SELECT symbol, title FROM flowleap.cpc_scheme WHERE title ILIKE '%photovoltaic%' ORDER BY symbol LIMIT 15`). Without FlowLeap Data, take codes only from the `cpc[]` of documents you read with `get_bibliography`, and mark each other code as unverified.
+**Verify each CPC code.** Never guess a code: CPC reclassifies (photovoltaics moved from `H01L31` to `H10F` in 2023). With FlowLeap Data, `patstat_cpc` (`q`: a keyword) gives classes and main groups, and `patstat_query` (`sql`: one SELECT on `flowleap.cpc_scheme`; `question`: the user's question, verbatim) gives subgroups and indexing codes (for example `SELECT symbol, title FROM flowleap.cpc_scheme WHERE title ILIKE '%photovoltaic%' ORDER BY symbol LIMIT 15`). Without FlowLeap Data, take codes only from the `cpc[]` of documents you read with `get_bibliography`, and mark each other code as unverified. A 4-character class carries only a headline (`H10F`: inorganic semiconductor devices sensitive to radiation); match your keywords against the titles of its groups (`H10F10/00`, `H10F71/00`), then search with the class (`ic=H10F`) or the exact group (`cpc=H10F10/00`).
 
 ## 3. Probe the count
 
@@ -84,7 +85,7 @@ The USPTO Open Data Portal is a different collection from the EPO data. For US a
 
 - Backward: `citedReferences[]` of `get_bibliography` (`docId`, `kind`, `npl`). For an EP family, the search-report citations are on the A3 publication; an EP B1 has none.
 - Forward, all offices: `get_citations` (`patent_number`, `type`: `all`, `examination`, `opposition`, `applicant` or `other`, `range`). Its rows do not say who made each citation.
-- Forward, US office actions: `search_enriched_citations` (`cited_document`, `category`, `examiner_cited_only`). The art cited against one US application: `search_office_action_citations` (`application_number`, `category: "X"`, `examiner_cited_only: true` for the novelty-destroying references); counts only: `get_citation_stats`.
+- Forward, US office actions: `search_enriched_citations` (`cited_document`, `category`, `examiner_cited_only`). Write `cited_document` as the office prints it, country, number and kind code separated by spaces (`US 20150284881 A1`); the compact form (`US20150284881A1`) returns 0. The art cited against one US application: `search_office_action_citations` (`application_number`, `category: "X"`, `examiner_cited_only: true` for the novelty-destroying references); counts only: `get_citation_stats`.
 - Every document the examiners cited across a family, by office: `examiner_baseline` (`publication`).
 - With FlowLeap Data, `patstat_patent` gives the origin of each citation (examiner search or applicant), and `patstat_neighborhood` (`node`, `depth: 2`, `edge_types: ["cites"]`) gives a two-hop citation set. A truncation notice means the list is capped: narrow it, never read it as complete.
 

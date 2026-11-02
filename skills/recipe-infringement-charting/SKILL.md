@@ -22,6 +22,8 @@ Map asserted claims onto an accused product, element by element.
 
 `get_claims` and `get_description` serve EP and WO; US claims come in English; US description is not served. For another office (CN, JP, KR, …) or a missing text, read a family member (`get_family`) in an office the tool serves, and label the text as the member's text.
 
+For a US patent, construe the claims against the as-filed US specification from the file wrapper: `get_us_grant` (`patent_number`) gives `applicationNumberText`; then `get_application_documents` (`application_number`, `document_code: "SPEC"`) and `read_application_document` (`application_number`, `document_id`: the `documentIdentifier`). Label it as the as-filed US specification, not as a foreign family member's text.
+
 Done when you have the asserted claims verbatim and the description (or the gap named).
 
 ## Step 2: Enforceability check
@@ -29,7 +31,7 @@ Done when you have the asserted claims verbatim and the description (or the gap 
 A chart against an expired or lapsed patent is wasted work. Check first:
 
 - `get_legal_status` (`patent_number`): grant, lapse, opposition and other status events.
-- `get_patent_term` (`patent_number`): the expiry estimate, 20 years from filing, with no term adjustment, SPC or annuity lapse. For a US patent, `get_patent_term_adjustment` (`application_number`) gives the official adjustment.
+- `get_patent_term` (`patent_number`): the expiry estimate, 20 years from filing, with no term adjustment, SPC or annuity lapse. For a US patent, `get_patent_term_adjustment` (`application_number`: the `applicationNumberText` from `get_us_grant`) gives the official adjustment.
 - `get_family` (`patent_number`): the extended family, to find where a member is in force. Read `get_legal_status` of each member in a jurisdiction that matters.
 
 Chart only in jurisdictions with a live family member. Give each status and date with the tool that gave it.
@@ -54,10 +56,11 @@ Collect datasheets, manuals, teardown reports and marketing claims. Record the s
 |---------------|----------------|-------------------------|---------------------------|----------|------|
 
 - **Literal**: the element reads directly on the product feature.
-- **DoE** (doctrine of equivalents): insubstantial difference by function, way and result. Flag prosecution-history estoppel risks from the file history (US: `get_application_documents` and `read_application_document` for the amendments and remarks; EP: `get_register_events`).
+- **DoE** (doctrine of equivalents), US: apply either of the two tests and name the one you apply. Function-way-result: the accused feature performs substantially the same function in substantially the same way to obtain substantially the same result. Insubstantial differences: the differences between the feature and the claim element are insubstantial. Keep the two tests apart in the cell (Warner-Jenkinson v. Hilton Davis, 520 U.S. 17 (1997)). Flag prosecution-history estoppel risks from the amendments and remarks (`get_application_documents` and `read_application_document`).
+- **Equivalents, EP members**: the US tests do not apply. Write the item "check: Art. 69 EPC and Art. 2 of the Protocol on its interpretation, and the national equivalence test of each state where you chart". `get_register_events` gives the EP prosecution events only, not the text of the amendments: name the amendment text as a gap.
 - An element with no evidence is "no evidence found", never "met".
 
-The doctrine of equivalents and prosecution-history estoppel are US case law, not MPEP text. Read the MPEP section that names the decisions (MPEP 2186) from the office's own page with your web tool, quote it with its URL and edition, and name the decisions it cites. The FlowLeap Patent AI app has no web tool: there, write the legal basis as a "check: MPEP 2186" item and write that the page was not read.
+The US doctrine of equivalents and prosecution-history estoppel are case law, not MPEP text. Read the MPEP section that names the decisions (MPEP 2186) from the office's own page with your web tool, quote it with its URL and edition, and name the decisions it cites. The FlowLeap Patent AI app has no web tool: there, write the legal basis as a "check: MPEP 2186" item and write that the page was not read.
 
 ## Step 6: Construction disputes
 
@@ -71,4 +74,4 @@ For each element where the mapping is contested, take the specification passages
 - Gaps: text not served, evidence not found, pages not read, missing keys.
 - Caveat block: this is an analysis aid, not a legal opinion.
 
-In the FlowLeap Patent AI app, save the report with `write_patent_results` (`template: "eou-infringement-chart"`, `filePath`, `matter`: the patent number and the asserted claims, `subject`: the accused product, `content`: the memo, the chart, the disputed constructions and the gaps). Elsewhere, write the report as a Markdown file.
+In the FlowLeap Patent AI app, save the report with `write_patent_results` (`template: "eou-infringement-chart"`, `filePath`, `matter`: the patent number and the asserted claims, `subject`: the accused product, `content`: the report as `##` sections: `## Overview` (asserted patent and claims, accused product, enforceability memo), `## Element-by-element chart`, `## Infringement theory` (the equivalents rationale per element and the disputed constructions), `## Evidentiary sources`, `## Gaps and limitations` (with the caveat). With three or more `##` headings the writer keeps these sections; with fewer it puts the whole content under its own chart section). Elsewhere, write the report as a Markdown file.

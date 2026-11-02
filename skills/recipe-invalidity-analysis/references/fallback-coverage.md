@@ -138,7 +138,7 @@ Read the open points off the report. Keep the ids stable across rounds.
 | `rung-3`, `rung-d1` | a rung partly covered or not covered (`d1` = the first description fallback) |
 | `element-1.2` | the second element of claim 1 is not disclosed in the cited art |
 | `scope-XX0000004A` | a cited document from an office outside the searched scope |
-| `date-XX0000005A` | a cited document published after the critical date, or with no date found |
+| `date-XX0000005A` | a cited document published after the critical date, or with no date found (an application filed before the critical date and published after it stays prior art for novelty: EPC Art. 54(3), 35 USC 102(a)(2)) |
 | `search-1` | a search that failed (error, timeout, key gate) and did not run again |
 
 List them in this order: rungs, elements, scope, date, search. Each question
@@ -152,7 +152,7 @@ Report written: <path>. Claim 1: fallbacks 1 of 4 covered; not covered: claims 3
 
 1. [rung-3] No cited document shows a side opening. Recommended: search "side entry" and "lateral insertion" cages in both offices, then cycling NPL.
 2. [rung-4] No cited document shows a retaining tab. Recommended: search "retaining tab" with the side-opening terms.
-3. [date-XX0000006A] XX0000006A was published 2009-07-01, after the critical date. Recommended: drop it, or check whether the priority claim of claim 1 holds.
+3. [date-XX0000006A] XX0000006A was published 2009-07-01, after the critical date. Recommended: drop it unless it is an earlier application (filed before the critical date: novelty art under EPC Art. 54(3) and 35 USC 102(a)(2)), or check whether the priority claim of claim 1 holds.
 4. [search-1] The USPTO search failed with a key gate. Recommended: add the free USPTO ODP key and run it again.
 
 Reply with the ids to run (for example rung-3, element-1.3), 'all', or your own steer.
@@ -180,6 +180,8 @@ answers.
    then `search_npl` and `search_academic`, then a web search where the client
    has a web tool (the app has none: name the web as not searched).
    Search only for the chosen points. Keep the critical date on every query.
+   In the app, each round needs at least one `search_patents` query: the
+   writer refuses a round of only `search_npl` or `search_academic` queries.
 4. Update the ladder table and the chart rows the round changed.
 5. Add the round to "Search rounds" with its ids and every query as run.
 6. Rewrite the Round Report from the updated report, and wait again.
@@ -203,6 +205,8 @@ Target `XX0000001B1`, a bicycle bottle holder. `get_claims` returned:
    opening retains the bottle.
 5. Use of the holder according to claim 1 on a frame tube of carbon fibre.
 
+Critical date: 2009-04-17 (earliest priority, from `get_bibliography`).
+
 Ladder of claim 1: claim 2; claim 3 (refers to 1 or 2, one rung under claim
 1); claim 4 (through 3); claim 5. The first search finds `XX0000002A1`
 (titanium wire, claim 4) and nothing for the side opening or the tab. Claim 5
@@ -219,8 +223,8 @@ Echo: "Running: [rung-3] side opening for lateral insertion; [rung-4]
 resilient tab at the side opening." New Discriminating Terms: "side entry",
 "lateral insertion", "retaining tab", "side-loading cage". Round 1 queries:
 
-- `search_patents` (`provider: "epo_ops"`): `(ta="side entry" OR ta="lateral insertion") AND ta=cage AND ta=bottle`, `range: "1-30"`
-- `search_patents` (`provider: "uspto"`): `applicationMetaData.inventionTitle:"side loading" AND applicationMetaData.inventionTitle:bottle`, `limit: 30`
+- `search_patents` (`provider: "epo_ops"`): `(ta="side entry" OR ta="lateral insertion") AND ta=cage AND ta=bottle AND pd<20090417`, `range: "1-30"`
+- `search_patents` (`provider: "uspto"`): `applicationMetaData.inventionTitle:"side loading" AND applicationMetaData.inventionTitle:bottle`, `range_filters: "applicationMetaData.filingDate 1900-01-01 2009-04-16"`, `limit: 30`
 - `search_npl`: `side-loading bottle cage retaining tab`, `filter.to_year: 2009`, `limit: 20`
 
 Claim 3 is found in a dated product review (`XX-NPL-1`). Claim 4 is still not

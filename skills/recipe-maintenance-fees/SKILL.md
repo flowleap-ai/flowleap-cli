@@ -42,18 +42,17 @@ No grant date (pre-grant application) → there is nothing to compute; say so.
 
 Call `get_transactions` (`application_number`): the events of `eventDataBag`, each with its code, description and date.
 
-Scan the events for:
+Scan the events for these. Match on the description text; the codes are the ones seen in live records:
 
-- **Payment events** — codes `M1551`/`M1552`/`M1553` (4th/8th/12th-year,
-  large entity) and `M2551`/`M2552`/`M2553` (small/micro variants). Record
-  the event date per window.
-- **Expiry events** — descriptions like "Patent Expired for Failure to Pay
-  Maintenance Fees" (code starting `EXP`). An expiry event ends the analysis:
-  report the lapse and its date.
+- **Payment events**: description "Payment of Maintenance Fee, <4th/8th/12th> Year, <Large/Small/Micro> Entity". Codes seen live: `M1552`, `M1553` (large), `M2552`, `M2553` (small), `M3551`, `M3552` (micro). Record the event date and code per window. Check any other code against its description text before you rely on it.
+- **Surcharge events**: a late payment within the six-month grace period carries a surcharge event on the same date. Seen live: `M2556` ("11.5 yr surcharge- late pmt w/in 6 mo, Small Entity") and `M3555` ("Surcharge for Late Payment, Micro Entity"). Report the window as paid in the surcharge period.
+- **Reminder**: `REM.` ("Maintenance Fee Reminder Mailed").
+- **Expiry events**: code `EXP.`, description "Expire Patent". Report the lapse and its date.
+- **Reinstatement**: an expiry is not final when a later event accepts the delayed payment. Seen live: `PMFP` ("Petition to Accept Late Payment of Maintenance Fee Payment Filed") and `PMFG` ("Petition Decision - Accept Late Payment of Maintenance Fees - Granted"). A record can hold `EXP.`, then `PMFG`, then a later `EXP.`: the latest expiry or reinstatement event decides the status. Any other event after `EXP.` (for example a code starting `EXPX`) is a check item: read its description, and do not report the patent as lapsed until you have.
 
 **Required phrasing:** a window with no payment event is "no payment event
 recorded" — never "unpaid." ODP ingestion lags; a fee paid recently may not
-appear yet.
+appear yet. Live records can also lack an earlier payment event while a later window is paid (for example `M2552` and `M2553` with no 4th-year event): report the earlier window as "no payment event recorded; a later window is paid", never as a lapse.
 
 ## Step 3: Compute the windows
 
@@ -65,11 +64,9 @@ All dates run from **grant date** (PTA does not move them):
 | 8th-year | grant + 7y | grant + 7.5y | grant + 8y | grant + 8y |
 | 12th-year | grant + 11y | grant + 11.5y | grant + 12y | grant + 12y |
 
-Ground the rule text rather than asserting it: read 37 CFR 1.362 and MPEP
-Chapter 2500 from the office's own page with your web tool, and quote the
-rule with its URL and edition. The FlowLeap Patent AI app has no web tool:
-there, write the rule as a "check: 37 CFR 1.362" item and write that the page
-was not read.
+A due date or a surcharge date that falls on a Saturday, Sunday or federal holiday in the District of Columbia moves to the next business day (35 USC 21(b)). Give the computed date and, when it moves, the docketed date.
+
+Ground the rule text rather than asserting it: read 37 CFR 1.362 (the windows), 37 CFR 1.20(e) to (h) (the maintenance fees and the surcharge), 35 USC 21(b) and MPEP 2506 (times for payment), and, for a lapsed patent, 37 CFR 1.378 (petition to accept delayed payment) from the office's own page with your web tool, and quote each rule with its URL and edition. The FlowLeap Patent AI app has no web tool: there, write each rule as a check item ("check: 37 CFR 1.362", "check: 37 CFR 1.20(e) to (h)", "check: 35 USC 21(b) and MPEP 2506") and write that the page was not read.
 
 If all three windows are past, report historical status only.
 
@@ -77,7 +74,9 @@ If all three windows are past, report historical status only.
 
 Per patent, a three-row table — Window | Due | Surcharge until | Status —
 where Status is one of: paid on `<date>` (event `<code>`) / upcoming /
-**in surcharge period** / no payment event recorded / lapsed on `<date>`.
+**in surcharge period** / no payment event recorded / lapsed on `<date>` /
+reinstated on `<date>` (event `<code>`). For a lapsed patent, add the item
+"check: petition to accept delayed payment, 37 CFR 1.378".
 Then exactly one action line:
 
 > **Next action: docket `<the nearest unmet deadline>`**
