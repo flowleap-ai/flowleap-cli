@@ -1,0 +1,9 @@
+{
+  "success": false,
+  "error": {
+    "code": "patstat_unavailable",
+    "message": "The PATSTAT analytics layer is not configured on this deployment (PATSTAT_DATABASE_URL is unset).",
+    "details": {}
+  },
+  "status": 503
+}

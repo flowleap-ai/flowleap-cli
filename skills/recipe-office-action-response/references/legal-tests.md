@@ -1,6 +1,6 @@
 # Office action analysis: the legal tests
 
-Each test names its source. Fetch it with `flowleap-legal` and quote it when the analysis turns on it. An item marked "check" is not confirmed: write it for the attorney as a check, not as law.
+Each test names its source. Fetch the office's page with your web tool and quote it when the analysis turns on it (in the app, which has no web tool, quote only a file the user supplies). An item marked "check" is not confirmed: write it for the attorney as a check, not as law.
 
 ## Search report categories (EPO)
 

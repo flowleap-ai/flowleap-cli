@@ -1,0 +1,20 @@
+{
+  "success": false,
+  "error": {
+    "code": "patstat_applicant_ambiguous",
+    "message": "\"Zzz Ambiguous Co\" matches 2 distinct applicant entities: ZZZ AMBIGUOUS CO HOLDING (900 applications), ZZZ AMBIGUOUS CO TECH (410 applications). These may be separate companies, so they are not merged automatically.",
+    "details": {
+      "candidates": [
+        {
+          "name": "ZZZ AMBIGUOUS CO HOLDING",
+          "applications": 900
+        },
+        {
+          "name": "ZZZ AMBIGUOUS CO TECH",
+          "applications": 410
+        }
+      ]
+    }
+  },
+  "status": 422
+}

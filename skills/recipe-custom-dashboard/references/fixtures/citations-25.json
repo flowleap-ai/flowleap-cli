@@ -1,0 +1,580 @@
+{
+  "total": 64,
+  "citations": [
+    {
+      "id": "fixture-025",
+      "applicationNumber": "16003425",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "A",
+      "categoryDescription": "Background art",
+      "rejectedClaims": "6",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2023-02-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-026",
+      "applicationNumber": "16003562",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "A",
+      "categoryDescription": "Background art",
+      "rejectedClaims": "11",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2020-08-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-027",
+      "applicationNumber": "16003699",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "A",
+      "categoryDescription": "Background art",
+      "rejectedClaims": "8",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2022-05-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-028",
+      "applicationNumber": "16003836",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "Y",
+      "categoryDescription": "Affects inventiveness when combined (103 rejection)",
+      "rejectedClaims": "15",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2023-08-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-029",
+      "applicationNumber": "16003973",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "X",
+      "categoryDescription": "Destroys novelty (102 rejection)",
+      "rejectedClaims": "5",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2023-03-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-030",
+      "applicationNumber": "16004110",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "X",
+      "categoryDescription": "Destroys novelty (102 rejection)",
+      "rejectedClaims": "14",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2018-07-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-031",
+      "applicationNumber": "16004247",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "Y",
+      "categoryDescription": "Affects inventiveness when combined (103 rejection)",
+      "rejectedClaims": "4",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2019-05-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-032",
+      "applicationNumber": "16004384",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "A",
+      "categoryDescription": "Background art",
+      "rejectedClaims": "5",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2021-06-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-033",
+      "applicationNumber": "16004521",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "Y",
+      "categoryDescription": "Affects inventiveness when combined (103 rejection)",
+      "rejectedClaims": "7",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2018-06-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-034",
+      "applicationNumber": "16004658",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "Y",
+      "categoryDescription": "Affects inventiveness when combined (103 rejection)",
+      "rejectedClaims": "6",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2018-05-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-035",
+      "applicationNumber": "16004795",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "A",
+      "categoryDescription": "Background art",
+      "rejectedClaims": "9",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2020-08-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-036",
+      "applicationNumber": "16004932",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "A",
+      "categoryDescription": "Background art",
+      "rejectedClaims": "4",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2018-05-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-037",
+      "applicationNumber": "16005069",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "Y",
+      "categoryDescription": "Affects inventiveness when combined (103 rejection)",
+      "rejectedClaims": "18",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2022-04-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-038",
+      "applicationNumber": "16005206",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "A",
+      "categoryDescription": "Background art",
+      "rejectedClaims": "4",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2020-08-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-039",
+      "applicationNumber": "16005343",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "X",
+      "categoryDescription": "Destroys novelty (102 rejection)",
+      "rejectedClaims": "5",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2019-01-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-040",
+      "applicationNumber": "16005480",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "Y",
+      "categoryDescription": "Affects inventiveness when combined (103 rejection)",
+      "rejectedClaims": "1",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2022-04-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-041",
+      "applicationNumber": "16005617",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "Y",
+      "categoryDescription": "Affects inventiveness when combined (103 rejection)",
+      "rejectedClaims": "5",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2022-02-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-042",
+      "applicationNumber": "16005754",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "Y",
+      "categoryDescription": "Affects inventiveness when combined (103 rejection)",
+      "rejectedClaims": "14",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2021-01-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-043",
+      "applicationNumber": "16005891",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "X",
+      "categoryDescription": "Destroys novelty (102 rejection)",
+      "rejectedClaims": "20",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2023-02-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-044",
+      "applicationNumber": "16006028",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "X",
+      "categoryDescription": "Destroys novelty (102 rejection)",
+      "rejectedClaims": "14",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2019-04-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-045",
+      "applicationNumber": "16006165",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "X",
+      "categoryDescription": "Destroys novelty (102 rejection)",
+      "rejectedClaims": "2",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2022-01-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-046",
+      "applicationNumber": "16006302",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "Y",
+      "categoryDescription": "Affects inventiveness when combined (103 rejection)",
+      "rejectedClaims": "20",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2018-03-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-047",
+      "applicationNumber": "16006439",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "X",
+      "categoryDescription": "Destroys novelty (102 rejection)",
+      "rejectedClaims": "7",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2018-04-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-048",
+      "applicationNumber": "16006576",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "A",
+      "categoryDescription": "Background art",
+      "rejectedClaims": "12",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2021-02-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    },
+    {
+      "id": "fixture-049",
+      "applicationNumber": "16006713",
+      "citedDocument": "US 20150284881 A1",
+      "country": "US",
+      "category": "A",
+      "categoryDescription": "Background art",
+      "rejectedClaims": "10",
+      "citedPassages": [
+        "paragraph [0108]"
+      ],
+      "examinerCited": true,
+      "applicantCited": false,
+      "isNPL": false,
+      "officeActionDate": "2019-01-15T00:00:00",
+      "officeActionType": "CTNF",
+      "inventor": "YU; Yanping",
+      "techCenter": "3700",
+      "documentReference": {
+        "publicationNumber": "US20150284881A1",
+        "section": "bibliography"
+      }
+    }
+  ]
+}

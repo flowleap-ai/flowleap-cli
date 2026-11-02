@@ -3,98 +3,140 @@
  * Dashboard template: LANDSCAPE WHITE-SPACE (Topic Analytics)
  *
  * QUESTION  Where is the white space in a technology area? A CPC x year heatmap
- *           of filing intensity — sparse/absent cells are candidate white space.
- * DATA      `flowleap analytics --keyword ... --cpc <CODE> --date-from ... --date-to ... --json`
- *           Response: { searchDescription, request, analytics:{ byYear:[{year,count}],
- *           byCountry, topAssignees, topCPC } }. One BROAD call discovers the active
- *           classes (topCPC); then ONE scoped call per CPC gives that row's byYear.
- *           The heatmap is a real cross-tab of scoped calls — never invented.
+ *           of filing intensity: sparse or absent cells are candidate white space.
+ * DATA      Answers of the FlowLeap Data tool `patent_analytics`, each saved
+ *           unchanged to data/:
+ *             { searchDescription, request, analytics:{ byYear:[{year,count}],
+ *               byCountry, topAssignees, topCPC }, data_slice }
+ *           One BROAD call (data/analytics-overview.json) shows the active
+ *           classes (topCPC); then ONE scoped call per CPC
+ *           (data/analytics-cpc-<code>.json) gives that row's byYear. The
+ *           heatmap is a real cross-tab of scoped calls, never invented.
  *
  * HOW TO ADAPT
- *   1. Set QUERY_KEYWORDS + DATE_FROM/DATE_TO to scope the technology area.
- *   2. Pin CPC_CODES to the subclasses to compare (or read them from the broad
+ *   1. Set KEYWORDS and/or PHRASES + DATE_FROM/DATE_TO to scope the area
+ *      (keywords are OR-combined substrings; a phrase is one exact substring).
+ *   2. Pin CPC_CODES to the subclasses to compare (read them from the broad
  *      call's topCPC and pin the ones you care about).
- *   3. Run `node generate.mjs`.
+ *   3. `node generate.mjs --plan` prints the tool calls and their files.
+ *      Make the calls, save the answers, then run `node generate.mjs`.
  *
- * NOTE  Topic Analytics carries no per-response edition field today, so the
- *       dataset-identity row renders the explicit "dataset identity unavailable"
- *       (rule 5) rather than omitting it. Analytics does NOT need PATSTAT.
+ * CHECKS    Each saved answer must echo its pinned request (exit 4 otherwise).
+ *           data_slice is the dataset identity; a missing one renders the
+ *           explicit "dataset identity unavailable" (rule 5). This template does
+ *           NOT need PATSTAT.
  *===========================================================================*/
 
 // ---- PINNED CONSTANTS (edit these) -----------------------------------------
-const QUERY_KEYWORDS = ['machine learning'];
+const KEYWORDS = [];
+const PHRASES = ['machine learning'];
 const DATE_FROM = '2015-01-01';
 const DATE_TO = '2024-12-31';
 const CPC_CODES = ['G06N', 'H04L', 'G06F', 'A61B', 'G16H'];
-const SUBJECT_SLUG = 'ml-landscape-whitespace'; // subject-based, no timestamps
 // ----------------------------------------------------------------------------
 
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+
+/** The patent_analytics input for one call: only the criteria that are set. */
+function analyticsInput(cpc) {
+	return {
+		...(KEYWORDS.length ? { keywords: KEYWORDS } : {}),
+		...(PHRASES.length ? { phrases: PHRASES } : {}),
+		...(cpc ? { cpc: [cpc] } : {}),
+		dateFrom: DATE_FROM, dateTo: DATE_TO,
+	};
+}
+const OVERVIEW = { tool: 'patent_analytics', input: analyticsInput(null), file: 'analytics-overview.json' };
+const SCOPED = CPC_CODES.map((cpc) => ({ cpc, tool: 'patent_analytics', input: analyticsInput(cpc), file: `analytics-cpc-${cpc.toLowerCase()}.json` }));
 
 /*======================= COMMON BLOCK (copy-in) ==============================
- * Identical across the four dashboard templates: CLI subprocess seam, inline
- * SVG chart helpers, HTML shell, and the provenance/reproduce footer.
+ * Identical across the four dashboard templates: the reader of the saved tool
+ * answers, inline SVG chart helpers, HTML shell, and the provenance/reproduce
+ * footer.
  *===========================================================================*/
 
 const OUT_DIR = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(OUT_DIR, 'data');
-const FLOWLEAP_BIN = process.env.FLOWLEAP_CLI_BIN || 'flowleap';
 
-/** Error carrying the parsed FlowLeap envelope so callers can branch on code. */
-class CliError extends Error {
-	constructor(message, { code = null, status = null, args = [], candidates = null } = {}) {
+/** A saved tool answer that is missing, is not the answer to the pinned input, or is an error answer. */
+class ToolAnswerError extends Error {
+	constructor(message, { code = null, candidates = null, exitCode = 4 } = {}) {
 		super(message);
 		this.code = code;
-		this.status = status;
-		this.args = args;
 		this.candidates = candidates;
+		this.exitCode = exitCode;
 	}
 }
 
-/** Read the machine `error.code` out of a failed-run envelope (client wrap or bare body). */
-function envelopeError(parsed) {
-	if (!parsed || typeof parsed !== 'object') return null;
-	const body = parsed.body && typeof parsed.body === 'object' ? parsed.body : parsed;
+/** The error of an error answer ({ error:{ code, message, details } }, also inside { body }), or null. */
+function answerError(value) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+	const body = value.body && typeof value.body === 'object' ? value.body : value;
 	const err = body.error && typeof body.error === 'object' ? body.error : null;
-	if (!err) return null;
-	return { code: err.code ?? null, message: err.message ?? '', candidates: err.candidates ?? null };
+	if (!err && body.success !== false) return null;
+	return { code: err?.code ?? null, message: err?.message ?? '', candidates: err?.details?.candidates ?? null };
 }
 
-/** Run `flowleap <args> --json` as a subprocess and return the parsed body. Never holds a token. */
-function runCli(args) {
-	try {
-		const out = execFileSync(FLOWLEAP_BIN, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-		return JSON.parse(out);
-	} catch (e) {
-		const stdout = typeof e.stdout === 'string' ? e.stdout : '';
-		let parsed = null;
-		try { parsed = JSON.parse(stdout); } catch { /* not JSON */ }
-		const info = envelopeError(parsed);
-		if (info) {
-			throw new CliError(info.message || `flowleap ${args.join(' ')} failed`, {
-				code: info.code, status: e.status ?? null, args, candidates: info.candidates,
-			});
-		}
-		if (e.code === 'ENOENT') {
-			throw new CliError(`Could not spawn "${FLOWLEAP_BIN}". Install the FlowLeap CLI or set FLOWLEAP_CLI_BIN.`, { args });
-		}
-		throw new CliError((e.stderr || e.message || 'unknown error').toString().trim(), { status: e.status ?? null, args });
+/** Parse saved answer text: the answer JSON itself, or a list of text blocks that holds it. */
+function parseAnswerText(text, file) {
+	let value;
+	try { value = JSON.parse(text); } catch {
+		throw new ToolAnswerError(`${file} is not JSON. Save the tool answer exactly as the tool returned it.`);
+	}
+	if (Array.isArray(value) && value.length > 0 && value.every((b) => b && b.type === 'text' && typeof b.text === 'string')) {
+		return parseAnswerText(value.map((b) => b.text).join(''), file);
+	}
+	return value;
+}
+
+/**
+ * Read the saved answer of one tool call. source = { tool, input, file }.
+ * Returns { value, savedAt } (savedAt = the time the answer file was written).
+ * Throws ToolAnswerError for a missing file, a file that is not JSON, or an error answer.
+ */
+function readToolAnswer(source) {
+	const rel = `data/${source.file}`;
+	const path = join(DATA_DIR, source.file);
+	if (!existsSync(path)) {
+		throw new ToolAnswerError(`Missing ${rel}. Call ${source.tool} with ${JSON.stringify(source.input)} and save its answer there.`);
+	}
+	const value = parseAnswerText(readFileSync(path, 'utf8'), rel);
+	const err = answerError(value);
+	if (err) {
+		throw new ToolAnswerError(`${rel}: ${source.tool} answered an error${err.code ? ` (${err.code})` : ''}: ${err.message}`,
+			{ code: err.code, candidates: err.candidates });
+	}
+	return { value, savedAt: statSync(path).mtime.toISOString() };
+}
+
+/** Stop when a saved answer does not match its pinned input or its own totals. */
+function expectAnswer(cond, source, what) {
+	if (!cond) {
+		throw new ToolAnswerError(`data/${source.file} is not the answer of ${source.tool} with ${JSON.stringify(source.input)}: ${what}. Call the tool again and save its answer without changes.`);
 	}
 }
 
-/** Run a subprocess expecting plain text (e.g. `flowleap --version`). */
-function runCliText(args) {
-	return execFileSync(FLOWLEAP_BIN, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }).trim();
-}
+const sum = (rows, key) => rows.reduce((a, r) => a + (typeof r[key] === 'number' ? r[key] : 0), 0);
+const sameList = (a, b) => JSON.stringify([...(a ?? [])].sort()) === JSON.stringify([...(b ?? [])].sort());
 
-/** Persist one raw-JSON sidecar per backend call under ./data/. */
-function saveSidecar(name, value) {
-	mkdirSync(DATA_DIR, { recursive: true });
-	writeFileSync(join(DATA_DIR, name), JSON.stringify(value, null, 2));
-	return `data/${name}`;
+/**
+ * Entry point: `node generate.mjs --plan` prints the tool calls to make and the
+ * file of each answer as JSON; `node generate.mjs` renders the dashboard.
+ */
+function run(sources, main) {
+	if (process.argv.includes('--plan')) {
+		console.log(JSON.stringify(sources.map((s) => ({ tool: s.tool, input: s.input, saveTo: `data/${s.file}` })), null, 2));
+		return;
+	}
+	try {
+		main();
+	} catch (e) {
+		if (!(e instanceof ToolAnswerError)) throw e;
+		console.error(e.message);
+		process.exit(e.exitCode);
+	}
 }
 
 const fmtInt = (n) => Number(n ?? 0).toLocaleString('en-US');
@@ -236,27 +278,31 @@ function heatmap({ title, source, rows, cols, matrix, valueLabel = 'Filings' }) 
 }
 
 /**
- * Provenance + reproduce footer. `sources` is one descriptor per backend call:
- * { verb, params, datasetIdentity, retrievedAt, sidecar }. A null datasetIdentity
+ * Provenance + reproduce footer. `sources` is one descriptor per tool call:
+ * { tool, input, datasetIdentity, savedAt, sidecar }. A null datasetIdentity
  * renders the explicit "dataset identity unavailable" row (never omitted).
  */
-function renderFooter({ generatedAt, cliVersion, backend, sources, reproduce }) {
+function renderFooter({ generatedAt, sources }) {
 	const rows = sources.map((s) => `<li>
-		<code>${htmlEsc(s.verb)}</code> <span class="params">${htmlEsc(s.params)}</span><br>
+		<code>${htmlEsc(s.tool)}</code> <span class="params">${htmlEsc(JSON.stringify(s.input))}</span><br>
 		<span class="lbl">Dataset identity:</span> ${s.datasetIdentity ? htmlEsc(s.datasetIdentity) : '<em>dataset identity unavailable</em>'}<br>
-		<span class="lbl">Retrieved:</span> ${htmlEsc(s.retrievedAt)}
+		<span class="lbl">Retrieved:</span> ${htmlEsc(s.savedAt)} (answer saved)
 		${s.sidecar ? ` &middot; <a href="${htmlEsc(s.sidecar)}">${htmlEsc(s.sidecar)}</a>` : ''}
 	</li>`).join('\n');
+	const reproduce = [
+		'# Call each tool with this input and save its answer, unchanged, to the named file:',
+		...sources.map((s) => `${s.tool} ${JSON.stringify(s.input)}  ->  ${s.sidecar}`),
+		'node generate.mjs',
+	].join('\n');
 	return `<footer id="provenance" data-provenance="footer">
 	<h2>Provenance &amp; Reproduce</h2>
-	<p class="meta"><span class="lbl">Generated:</span> ${htmlEsc(generatedAt)}
-	 &middot; <span class="lbl">CLI / backend:</span> ${htmlEsc(cliVersion)} / ${htmlEsc(backend)}</p>
+	<p class="meta"><span class="lbl">Generated:</span> ${htmlEsc(generatedAt)}</p>
 	<h3>Data sources</h3>
 	<ul class="sources">${rows}</ul>
 	<h3>Reproduce</h3>
 	<pre class="reproduce">${htmlEsc(reproduce)}</pre>
 	<p class="note">Every figure above is computed in <code>generate.mjs</code> from the linked
-	<code>data/</code> sidecars — none is typed by hand. Regenerate by re-running the script.</p>
+	<code>data/</code> files, each the saved answer of one tool call. None is typed by hand. Regenerate by re-running the script.</p>
 </footer>`;
 }
 
@@ -317,18 +363,31 @@ ${footerHtml}
 
 /** Print the chat summary block: computed numbers + file paths, for the agent to paste. */
 function printSummaryBlock(lines, htmlPath) {
-	const out = ['```', ...lines, `Dashboard: ${htmlPath}`, `(open locally: open "${htmlPath}")`, '```'];
+	const out = ['```', ...lines, `Dashboard: ${htmlPath}`, '```'];
 	console.log(out.join('\n'));
 }
 
+
 /*======================= END COMMON BLOCK ===================================*/
 
-/** Narrative white-space read — numbers interpolated from computed `c` (rule 1). */
+/** Read one saved analytics answer and check that it answers the pinned request. */
+function readAnalytics(source) {
+	const answer = readToolAnswer(source);
+	const req = answer.value.request ?? {};
+	expectAnswer(sameList(req.keywords, source.input.keywords), source, 'request.keywords differ');
+	expectAnswer(sameList(req.phrases, source.input.phrases), source, 'request.phrases differ');
+	expectAnswer(sameList(req.cpc, source.input.cpc), source, 'request.cpc differs');
+	expectAnswer(req.dateFrom === DATE_FROM && req.dateTo === DATE_TO, source, 'request dates differ');
+	expectAnswer(Array.isArray(answer.value.analytics?.byYear), source, 'analytics.byYear is missing');
+	return answer;
+}
+
+/** Narrative white-space read: numbers interpolated from computed `c` (rule 1). */
 function renderNarrative(c) {
 	const parts = [
 		`Over ${c.years[0]}–${c.years[c.years.length - 1]}, filing intensity across ${c.rows.length} CPC subclasses spans ${fmtInt(c.min)} to ${fmtInt(c.max)} filings per cell.`,
 		c.whiteSpace.length
-			? `White space (sparse or absent early-year activity): ${c.whiteSpace.map((w) => `${htmlEsc(w.cpc)} in ${w.years.join(', ')}`).join('; ')}.`
+			? `White space (cells at or below ${fmtInt(c.threshold)} filings, 10% of the busiest cell): ${c.whiteSpace.map((w) => `${htmlEsc(w.cpc)} in ${w.years.join(', ')}`).join('; ')}.`
 			: 'No clearly sparse cells were found in this window.',
 		`The most active subclass is ${htmlEsc(c.busiest.cpc)} (${fmtInt(c.busiest.total)} filings over the window).`,
 	];
@@ -337,44 +396,27 @@ function renderNarrative(c) {
 
 function main() {
 	const generatedAt = new Date().toISOString();
-	let cliVersion = 'unknown', backend = 'unknown';
-	try { cliVersion = runCliText(['--version']); } catch { /* best effort */ }
-	try {
-		const d = runCli(['--json', 'doctor']);
-		backend = d.baseUrl ? `${d.baseUrl} (health: ${d?.backend?.healthStatus ?? 'unknown'})` : 'unknown';
-	} catch { /* best effort */ }
-
-	const kwArgs = QUERY_KEYWORDS.flatMap((k) => ['--keyword', k]);
 	const sources = [];
+	const identity = (v) => (v.data_slice && v.data_slice !== 'unknown' ? `data_slice: ${v.data_slice}` : null);
 
-	// Broad call: discover the active classes / corpus context.
-	const overviewArgs = ['--json', 'analytics', ...kwArgs, '--date-from', DATE_FROM, '--date-to', DATE_TO];
-	const overview = runCli(overviewArgs);
-	const overviewSidecar = saveSidecar('analytics-overview.json', overview);
-	sources.push({
-		verb: 'analytics', params: `${QUERY_KEYWORDS.map((k) => `--keyword ${k}`).join(' ')} --date-from ${DATE_FROM} --date-to ${DATE_TO}`,
-		datasetIdentity: overview.analytics?.corpusSlice ?? null, retrievedAt: generatedAt, sidecar: overviewSidecar,
-	});
+	// Broad call: the active classes and the corpus context.
+	const overview = readAnalytics(OVERVIEW);
+	sources.push({ tool: OVERVIEW.tool, input: OVERVIEW.input, datasetIdentity: identity(overview.value), savedAt: overview.savedAt, sidecar: `data/${OVERVIEW.file}` });
 
 	// One scoped call per CPC -> that row's byYear. Cross-tab into the matrix.
 	const years = [];
 	for (let y = Number(DATE_FROM.slice(0, 4)); y <= Number(DATE_TO.slice(0, 4)); y++) years.push(String(y));
 	const rows = [];
 	const matrix = [];
-	for (const cpc of CPC_CODES) {
-		const args = ['--json', 'analytics', ...kwArgs, '--cpc', cpc, '--date-from', DATE_FROM, '--date-to', DATE_TO];
-		const res = runCli(args);
-		const sidecar = saveSidecar(`analytics-cpc-${cpc.toLowerCase()}.json`, res);
-		const byYear = res.analytics?.byYear ?? [];
-		rows.push(cpc);
+	for (const source of SCOPED) {
+		const answer = readAnalytics(source);
+		const byYear = answer.value.analytics.byYear;
+		rows.push(source.cpc);
 		matrix.push(years.map((yr) => { const r = byYear.find((x) => String(x.year) === yr); return r ? r.count : 0; }));
-		sources.push({
-			verb: 'analytics', params: `${QUERY_KEYWORDS.map((k) => `--keyword ${k}`).join(' ')} --cpc ${cpc} --date-from ${DATE_FROM} --date-to ${DATE_TO}`,
-			datasetIdentity: res.analytics?.corpusSlice ?? null, retrievedAt: generatedAt, sidecar,
-		});
+		sources.push({ tool: source.tool, input: source.input, datasetIdentity: identity(answer.value), savedAt: answer.savedAt, sidecar: `data/${source.file}` });
 	}
 
-	// Compute white space: cells at or below a low threshold (10% of global max).
+	// White space: cells at or below 10% of the busiest cell.
 	const flat = matrix.flat();
 	const max = Math.max(1, ...flat), min = Math.min(...flat);
 	const threshold = Math.max(1, Math.round(max * 0.1));
@@ -383,46 +425,40 @@ function main() {
 	})).filter((w) => w.years.length > 0);
 	const totals = rows.map((cpc, ri) => ({ cpc, total: matrix[ri].reduce((a, b) => a + b, 0) }));
 	const busiest = totals.reduce((a, b) => (b.total > a.total ? b : a), totals[0]);
-	const c = { years, rows, matrix, min, max, whiteSpace, busiest };
+	const c = { years, rows, matrix, min, max, threshold, whiteSpace, busiest };
 
 	const heat = heatmap({
-		title: 'Filing Intensity — CPC × Year',
-		source: 'flowleap analytics (Topic Analytics; scoped per CPC)',
+		title: 'Filing Intensity: CPC × Year',
+		source: 'patent_analytics (Topic Analytics; scoped per CPC)',
 		rows, cols: years, matrix, valueLabel: 'filings',
 	});
 	const totalsChart = barChart({
 		title: 'Total Filings by CPC (window)',
-		source: 'flowleap analytics (Topic Analytics)',
+		source: 'patent_analytics (Topic Analytics)',
 		categories: totals.map((t) => t.cpc),
 		series: [{ name: 'Filings', values: totals.map((t) => t.total) }], yLabel: 'Filings',
 	});
 
 	const bodyHtml = `
 <section class="card"><h2>White-Space Read</h2><p class="lead">${renderNarrative(c)}</p>
-<p class="caveat">Low/empty cells (leftmost legend swatch) mark candidate white space — validate before acting; low filings can also mean a mis-scoped class.</p></section>
+<p class="caveat">Low or empty cells (leftmost legend swatch) mark candidate white space. Validate before acting: low filings can also mean a mis-scoped class.</p></section>
 <section class="card"><h2>CPC × Year Heatmap</h2>${heat}</section>
 <section class="card"><h2>Total Filings by CPC</h2>${totalsChart}</section>`;
 
-	const reproduce = [
-		'# Scope pinned once with the user:',
-		`#   keywords = ${JSON.stringify(QUERY_KEYWORDS)}; CPC = ${JSON.stringify(CPC_CODES)}; ${DATE_FROM}..${DATE_TO}`,
-		`flowleap --json analytics ${QUERY_KEYWORDS.map((k) => `--keyword ${k}`).join(' ')} --date-from ${DATE_FROM} --date-to ${DATE_TO}`,
-		...CPC_CODES.map((cpc) => `flowleap --json analytics ${QUERY_KEYWORDS.map((k) => `--keyword ${k}`).join(' ')} --cpc ${cpc} --date-from ${DATE_FROM} --date-to ${DATE_TO}`),
-		'node generate.mjs',
-	].join('\n');
-
-	const footerHtml = renderFooter({ generatedAt, cliVersion, backend, sources, reproduce });
+	const footerHtml = renderFooter({ generatedAt, sources });
+	const scope = [...KEYWORDS, ...PHRASES].join(', ');
 	const html = htmlDoc({
-		title: 'Technology Landscape — White Space',
-		subtitle: `${QUERY_KEYWORDS.join(', ')} · ${years[0]}–${years[years.length - 1]} · Topic Analytics`,
-		summary: overview.searchDescription ? `Search: ${overview.searchDescription}` : '', bodyHtml, footerHtml,
+		title: 'Technology Landscape: White Space',
+		subtitle: `${scope} · ${years[0]}–${years[years.length - 1]} · Topic Analytics`,
+		summary: overview.value.searchDescription ? `Search: ${overview.value.searchDescription}` : '', bodyHtml, footerHtml,
 	});
 	const htmlPath = join(OUT_DIR, 'dashboard.html');
 	writeFileSync(htmlPath, html);
 	printSummaryBlock([
-		`Landscape white-space — ${QUERY_KEYWORDS.join(', ')} ${years[0]}-${years[years.length - 1]}`,
+		`Landscape white-space: ${scope} ${years[0]}-${years[years.length - 1]}`,
 		`CPC subclasses: ${rows.join(', ')}`,
 		`Busiest: ${busiest.cpc} (${fmtInt(busiest.total)} filings). White-space cells flagged: ${whiteSpace.reduce((a, w) => a + w.years.length, 0)}.`,
 	], htmlPath);
 }
-main();
+
+run([OVERVIEW, ...SCOPED], main);

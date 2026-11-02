@@ -1,63 +1,61 @@
 #!/usr/bin/env node
 /*=============================================================================
- * CI smoke test for the four dashboard templates.
+ * Smoke test for the four dashboard templates.
  *
- * Runs each template against its recorded fixtures with the FlowLeap CLI
- * STUBBED (no network), then asserts the product invariants:
+ * Each case copies a template into a fresh bundle as generate.mjs, puts
+ * recorded tool answers from ./fixtures/ into its data/ folder under the file
+ * names the template reads, runs it with plain `node`, and asserts:
+ *   - `--plan` names the tool calls and the data/ file of each answer,
  *   - the template exits 0 and writes dashboard.html,
  *   - the HTML has the provenance-footer markers and >= 1 <svg>,
  *   - NO external URL appears in any src=/href= attribute (offline-safe),
- *   - known fixture values reach the rendered HTML,
- *   - a raw-JSON sidecar per backend call is written under data/.
- * Plus the guardrail path: an ambiguous applicant exits non-zero, lists the
- * candidates, and writes NO dashboard (never auto-picks a 422 candidate).
+ *   - known fixture values reach the rendered HTML.
+ * Plus the stop paths, each with exit code and NO dashboard: an ambiguous
+ * applicant (never auto-picks a candidate), PATSTAT unavailable, a saved answer
+ * whose rows do not add up to its totals, a saved answer for another input,
+ * and a missing citation page.
  *
  * Zero dependencies; run with `node smoke.mjs`. Exits non-zero on any failure.
  *===========================================================================*/
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, cpSync, readFileSync, existsSync, writeFileSync, chmodSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, 'fixtures');
-const STUB = join(HERE, 'stub-flowleap.mjs');
+const fixture = (name) => readFileSync(join(FIXTURES, name), 'utf8');
 
 const failures = [];
 function check(name, cond, detail = '') {
 	if (cond) { console.log(`  ok   ${name}`); }
-	else { console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ''}`); failures.push(`${name}${detail ? `: ${detail}` : ''}`); }
+	else { console.log(`  FAIL ${name}${detail ? ` (${detail})` : ''}`); failures.push(`${name}${detail ? `: ${detail}` : ''}`); }
 }
 
-/** Build a tiny always-executable shim so templates can execFile the stub regardless of file mode. */
-function makeShim(dir) {
-	const shim = join(dir, 'flowleap');
-	writeFileSync(shim, `#!/bin/sh\nexec node "${STUB}" "$@"\n`);
-	chmodSync(shim, 0o755);
-	return shim;
-}
-
-/** Copy a template into a fresh bundle dir, run it stubbed, capture result. */
-function runTemplate(templateFile, { applicantSwap } = {}) {
+/**
+ * Copy a template into a fresh bundle, write `data` ({ file: text }) into its
+ * data/ folder, run it with `args`, and capture the result.
+ */
+function runTemplate(templateFile, data, { swap, args = [] } = {}) {
 	const work = mkdtempSync(join(tmpdir(), 'dash-smoke-'));
 	const bundle = join(work, 'bundle');
-	mkdirSync(bundle, { recursive: true });
+	mkdirSync(join(bundle, 'data'), { recursive: true });
 	let src = readFileSync(join(HERE, templateFile), 'utf8');
-	if (applicantSwap) { src = src.replace(applicantSwap[0], applicantSwap[1]); }
+	if (swap) { src = src.replace(swap[0], swap[1]); }
 	writeFileSync(join(bundle, 'generate.mjs'), src);
-	const env = { ...process.env, FLOWLEAP_CLI_BIN: makeShim(work), FLOWLEAP_STUB_DIR: FIXTURES };
+	for (const [file, text] of Object.entries(data)) writeFileSync(join(bundle, 'data', file), text);
 	let status = 0, stdout = '', stderr = '';
 	try {
-		stdout = execFileSync('node', [join(bundle, 'generate.mjs')], { encoding: 'utf8', env });
+		stdout = execFileSync('node', [join(bundle, 'generate.mjs'), ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 	} catch (e) {
 		status = e.status ?? 1; stdout = e.stdout || ''; stderr = e.stderr || '';
 	}
 	const htmlPath = join(bundle, 'dashboard.html');
 	const html = existsSync(htmlPath) ? readFileSync(htmlPath, 'utf8') : null;
-	const dataFiles = existsSync(join(bundle, 'data')) ? readdirSync(join(bundle, 'data')) : [];
-	return { status, stdout, stderr, html, dataFiles, cleanup: () => rmSync(work, { recursive: true, force: true }) };
+	rmSync(work, { recursive: true, force: true });
+	return { status, stdout, stderr, html };
 }
 
 /** External URLs are only forbidden inside src=/href= attributes (offline-safe rendering). */
@@ -65,8 +63,17 @@ function externalAttrUrls(html) {
 	return [...html.matchAll(/(?:src|href)\s*=\s*"([^"]*)"/gi)].map((m) => m[1]).filter((v) => /^https?:/i.test(v));
 }
 
+function assertPlan(label, templateFile, expected) {
+	const r = runTemplate(templateFile, {}, { args: ['--plan'] });
+	let plan = [];
+	try { plan = JSON.parse(r.stdout); } catch { /* checked below */ }
+	check(`${label}: --plan exits 0`, r.status === 0, r.stderr);
+	for (const [tool, saveTo] of expected) {
+		check(`${label}: --plan names ${tool} -> ${saveTo}`, plan.some((p) => p.tool === tool && p.saveTo === saveTo));
+	}
+}
+
 function assertRendered(label, r, expectValues) {
-	console.log(`\n[${label}]`);
 	check(`${label}: exits 0`, r.status === 0, `status=${r.status} ${r.stderr}`);
 	check(`${label}: dashboard.html written`, !!r.html);
 	if (!r.html) return;
@@ -77,50 +84,69 @@ function assertRendered(label, r, expectValues) {
 	check(`${label}: has >= 1 <svg>`, (r.html.match(/<svg/g) || []).length >= 1);
 	const ext = externalAttrUrls(r.html);
 	check(`${label}: no external src/href URLs`, ext.length === 0, ext.join(', '));
-	check(`${label}: writes data/ sidecars`, r.dataFiles.length >= 1, `data files: ${r.dataFiles.length}`);
 	for (const v of expectValues) {
 		check(`${label}: renders fixture value "${v}"`, r.html.includes(v));
 	}
 }
 
+function assertStopped(label, r, status, stderrPattern) {
+	check(`${label}: exits ${status}`, r.status === status, `status=${r.status} ${r.stderr}`);
+	check(`${label}: writes no dashboard`, r.html === null);
+	check(`${label}: says ${stderrPattern}`, stderrPattern.test(r.stderr), r.stderr);
+}
+
+const PORTFOLIO = { 'portfolio.json': fixture('portfolio-siemens-ag.json') };
+const TRENDS = {
+	'portfolio-siemens-ag.json': fixture('portfolio-siemens-ag.json'),
+	'portfolio-robert-bosch-gmbh.json': fixture('portfolio-robert-bosch-gmbh.json'),
+	'portfolio-lg-electronics-inc.json': fixture('portfolio-lg-electronics-inc.json'),
+};
+const LANDSCAPE = Object.fromEntries(['analytics-overview.json', ...['g06n', 'h04l', 'g06f', 'a61b', 'g16h'].map((c) => `analytics-cpc-${c}.json`)]
+	.map((f) => [f, fixture(f)]));
+const CITATIONS = Object.fromEntries(['citations-0.json', 'citations-25.json', 'citations-50.json'].map((f) => [f, fixture(f)]));
+
 console.log('Dashboard template smoke test\n=============================');
 
-// 1-4: the four templates render green against fixtures.
-let r;
-r = runTemplate('template-portfolio.mjs');
-assertRendered('portfolio', r, ['15202 patent applications', 'PATSTAT Global 2025 Spring', 'SIEMENS']);
-r.cleanup();
+console.log('\n[portfolio]');
+assertPlan('portfolio', 'template-portfolio.mjs', [['patstat_portfolio', 'data/portfolio.json']]);
+assertRendered('portfolio', runTemplate('template-portfolio.mjs', PORTFOLIO), ['15,202 patent applications', 'PATSTAT Global 2025 Spring', 'SIEMENS']);
 
-r = runTemplate('template-filing-trends.mjs');
-assertRendered('filing-trends', r, ['LG ELECTRONICS', 'ROBERT BOSCH', 'SIEMENS', 'PATSTAT Global 2025 Spring']);
-r.cleanup();
+console.log('\n[filing-trends]');
+assertPlan('filing-trends', 'template-filing-trends.mjs', [['patstat_portfolio', 'data/portfolio-robert-bosch-gmbh.json']]);
+assertRendered('filing-trends', runTemplate('template-filing-trends.mjs', TRENDS), ['LG ELECTRONICS', 'ROBERT BOSCH', 'SIEMENS', 'PATSTAT Global 2025 Spring']);
 
-r = runTemplate('template-landscape-whitespace.mjs');
-assertRendered('landscape-whitespace', r, ['machine learning', 'G16H', '1,520']);
-r.cleanup();
+console.log('\n[landscape-whitespace]');
+assertPlan('landscape', 'template-landscape-whitespace.mjs', [['patent_analytics', 'data/analytics-overview.json'], ['patent_analytics', 'data/analytics-cpc-g16h.json']]);
+assertRendered('landscape-whitespace', runTemplate('template-landscape-whitespace.mjs', LANDSCAPE), ['machine learning', 'G16H', '1,520', 'data_slice: BigQuery']);
 
-r = runTemplate('template-citation-impact.mjs');
-assertRendered('citation-impact', r, ['US 20150284881 A1', 'USPTO Enriched Citations', '64']);
-r.cleanup();
+console.log('\n[citation-impact]');
+assertPlan('citation-impact', 'template-citation-impact.mjs', [['search_enriched_citations', 'data/citations-0.json']]);
+assertRendered('citation-impact', runTemplate('template-citation-impact.mjs', CITATIONS), ['US 20150284881 A1', 'USPTO enriched citation data', '64']);
 
-// 5: guardrail — an ambiguous (un-fixtured) applicant must exit non-zero, list
-// candidates, and write NO dashboard (rule 6: never auto-pick a 422 candidate).
-// Exercises the tool error shape { success:false, error:{ code, message, details:{ candidates } }, status }.
+console.log('\n[saved as text blocks]');
+assertRendered('text blocks', runTemplate('template-portfolio.mjs', { 'portfolio.json': JSON.stringify([{ type: 'text', text: PORTFOLIO['portfolio.json'] }]) }), ['15,202 patent applications']);
+
 console.log('\n[guardrail: ambiguous applicant]');
-const amb = runTemplate('template-portfolio.mjs', { applicantSwap: ["'Siemens AG'", "'Zzz Ambiguous Co'"] });
-check('ambiguous: exits non-zero', amb.status !== 0, `status=${amb.status}`);
-check('ambiguous: writes no dashboard', amb.html === null);
-check('ambiguous: lists candidates', /Zzz Ambiguous Co (HOLDING|TECH)/.test(amb.stderr));
-amb.cleanup();
+assertStopped('ambiguous', runTemplate('template-portfolio.mjs', { 'portfolio.json': fixture('error-applicant-ambiguous.json') }), 3, /ZZZ AMBIGUOUS CO (HOLDING|TECH)/);
 
-// 6: degrade — patstat_unavailable must exit non-zero, name the usable
-// dashboards, and write NO dashboard. Exercises the patstat_unavailable tool error shape.
+console.log('\n[guardrail: ambiguous applicant among several]');
+const skip = runTemplate('template-filing-trends.mjs', { ...TRENDS, 'portfolio-lg-electronics-inc.json': fixture('error-applicant-ambiguous.json') });
+assertRendered('skip ambiguous', skip, ['Skipped as ambiguous', 'ROBERT BOSCH']);
+
 console.log('\n[degrade: patstat unavailable]');
-const un = runTemplate('template-portfolio.mjs', { applicantSwap: ["'Siemens AG'", "'patstat unavailable'"] });
-check('unavailable: exits non-zero', un.status !== 0, `status=${un.status}`);
-check('unavailable: writes no dashboard', un.html === null);
-check('unavailable: names usable dashboards', /landscape and citation-impact/.test(un.stderr));
-un.cleanup();
+assertStopped('unavailable', runTemplate('template-portfolio.mjs', { 'portfolio.json': fixture('error-patstat-unavailable.json') }), 2, /landscape and citation-impact/);
+
+console.log('\n[check: rows do not add up]');
+const tampered = JSON.parse(PORTFOLIO['portfolio.json']);
+tampered.totals.applications += 1;
+assertStopped('tampered', runTemplate('template-portfolio.mjs', { 'portfolio.json': JSON.stringify(tampered) }), 4, /data\/portfolio\.json is not the answer/);
+
+console.log('\n[check: answer for another input]');
+assertStopped('other input', runTemplate('template-portfolio.mjs', PORTFOLIO, { swap: ["'Siemens AG'", "'Robert Bosch GmbH'"] }), 4, /applicant\.query/);
+
+console.log('\n[check: missing citation page]');
+const { 'citations-50.json': _omitted, ...twoPages } = CITATIONS;
+assertStopped('missing page', runTemplate('template-citation-impact.mjs', twoPages), 4, /Missing data\/citations-50\.json.*"offset":50/);
 
 console.log('\n=============================');
 if (failures.length) {

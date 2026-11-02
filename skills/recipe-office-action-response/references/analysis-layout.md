@@ -74,7 +74,7 @@ The last line of the report is the closing sentence of the recipe (Step 7).
 
 ## Saving in the Patent AI web app
 
-This section is for the Patent AI web app only. In the IDE and with the CLI, write the full report in Markdown.
+This section is for the Patent AI web app only. In the IDE and in Claude Code, write the full report in Markdown.
 
 In the Patent AI web app, sections 0 to 3 are the fields of `officeAction`, and `content` holds only sections 4 and 5 and the closing sentence.
 

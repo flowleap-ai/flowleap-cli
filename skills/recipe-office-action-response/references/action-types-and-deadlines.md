@@ -1,6 +1,6 @@
 # Office actions: types, posture and deadlines
 
-Read the rule on the office's own page with `flowleap-legal` before you state it in a report. A period that you did not read in this run is a "check" item. Mark each date that you compute "computed by the agent; the attorney confirms".
+Read the rule on the office's own page with your web tool before you state it in a report (in the app, which has no web tool, only from a file the user supplies). A period that you did not read in this run is a "check" item. Mark each date that you compute "computed by the agent; the attorney confirms".
 
 ## US actions
 

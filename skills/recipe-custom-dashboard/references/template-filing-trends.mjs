@@ -3,94 +3,128 @@
  * Dashboard template: FILING-TRENDS (Portfolio Analytics, multi-applicant)
  *
  * QUESTION  Several companies' patent filings over time, compared head to head.
- * DATA      `flowleap patstat portfolio "<applicant>" --from-year Y --to-year Y --json`
- *           run once PER applicant (cli issue #32 / POST /v1/patstat/portfolio).
- *           Each response body: { totals, by_year:[{year,applications,granted}],
- *           by_office, summary, data_edition, ... } — see template-portfolio.mjs.
+ * DATA      One answer of the FlowLeap Data tool `patstat_portfolio`
+ *           ({ applicant, from_year, to_year }) PER applicant, each saved
+ *           unchanged to data/portfolio-<applicant-slug>.json. Answer fields:
+ *           see template-portfolio.mjs.
  *
  * HOW TO ADAPT
- *   1. Pin APPLICANTS to the EXACT harmonized names resolved with the user
- *      (rule 6). An ambiguous name is SKIPPED with a note — never auto-picked.
+ *   1. Pin APPLICANTS to the EXACT names resolved with the user (rule 6).
+ *      A saved ambiguous-name error answer is SKIPPED with a note, never
+ *      auto-picked.
  *   2. Set FROM_YEAR / TO_YEAR (shared window for a fair comparison).
- *   3. Run `node generate.mjs`.
+ *   3. `node generate.mjs --plan` prints the tool calls and their files.
+ *      Make the calls, save the answers, then run `node generate.mjs`.
  *
- * DEGRADE  If PATSTAT is unavailable the script exits non-zero and says the
- *          landscape and citation-impact dashboards remain usable.
+ * CHECKS    Each saved answer must echo its pinned input, and its rows must add
+ *           up to its totals (exit 4 otherwise).
+ * DEGRADE   If PATSTAT is unavailable the script exits 2 and says the
+ *           landscape and citation-impact dashboards remain usable.
  *===========================================================================*/
 
 // ---- PINNED CONSTANTS (edit these) -----------------------------------------
-const APPLICANTS = ['Siemens AG', 'Robert Bosch GmbH', 'LG Electronics Inc']; // exact harmonized names
+const APPLICANTS = ['Siemens AG', 'Robert Bosch GmbH', 'LG Electronics Inc']; // exact names
 const FROM_YEAR = 2015;
 const TO_YEAR = 2024;
-const SUBJECT_SLUG = 'competitor-filing-trends'; // subject-based, no timestamps
 // ----------------------------------------------------------------------------
 
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const SOURCES = APPLICANTS.map((applicant) => ({
+	tool: 'patstat_portfolio',
+	input: { applicant, from_year: FROM_YEAR, to_year: TO_YEAR },
+	file: `portfolio-${slug(applicant)}.json`,
+}));
 
 /*======================= COMMON BLOCK (copy-in) ==============================
- * Identical across the four dashboard templates: CLI subprocess seam, inline
- * SVG chart helpers, HTML shell, and the provenance/reproduce footer.
+ * Identical across the four dashboard templates: the reader of the saved tool
+ * answers, inline SVG chart helpers, HTML shell, and the provenance/reproduce
+ * footer.
  *===========================================================================*/
 
 const OUT_DIR = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(OUT_DIR, 'data');
-const FLOWLEAP_BIN = process.env.FLOWLEAP_CLI_BIN || 'flowleap';
 
-/** Error carrying the parsed FlowLeap envelope so callers can branch on code. */
-class CliError extends Error {
-	constructor(message, { code = null, status = null, args = [], candidates = null } = {}) {
+/** A saved tool answer that is missing, is not the answer to the pinned input, or is an error answer. */
+class ToolAnswerError extends Error {
+	constructor(message, { code = null, candidates = null, exitCode = 4 } = {}) {
 		super(message);
 		this.code = code;
-		this.status = status;
-		this.args = args;
 		this.candidates = candidates;
+		this.exitCode = exitCode;
 	}
 }
 
-/** Read the machine `error.code` out of a failed-run envelope (client wrap or bare body). */
-function envelopeError(parsed) {
-	if (!parsed || typeof parsed !== 'object') return null;
-	const body = parsed.body && typeof parsed.body === 'object' ? parsed.body : parsed;
+/** The error of an error answer ({ error:{ code, message, details } }, also inside { body }), or null. */
+function answerError(value) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+	const body = value.body && typeof value.body === 'object' ? value.body : value;
 	const err = body.error && typeof body.error === 'object' ? body.error : null;
-	if (!err) return null;
-	return { code: err.code ?? null, message: err.message ?? '', candidates: err.details?.candidates ?? null };
+	if (!err && body.success !== false) return null;
+	return { code: err?.code ?? null, message: err?.message ?? '', candidates: err?.details?.candidates ?? null };
 }
 
-/** Run `flowleap <args> --json` as a subprocess and return the parsed body. Never holds a token. */
-function runCli(args) {
-	try {
-		const out = execFileSync(FLOWLEAP_BIN, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-		return JSON.parse(out);
-	} catch (e) {
-		const stdout = typeof e.stdout === 'string' ? e.stdout : '';
-		let parsed = null;
-		try { parsed = JSON.parse(stdout); } catch { /* not JSON */ }
-		const info = envelopeError(parsed);
-		if (info) {
-			throw new CliError(info.message || `flowleap ${args.join(' ')} failed`, {
-				code: info.code, status: e.status ?? null, args, candidates: info.candidates,
-			});
-		}
-		if (e.code === 'ENOENT') {
-			throw new CliError(`Could not spawn "${FLOWLEAP_BIN}". Install the FlowLeap CLI or set FLOWLEAP_CLI_BIN.`, { args });
-		}
-		throw new CliError((e.stderr || e.message || 'unknown error').toString().trim(), { status: e.status ?? null, args });
+/** Parse saved answer text: the answer JSON itself, or a list of text blocks that holds it. */
+function parseAnswerText(text, file) {
+	let value;
+	try { value = JSON.parse(text); } catch {
+		throw new ToolAnswerError(`${file} is not JSON. Save the tool answer exactly as the tool returned it.`);
+	}
+	if (Array.isArray(value) && value.length > 0 && value.every((b) => b && b.type === 'text' && typeof b.text === 'string')) {
+		return parseAnswerText(value.map((b) => b.text).join(''), file);
+	}
+	return value;
+}
+
+/**
+ * Read the saved answer of one tool call. source = { tool, input, file }.
+ * Returns { value, savedAt } (savedAt = the time the answer file was written).
+ * Throws ToolAnswerError for a missing file, a file that is not JSON, or an error answer.
+ */
+function readToolAnswer(source) {
+	const rel = `data/${source.file}`;
+	const path = join(DATA_DIR, source.file);
+	if (!existsSync(path)) {
+		throw new ToolAnswerError(`Missing ${rel}. Call ${source.tool} with ${JSON.stringify(source.input)} and save its answer there.`);
+	}
+	const value = parseAnswerText(readFileSync(path, 'utf8'), rel);
+	const err = answerError(value);
+	if (err) {
+		throw new ToolAnswerError(`${rel}: ${source.tool} answered an error${err.code ? ` (${err.code})` : ''}: ${err.message}`,
+			{ code: err.code, candidates: err.candidates });
+	}
+	return { value, savedAt: statSync(path).mtime.toISOString() };
+}
+
+/** Stop when a saved answer does not match its pinned input or its own totals. */
+function expectAnswer(cond, source, what) {
+	if (!cond) {
+		throw new ToolAnswerError(`data/${source.file} is not the answer of ${source.tool} with ${JSON.stringify(source.input)}: ${what}. Call the tool again and save its answer without changes.`);
 	}
 }
 
-/** Run a subprocess expecting plain text (e.g. `flowleap --version`). */
-function runCliText(args) {
-	return execFileSync(FLOWLEAP_BIN, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }).trim();
-}
+const sum = (rows, key) => rows.reduce((a, r) => a + (typeof r[key] === 'number' ? r[key] : 0), 0);
+const sameList = (a, b) => JSON.stringify([...(a ?? [])].sort()) === JSON.stringify([...(b ?? [])].sort());
 
-/** Persist one raw-JSON sidecar per backend call under ./data/. */
-function saveSidecar(name, value) {
-	mkdirSync(DATA_DIR, { recursive: true });
-	writeFileSync(join(DATA_DIR, name), JSON.stringify(value, null, 2));
-	return `data/${name}`;
+/**
+ * Entry point: `node generate.mjs --plan` prints the tool calls to make and the
+ * file of each answer as JSON; `node generate.mjs` renders the dashboard.
+ */
+function run(sources, main) {
+	if (process.argv.includes('--plan')) {
+		console.log(JSON.stringify(sources.map((s) => ({ tool: s.tool, input: s.input, saveTo: `data/${s.file}` })), null, 2));
+		return;
+	}
+	try {
+		main();
+	} catch (e) {
+		if (!(e instanceof ToolAnswerError)) throw e;
+		console.error(e.message);
+		process.exit(e.exitCode);
+	}
 }
 
 const fmtInt = (n) => Number(n ?? 0).toLocaleString('en-US');
@@ -232,27 +266,31 @@ function heatmap({ title, source, rows, cols, matrix, valueLabel = 'Filings' }) 
 }
 
 /**
- * Provenance + reproduce footer. `sources` is one descriptor per backend call:
- * { verb, params, datasetIdentity, retrievedAt, sidecar }. A null datasetIdentity
+ * Provenance + reproduce footer. `sources` is one descriptor per tool call:
+ * { tool, input, datasetIdentity, savedAt, sidecar }. A null datasetIdentity
  * renders the explicit "dataset identity unavailable" row (never omitted).
  */
-function renderFooter({ generatedAt, cliVersion, backend, sources, reproduce }) {
+function renderFooter({ generatedAt, sources }) {
 	const rows = sources.map((s) => `<li>
-		<code>${htmlEsc(s.verb)}</code> <span class="params">${htmlEsc(s.params)}</span><br>
+		<code>${htmlEsc(s.tool)}</code> <span class="params">${htmlEsc(JSON.stringify(s.input))}</span><br>
 		<span class="lbl">Dataset identity:</span> ${s.datasetIdentity ? htmlEsc(s.datasetIdentity) : '<em>dataset identity unavailable</em>'}<br>
-		<span class="lbl">Retrieved:</span> ${htmlEsc(s.retrievedAt)}
+		<span class="lbl">Retrieved:</span> ${htmlEsc(s.savedAt)} (answer saved)
 		${s.sidecar ? ` &middot; <a href="${htmlEsc(s.sidecar)}">${htmlEsc(s.sidecar)}</a>` : ''}
 	</li>`).join('\n');
+	const reproduce = [
+		'# Call each tool with this input and save its answer, unchanged, to the named file:',
+		...sources.map((s) => `${s.tool} ${JSON.stringify(s.input)}  ->  ${s.sidecar}`),
+		'node generate.mjs',
+	].join('\n');
 	return `<footer id="provenance" data-provenance="footer">
 	<h2>Provenance &amp; Reproduce</h2>
-	<p class="meta"><span class="lbl">Generated:</span> ${htmlEsc(generatedAt)}
-	 &middot; <span class="lbl">CLI / backend:</span> ${htmlEsc(cliVersion)} / ${htmlEsc(backend)}</p>
+	<p class="meta"><span class="lbl">Generated:</span> ${htmlEsc(generatedAt)}</p>
 	<h3>Data sources</h3>
 	<ul class="sources">${rows}</ul>
 	<h3>Reproduce</h3>
 	<pre class="reproduce">${htmlEsc(reproduce)}</pre>
 	<p class="note">Every figure above is computed in <code>generate.mjs</code> from the linked
-	<code>data/</code> sidecars — none is typed by hand. Regenerate by re-running the script.</p>
+	<code>data/</code> files, each the saved answer of one tool call. None is typed by hand. Regenerate by re-running the script.</p>
 </footer>`;
 }
 
@@ -313,13 +351,14 @@ ${footerHtml}
 
 /** Print the chat summary block: computed numbers + file paths, for the agent to paste. */
 function printSummaryBlock(lines, htmlPath) {
-	const out = ['```', ...lines, `Dashboard: ${htmlPath}`, `(open locally: open "${htmlPath}")`, '```'];
+	const out = ['```', ...lines, `Dashboard: ${htmlPath}`, '```'];
 	console.log(out.join('\n'));
 }
 
+
 /*======================= END COMMON BLOCK ===================================*/
 
-/** Narrative comparison — every number interpolated from computed `c` (rule 1). */
+/** Narrative comparison: every number interpolated from computed `c` (rule 1). */
 function renderNarrative(c) {
 	const ranked = [...c.applicants].sort((a, b) => b.total - a.total);
 	const lead = ranked[0], last = ranked[ranked.length - 1];
@@ -333,13 +372,6 @@ function renderNarrative(c) {
 
 function main() {
 	const generatedAt = new Date().toISOString();
-	let cliVersion = 'unknown', backend = 'unknown';
-	try { cliVersion = runCliText(['--version']); } catch { /* best effort */ }
-	try {
-		const d = runCli(['--json', 'doctor']);
-		backend = d.baseUrl ? `${d.baseUrl} (health: ${d?.backend?.healthStatus ?? 'unknown'})` : 'unknown';
-	} catch { /* best effort */ }
-
 	const years = [];
 	for (let y = FROM_YEAR; y <= TO_YEAR; y++) years.push(String(y));
 	const applicants = [];
@@ -347,55 +379,54 @@ function main() {
 	const skipped = [];
 	let editionSeen = null;
 
-	for (const name of APPLICANTS) {
-		const args = ['--json', 'patstat', 'portfolio', name, '--from-year', String(FROM_YEAR), '--to-year', String(TO_YEAR)];
-		let data;
+	for (const source of SOURCES) {
+		let answer;
 		try {
-			data = runCli(args);
+			answer = readToolAnswer(source);
 		} catch (e) {
 			if (e.code === 'patstat_unavailable') {
-				console.error('PATSTAT (Portfolio Analytics) is not configured on this deployment.');
-				console.error('Filing-trends needs it; the landscape and citation-impact dashboards do not — use those instead.');
-				process.exit(2);
+				throw new ToolAnswerError('PATSTAT (Portfolio Analytics) is not available on this deployment.\n' +
+					'Filing-trends needs it; the landscape and citation-impact dashboards do not. Use those instead.', { exitCode: 2 });
 			}
 			if (e.code === 'patstat_applicant_ambiguous') {
-				// Rule 6: never auto-pick — skip this applicant, keep the rest, note it.
-				skipped.push({ name, candidates: e.candidates || [] });
+				// Rule 6: never auto-pick. Skip this applicant, keep the rest, note it.
+				skipped.push({ name: source.input.applicant, candidates: e.candidates || [] });
 				continue;
 			}
 			throw e;
 		}
-		const file = `portfolio-${SUBJECT_SLUG}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}.json`;
-		const sidecar = saveSidecar(file, data);
-		const matched = data.applicant?.matched_name ?? name;
+		const data = answer.value;
+		const totals = data.totals ?? {};
+		expectAnswer(data.applicant?.query === source.input.applicant, source, `applicant.query is ${JSON.stringify(data.applicant?.query)}`);
+		expectAnswer(data.filters?.from_year === FROM_YEAR && data.filters?.to_year === TO_YEAR, source, 'filters do not match the pinned years');
+		expectAnswer(sum(data.by_year ?? [], 'applications') === totals.applications, source, 'by_year applications do not add up to totals.applications');
+		expectAnswer(sum(data.by_office ?? [], 'applications') === totals.applications, source, 'by_office applications do not add up to totals.applications');
 		editionSeen = data.data_edition ?? editionSeen;
 		applicants.push({
-			name: matched, total: data.totals?.applications ?? 0,
+			name: data.applicant?.matched_name ?? source.input.applicant, total: totals.applications,
 			byYear: years.map((yr) => { const r = (data.by_year ?? []).find((x) => String(x.year) === yr); return r ? r.applications : 0; }),
 		});
 		sources.push({
-			verb: 'patstat portfolio',
-			params: `"${name}" --from-year ${FROM_YEAR} --to-year ${TO_YEAR}`,
+			tool: source.tool, input: source.input,
 			datasetIdentity: data.data_edition ? `data_edition: ${data.data_edition}` : null,
-			retrievedAt: generatedAt, sidecar,
+			savedAt: answer.savedAt, sidecar: `data/${source.file}`,
 		});
 	}
 
 	if (applicants.length === 0) {
-		console.error('No applicants could be resolved unambiguously — nothing to render.');
-		for (const s of skipped) { console.error(`  ambiguous: ${s.name}`); }
-		process.exit(3);
+		throw new ToolAnswerError(`No applicant could be resolved unambiguously, so there is nothing to render.\n${skipped.map((s) => `  ambiguous: ${s.name}`).join('\n')}`, { exitCode: 3 });
 	}
 
 	const c = { applicants, fromYear: FROM_YEAR, toYear: TO_YEAR };
+	const sourceLabel = `patstat_portfolio (${editionSeen ?? 'edition unavailable'})`;
 	const trendChart = lineChart({
 		title: 'Patent Applications by Filing Year',
-		source: `flowleap patstat portfolio (${editionSeen ?? 'edition unavailable'})`,
+		source: sourceLabel,
 		categories: years, series: applicants.map((a) => ({ name: a.name, values: a.byYear })), yLabel: 'Applications',
 	});
 	const totalChart = barChart({
 		title: 'Total Applications (window)',
-		source: `flowleap patstat portfolio (${editionSeen ?? 'edition unavailable'})`,
+		source: sourceLabel,
 		categories: applicants.map((a) => a.name),
 		series: [{ name: 'Applications', values: applicants.map((a) => a.total) }], yLabel: 'Applications',
 	});
@@ -404,19 +435,12 @@ function main() {
 
 	const bodyHtml = `
 <section class="card"><h2>Comparison</h2><p class="lead">${renderNarrative(c)}</p>
-${skipped.length ? `<p class="caveat">⚠ Skipped as ambiguous (resolve and pin the exact name — rule 6): ${skipped.map((s) => htmlEsc(s.name)).join(', ')}</p>` : ''}</section>
+${skipped.length ? `<p class="caveat">⚠ Skipped as ambiguous (resolve and pin the exact name, rule 6): ${skipped.map((s) => htmlEsc(s.name)).join(', ')}</p>` : ''}</section>
 <section class="card"><h2>Filing Trend Over Time</h2>${trendChart}</section>
 <section class="card"><h2>Total Applications</h2>${totalChart}</section>
 <section class="card"><h2>Totals</h2><table><thead><tr><th>Applicant</th><th>Applications</th></tr></thead><tbody>${tableRows}</tbody></table></section>`;
 
-	const reproduce = [
-		'# Applicants resolved once with the user, then pinned (rule 6):',
-		...APPLICANTS.map((n) => `#   "${n}"`),
-		...APPLICANTS.map((n) => `flowleap --json patstat portfolio "${n}" --from-year ${FROM_YEAR} --to-year ${TO_YEAR}`),
-		'node generate.mjs',
-	].join('\n');
-
-	const footerHtml = renderFooter({ generatedAt, cliVersion, backend, sources, reproduce });
+	const footerHtml = renderFooter({ generatedAt, sources });
 	const html = htmlDoc({
 		title: 'Competitor Filing Trends',
 		subtitle: `Filing years ${FROM_YEAR}–${TO_YEAR} · Portfolio Analytics (PATSTAT) · ${applicants.length} applicants`,
@@ -425,9 +449,10 @@ ${skipped.length ? `<p class="caveat">⚠ Skipped as ambiguous (resolve and pin 
 	const htmlPath = join(OUT_DIR, 'dashboard.html');
 	writeFileSync(htmlPath, html);
 	printSummaryBlock([
-		`Filing trends ${FROM_YEAR}-${TO_YEAR} — ${applicants.length} applicants`,
+		`Filing trends ${FROM_YEAR}-${TO_YEAR}: ${applicants.length} applicants`,
 		...[...applicants].sort((a, b) => b.total - a.total).map((a) => `  ${a.name}: ${fmtInt(a.total)} applications`),
 		skipped.length ? `Skipped (ambiguous): ${skipped.map((s) => s.name).join(', ')}` : '',
 	].filter(Boolean), htmlPath);
 }
-main();
+
+run(SOURCES, main);

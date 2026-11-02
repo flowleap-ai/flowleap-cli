@@ -1,84 +1,66 @@
 ---
 name: recipe-claim-drafting
-description: "Draft patent claims on the basis of the prior art: find the closest art, study its claim language, break the invention into elements, improve the drafts through claim analysis, and check the formal rules against the MPEP and the EPO Guidelines. Use it when the user asks to draft or improve claims, to write independent and dependent claims, or to test draft claims against known art and formal requirements."
+description: "Draft patent claims on the basis of the prior art: find the closest art, study its claim language, break the invention into old and novel elements, draft independent and dependent claim sets, check the formal rules of the EPC, the EPO Guidelines, 35 USC 112 and the MPEP, and search again from each novel element until the closest art clearly lacks one. Use it when the user asks to draft or improve claims, to write independent and dependent claims, or to test draft claims against known art and formal requirements."
 metadata:
   requires:
-    skills: ["flowleap-shared", "flowleap-patent", "flowleap-ops", "flowleap-legal"]
+    skills: ["recipe-prior-art-search", "recipe-claim-analysis"]
 ---
 
 # Recipe: Claim Drafting
 
-Draft claims that are novel over the closest art and formally sound.
+**Tools.** This method calls the FlowLeap patent tools by name. In the FlowLeap Patent AI app the office tools are built in; `patent_analytics`, `get_fulltext` and the `patstat_*` tools are FlowLeap Data tools, named `mcp__flowleap__<name>`, which exist only when the firm or the user has FlowLeap Data. With the FlowLeap connector in another client, call the connector tool of the same name. When `get_claims` answers that it has no US source, call the tool that its answer names.
 
-In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. The steps stay the same.
+**Missing keys.** When a tool answers that an office's key is missing or not configured, that office is a user-action stop, never an exhausted route: finish the work with the other offices, name the gap in the result as a missing-key gap (not as "no results"), never fill it with data from the web, and at the end tell the user which key is missing and where the tool's answer says to add it. Never ask for a key value in the chat.
 
-## Step 1: Find the Closest Art First
+Draft claims that are novel over the closest art and formally correct. The claims are drafts for the attorney.
 
-Claims drafted blind get rejected. Anchor on the art before writing:
+## Step 1: Find the closest art first
 
-Write the queries yourself, tuned precise — the goal is the closest few
-documents to read in full, so add a second discriminating `ta` term and probe
-the count down toward tens, not thousands (method in `flowleap-patent`):
+Claims drafted without the art get rejected. Find the art before you write.
 
-```bash
-flowleap --json tools run search_patents query='<self-written CQL>' range=1-1 details=false
-flowleap --json patent search --query "<self-written CQL>" --limit 20
-flowleap --json uspto search --query "<self-written ODP Lucene>" --limit 20   # title + metadata only
-```
+Build each query with the search method of `recipe-prior-art-search` (`references/search-method.md`); `get_search_syntax` gives the field grammar of each provider.
 
-Pull the claims of the 3-5 closest hits and study their language:
+Tune the queries for precision: the goal is the few closest documents to read in full. Add a second discriminating `ta` term and reduce the count toward tens, not thousands.
 
-```bash
-flowleap --json ops claims <closest-patent>
-flowleap --json ops abstract <closest-patent>
-```
+- Probe the count with `search_patents` (`provider: "epo_ops"`, `query: "<CQL>"`, `range: "1-1"`, `details: false`) and read `total`. Then search with `range: "1-20"`.
+- Search the USPTO with `search_patents` (`provider: "uspto"`, `query: "<Lucene>"`, `limit: 20`). It searches US application titles and metadata, not claim text.
 
-## Step 2: Element Inventory of the Invention
+Read the claims of the 3 to 5 closest hits with `get_claims` (`patent_number`) and their abstracts with `get_abstract` (`patent_number`), and study their claim language. Quote claim 1 of each from the tool result.
 
-Write a one-paragraph invention summary, then decompose it yourself: list
-every element the invention needs to work (the mechanism, not the benefit),
-keep the language concrete, and note keywords and synonyms per element (the
-decomposition method is in `recipe-claim-analysis`, Step 4).
+Office coverage: `get_claims` and `get_description` serve EP and WO; US claims come in English; US description is not served. For another office (CN, JP, KR, …) or a missing text, read a family member (`get_family`) in an office the tool serves, and label the text as the member's text.
 
-Sort the elements: which are old (in the closest art), which are the point of
-novelty. The independent claim needs the old elements for operability plus at
-least one novel element for allowance.
+## Step 2: Element inventory of the invention
 
-## Step 3: Draft the Claim Set
+Write a one-paragraph summary of the invention, then break it into elements: list each element that the invention needs to work (the mechanism, not the benefit), keep the language concrete, and note keywords and synonyms for each element. The method is in `recipe-claim-analysis`, Step 4.
 
-- **Independent claim**: preamble (technical field) + transition
-  (`comprising`) + minimum element set that is both operable and novel
-- **Dependent claims**: one fallback feature each, ordered by commercial
-  value — these are the amendment reservoir for prosecution
-- Draft method + apparatus (and CRM where relevant) parallel sets
+Sort the elements: which are old (in the closest art, with the document and passage), and which are the point of novelty. The independent claim needs the old elements for operability and at least one novel element for allowance.
 
-## Step 4: Check Formal Drafting Rules
+## Step 3: Draft the claim set
 
-Read the rules from the office's own page with `flowleap-legal`: EPC Art. 84
-and Guidelines F-IV (clarity, conciseness, support); 35 USC 112 and MPEP 2173
-(definiteness) and MPEP 2181 (means-plus-function). Quote each rule with its
-URL and edition.
+- **Independent claim**: preamble (technical field), transition (`comprising`), and the minimum set of elements that is both operable and novel.
+- **Dependent claims**: one fallback feature each, in order of commercial value. They are the amendment reserve for prosecution.
+- Draft parallel method and apparatus sets, and a computer-readable medium set where it applies.
 
-Check each claim against the fetched rules: antecedent basis, single-sentence
-form, no result-only language without structure, support in the description.
+## Step 4: Check the formal drafting rules
 
-## Step 5: Iterate Against the Art
+The rules: EPC Art. 84 and Guidelines F-IV (clarity, conciseness, support); 35 USC 112 and MPEP 2173 (definiteness); MPEP 2181 (means-plus-function).
 
-For each draft independent claim, write a search from its novel element the
-same way as Step 1 — the novel element's phrase is the discriminating term:
+No FlowLeap tool reads these rule pages, and the FlowLeap Patent AI app has no web tool. In the app, check each claim against the rules as you know them, write each rule as "check: <citation>" for the attorney, and state that the rule page was not read in this run. In a client with a tool that reads web pages, read each rule from the office's own page and quote it with its URL and edition.
 
-```bash
-flowleap --json patent search --query "<CQL written from the novel element>" --limit 10
-```
+Check each claim for antecedent basis, single-sentence form, no result-only language without structure, and support in the description.
 
-If the searches surface art reading on the draft, narrow the novel
-element and repeat. Stop when the closest surfaced art clearly lacks an
-element.
+## Step 5: Iterate against the art
+
+For each draft independent claim, write a search from its novel element in the same way as Step 1; the phrase of the novel element is the discriminating term. Call `search_patents` (`provider: "epo_ops"`, `query: "<CQL from the novel element>"`, `range: "1-10"`).
+
+If the searches find art that reads on the draft, narrow the novel element and search again. Stop when the closest art found clearly lacks an element, and name that element and the document.
 
 ## Output
 
-- Closest-art table (reference, claim 1 language, what it lacks)
-- Element inventory split into old vs. novel
-- Full claim set (independent + dependents) with a support map into the
-  description
-- Formal-rules checklist with legal citations per rule
+- Closest-art table: reference, claim 1 language (quoted from `get_claims`), and the element it lacks.
+- Element inventory, split into old and novel elements.
+- The full claim set (independent and dependent claims) with a support map into the description.
+- Formal-rules checklist with the citation of each rule, and for each rule whether its page was read or it is a check item.
+- The queries and their counts.
+
+In the FlowLeap Patent AI app, save the drafts with `write_patent_results` without a template (`filePath`, `content`: the claim set and its tables). Elsewhere, write them as a Markdown file.

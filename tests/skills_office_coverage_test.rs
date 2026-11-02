@@ -396,26 +396,32 @@ fn no_skill_lists_a_text_tool_under_a_worldwide_lead() {
     );
 }
 
-/// The skills that read claims point at the shared block, never copy it: one
-/// pointer phrase each, in the tools skill, the OPS skill and the four
-/// recipes that read claims.
+/// The skills that read claims carry the family-member workaround: the tools
+/// skill and the OPS skill point at the shared block; the four recipes that
+/// read claims, which ship without `flowleap-shared`, state the rule.
 #[test]
 fn text_reading_skills_point_at_the_family_member_workaround() {
-    const POINTER: &str = "family-member workaround in `flowleap-shared`";
-    let missing: Vec<&str> = [
-        "flowleap-tools",
-        "flowleap-ops",
-        "recipe-freedom-to-operate",
-        "recipe-prior-art-search",
-        "recipe-claim-analysis",
-        "recipe-invalidity-analysis",
-    ]
-    .into_iter()
-    .filter(|name| !skill(name).contains(POINTER))
-    .collect();
+    let checks = [
+        (
+            "flowleap-tools",
+            "family-member workaround in `flowleap-shared`",
+        ),
+        (
+            "flowleap-ops",
+            "family-member workaround in `flowleap-shared`",
+        ),
+        ("recipe-freedom-to-operate", "read a family member"),
+        ("recipe-prior-art-search", "read a family member"),
+        ("recipe-claim-analysis", "read a family member"),
+        ("recipe-invalidity-analysis", "read a family member"),
+    ];
+    let missing: Vec<(&str, &str)> = checks
+        .into_iter()
+        .filter(|(name, phrase)| !skill(name).contains(phrase))
+        .collect();
     assert!(
         missing.is_empty(),
-        "skills without the pointer {POINTER:?}: {missing:?}"
+        "skills without their workaround phrase: {missing:?}"
     );
 }
 

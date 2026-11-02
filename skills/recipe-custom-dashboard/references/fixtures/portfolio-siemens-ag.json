@@ -1,7 +1,6 @@
 {
-  "success": true,
   "applicant": {
-    "query": "SIEMENS",
+    "query": "Siemens AG",
     "matched_name": "SIEMENS",
     "matched_psn_names": [
       "SIEMENS AG",
@@ -406,5 +405,6 @@
     "Publication lag: the most recent 1–2 filing years are incomplete (applications publish ~18 months after filing) — do not read the tail as a decline."
   ],
   "summary": "SIEMENS: 15202 patent applications filed 2015–2024 across 5 offices (top: EP 3764, US 3628, CN 3300); 7127 granted among offices with reliable grant status. Source: PATSTAT Global 2025 Spring.",
-  "data_edition": "PATSTAT Global 2025 Spring"
+  "data_edition": "PATSTAT Global 2025 Spring",
+  "attribution": "This product contains data sourced from EPO databases, © European Patent Organisation"
 }

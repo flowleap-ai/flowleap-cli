@@ -3,14 +3,16 @@ name: recipe-office-action-response
 description: "Analyse the office action of one EP or US application: find the action type and posture, read the newest examiner action, list each objection with its legal basis, interpret the disputed claim terms, read each cited document at the passages the examiner relied on, run the novelty and inventive-step tests, and write an analysis with response options and deadlines for the attorney, with each statement about a cited document tied to its source passage. Use it when the user asks to analyse or respond to an office action, an EPO communication, search opinion or search report, or a USPTO rejection, or when a routine names an application and a new office-action event."
 metadata:
   requires:
-    skills: ["flowleap-shared", "flowleap-ops", "flowleap-legal", "flowleap-citation", "flowleap-uspto", "recipe-claim-analysis"]
+    skills: ["recipe-claim-analysis"]
 ---
 
 # Recipe: Office Action Analysis
 
-Turn the newest office action (OA) of one application into an analysis and a response plan. The attorney decides. You read, compare and propose.
+**Tools.** This method calls the FlowLeap patent tools by name. In the FlowLeap Patent AI app the office tools are built in; `patent_analytics`, `get_fulltext` and the `patstat_*` tools are FlowLeap Data tools, named `mcp__flowleap__<name>`, which exist only when the firm or the user has FlowLeap Data. With the FlowLeap connector in another client, call the connector tool of the same name. When `get_claims` answers that it has no US source, call the tool that its answer names.
 
-In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. The steps stay the same.
+**Missing keys.** When a tool answers that an office's key is missing or not configured, that office is a user-action stop, never an exhausted route: finish the work with the other offices, name the gap in the result as a missing-key gap (not as "no results"), never fill it with data from the web, and at the end tell the user which key is missing and where the tool's answer says to add it. Never ask for a key value in the chat.
+
+Turn the newest office action (OA) of one application into an analysis and a response plan. The attorney decides. You read, compare and propose.
 
 Read the two references before Step 1: [action types and deadlines](references/action-types-and-deadlines.md) and [legal tests](references/legal-tests.md). Write the report in the [analysis layout](references/analysis-layout.md).
 
@@ -32,23 +34,18 @@ Find the application, the office, the action and its type. Done when the field t
 
 **US application.** The OA comes from the file wrapper, as text from OCR on the server:
 
-```bash
-flowleap --json uspto documents <application-number> --code CTNF   # non-final rejections
-flowleap --json uspto documents <application-number> --code CTFR   # final rejections
-flowleap --json uspto documents <application-number>               # all documents: later replies, RCE, interviews
-flowleap uspto document-text <application-number> <documentIdentifier> > office-action.md
-```
+- `get_application_documents` (`application_number`, `document_code: "CTNF"`): the non-final rejections; `document_code: "CTFR"`: the final rejections.
+- `get_application_documents` (`application_number`, no filter): all documents, for the later replies, RCE and interviews.
+- `read_application_document` (`application_number`, `document_id`: the `documentIdentifier` of the action): the OA text.
 
 Take the newest action. Also list code `892` (references cited by the examiner) for the full numbers of the cited documents.
 
 **EP application.** No tool serves the text of an EPO communication or of a search opinion. Use what the tools serve, and say what they do not:
 
-```bash
-flowleap --json ops biblio <EP-publication>      # citedReferences: category, claims, relevantPassages
-flowleap --json timeline <EP-publication>        # register events: the communications and their dates
-```
+- `get_bibliography` (`patent_number`: the EP publication): `citedReferences` with category, claims and `relevantPassages`.
+- `get_prosecution_timeline` (`patent_number`: the EP publication): the register events, that is the communications and their dates.
 
-- When the user gave the communication or the search opinion as a file, read it (`flowleap ocr ./communication.pdf`; in the app, `read_pdf` on the workspace file). The objections then come from its text.
+- When the user gave the communication or the search opinion as a file, read it: in the app, `read_pdf` (`path`: the workspace file); with the connector, `ocr` (`file` and `filename`, or `url`). The objections then come from its text.
 - When there is no file, you have only the search report. It is not an examination communication, and it does not raise objections: its categories are the searcher's view of the searched claims. Write at the top of the report: "SEARCH REPORT ONLY: no examination communication or search opinion text was read. The 'objections' below are inferred from search categories, not raised by the EPO." Read the categories with [legal tests](references/legal-tests.md), section "Search report categories". If a search opinion exists, a reply to it is due under Rule 70a: give that posture and the period as [action types and deadlines](references/action-types-and-deadlines.md) says, and ask the attorney for the opinion as a file.
 
 From the OA, record for each objection: the ground (35 U.S.C. 101, 102, 103, 112, double patenting; EPC Art. 52 to 57, 82, 83, 84, 123(2), Rule 43), the claims it hits, the documents it applies (D1, D2, …), the passages it cites, and the examiner's reasoning. Keep formal objections (claim clarity, drawings, unity) as separate objections.
@@ -59,12 +56,9 @@ The examined claims are not always the published claims. Done when you have the 
 
 - US: the claims listing (code `CLM`) dated nearest before the OA. The OA line "Responsive to communication(s) filed on <date>" names it.
 
-  ```bash
-  flowleap --json uspto documents <application-number> --code CLM
-  flowleap uspto document-text <application-number> <documentIdentifier> > claims-as-examined.md
-  ```
+  Call `get_application_documents` (`application_number`, `document_code: "CLM"`), then `read_application_document` (`application_number`, `document_id`) for that listing.
 
-- EP: `flowleap --json ops claims <EP-publication>` gives the A1 claims, which the search report searched. For a Euro-PCT application, the searched claims can be the claims after Rule 161/162. A later communication can examine amended claims that no tool serves: say so.
+- EP: `get_claims` (`patent_number`: the EP publication) gives the A1 claims, which the search report searched. For a Euro-PCT application, the searched claims can be the claims after Rule 161/162. A later communication can examine amended claims that no tool serves: say so.
 
 Divide each independent claim that an objection hits into elements, verbatim (the method is in `recipe-claim-analysis`, Step 4). Then interpret each disputed term as [legal tests](references/legal-tests.md), section "Claim interpretation", says. Quote the definitions you rely on, and mark disputed readings for the attorney.
 
@@ -72,19 +66,16 @@ Divide each independent claim that an objection hits into elements, verbatim (th
 
 Done when each passage that the examiner cites is read and quoted, or is written as a gap with what you tried, and the date of each document is checked.
 
-```bash
-flowleap --json summary <cited>              # dates, family, status
-flowleap --json ops claims <cited>
-flowleap --json ops description <cited>      # EP and WO only
-```
+- `get_patent_summary` (`patent_number`: the cited document): dates, family, status.
+- `get_claims` and `get_description` (`patent_number`: the cited document): the text at the cited passages.
 
 - **Date check.** Use [legal tests](references/legal-tests.md), section "Date check". Never write that a date is a "complete answer": write "date issue for the attorney".
 - **A refusal that names another tool.** When a text tool answers that another tool serves the text (for example a paid route for US claims), call that tool before you write a gap.
-- **Text that the tools do not serve** (US description; CN, JP, KR and the other offices): use the family-member workaround in `flowleap-shared`, section "Office coverage of the text tools and the family-member workaround". Label the text of the member as the member's text. Its paragraph numbers can be different from the cited numbers.
+- **Office coverage.** `get_claims` and `get_description` serve EP and WO; US claims come in English; US description is not served. For another office (CN, JP, KR, …) or a missing text, read a family member (`get_family`) in an office the tool serves, and label the text as the member's text. Its paragraph numbers can be different from the cited numbers.
 - **Last step:** fetch the public page of the document (for example `https://patents.google.com/patent/<number>/en`) with your web tool. Quote only text that the page returned, and give the URL as the source. The FlowLeap Patent AI app has no web tool: there, skip this step and write that the page was not read.
-- The comparison verb (`compare` / `compare_patents`) can show you where to look. It is not a source: quote the text of the document itself.
-- US: `flowleap --json citation search <application-number> --examiner-cited-only` gives the office's record of how the examiner applied each document.
-- **Family art.** Look at the other members of the family (`flowleap --json ops family <publication>`) for the same documents and the arguments made there. Record art from a counterpart that the attorney may need to cite (US duty of disclosure: check 37 CFR 1.56).
+- `compare_patents` (`patent_numbers`) and, in the app, `compare_claims` (`userClaim`, `patentNumbers`) can show you where to look. It is not a source: quote the text of the document itself.
+- US: `search_office_action_citations` (`application_number`, `examiner_cited_only: true`) gives the office's record of how the examiner applied each document.
+- **Family art.** Look at the other members of the family (`get_family`, `patent_number`) for the same documents and the arguments made there. Record art from a counterpart that the attorney may need to cite (US duty of disclosure: check 37 CFR 1.56).
 
 ## Step 4: Compare, claim by claim
 
@@ -97,7 +88,7 @@ The argument is where the mapping or the test breaks: a missing element, a diffe
 
 ## Step 5: Legal basis
 
-Read the law from the office's own page with `flowleap-legal`, and quote it with its URL and edition. Done when each objection has its legal basis quoted, or the failed fetch is named.
+Read the law from the office's own page (the MPEP, 35 U.S.C., 37 CFR, the EPC, the EPO Guidelines) with your web tool, and quote it with its URL and edition. The FlowLeap Patent AI app has no web tool: there, quote only law from a file the user supplies, write each other legal basis as a "check: …" item, and write that the page was not read. Done when each objection has its legal basis quoted, or the unread page is named.
 
 - 102 / Art. 54: MPEP 2131, 2112; EPC Art. 54, Guidelines G-VI
 - 103 / Art. 56: MPEP 2141 to 2145, 716; EPC Art. 56, Guidelines G-VII, 5
@@ -129,6 +120,6 @@ Write the report in the [analysis layout](references/analysis-layout.md): the su
 - In the Patent AI web app, save it with `write_patent_results`, `template: "office-action-scaffold"`, `filePath: "office-actions/<application>/<OA date>-analysis.md"`, `matter` set to the application number, the summary, the action table, the objections and the claim tables (sections 0 to 3) as the fields of `officeAction`, and only sections 4 and 5 and the closing sentence in `content`. The writer renders sections 0 to 3 from `officeAction`. The [analysis layout](references/analysis-layout.md) ("Saving in the Patent AI web app") names the field for each part.
 - In the FlowLeap IDE, save it with `write_patent_results`, `template: "office-action-scaffold"`, the same `filePath` and `matter`, and the full report (sections 0 to 5 and the closing sentence) in `content`. The IDE has no `officeAction` field.
 - In the web app and the IDE, put the reader link of the claim (`[US1111111A1 claim 1](flowleap://flowleap.patent-ai/patent?publication=US1111111A1&section=claims&claim=1)`) directly before each quotation from a claim: the writer then checks the quotation against the recorded claim text. The writer adds the provenance appendix, and the evidence ledger of the session records each tool result that the report cites. When the writer refuses a save, correct what the refusal names and save again. Do not edit the saved file directly.
-- With the CLI only, write the same Markdown file yourself. No tool checks the quotes or the anchors there: mark the report "unvalidated: written by the agent, not checked by a tool".
+- In Claude Code, write the same Markdown file yourself. No tool checks the quotes or the anchors there: mark the report "unvalidated: written by the agent, not checked by a tool".
 
 End the report and the chat answer with: "AI-assisted analysis for review by a registered patent attorney. Not legal advice. Nothing was filed or sent. Confirm the response deadline independently."

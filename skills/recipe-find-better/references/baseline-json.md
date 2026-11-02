@@ -1,7 +1,6 @@
 # Reading the Examiner Baseline JSON
 
-`flowleap --json patent examiner-baseline <publication>` prints one object.
-In a chat client or the FlowLeap Patent AI app, the `examiner_baseline` tool returns the same object.
+The `examiner_baseline` tool (`publication`) returns one object.
 Code computes every value from the offices' own records. Read it; do not
 rebuild it from other calls. Fields are only added, never renamed.
 
@@ -68,9 +67,9 @@ rebuild it from other calls. Fields are only added, never renamed.
 4. **Gaps stay gaps.** Copy each `gaps[].message` into the report. A CN, JP or
    KR member gives citations and English abstracts only; say that element
    mapping against those documents is not possible.
-5. **Stops are not gaps.** A key gate, 401, 402, 429 or 410 stops the verb with
-   its usual exit code and hint. Follow `flowleap-shared` ("The key gate");
-   do not report a partial Baseline as complete.
+5. **Stops are not gaps.** A missing-key answer or an error answer from
+   `examiner_baseline` stops the Baseline. Follow **Missing keys** in SKILL.md;
+   never report a partial Baseline as complete.
 
 ## Ranking the examiner's best art per independent claim
 

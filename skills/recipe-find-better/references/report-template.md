@@ -1,8 +1,6 @@
 # Find Better report template
 
-In the CLI and MCP surface, the agent writes the report as markdown. The app's
-typed writer (the `find-better-report` template) takes the same structure, so
-keep the section order and column names.
+In the FlowLeap Patent AI app, `write_patent_results` with `template: "find-better-report"` builds the report and the working record from the structured fields (see Step 5 of SKILL.md); it uses the section order and column names below. Elsewhere, write the report as Markdown with this structure.
 
 Write two files: `<publication>.find-better.md` (the report) and
 `<publication>.find-better.working-record.md` (the working record).
@@ -42,11 +40,11 @@ no element mapping">
 
 ## Tracks log
 
-| Track | Seed | Query | Count | Kept |
+| Track | Seed | Tool and query | Count | Kept |
 |---|---|---|---|---|
-| 1 backward | <X/Y doc> hop 1 | ops biblio <X/Y doc> | <count> | <kept> |
-| 2 inventors | <name> | in="<name>" AND pd<<critical date> | <count> | <kept> |
-| 3 classification | <cpc> | cpc=<cpc> AND ta=<term> AND pd<<critical date> | <count> | <kept> |
+| 1 backward | <X/Y doc> hop 1 | get_bibliography <X/Y doc> | <count> | <kept> |
+| 2 inventors | <name> | search_patents in="<name>" AND pd<<critical date> | <count> | <kept> |
+| 3 classification | <cpc> | search_patents cpc=<cpc> AND ta=<term> AND pd<<critical date> | <count> | <kept> |
 ```
 
 Result column: write "No better art found for claim N; the examiner's best art
@@ -60,9 +58,9 @@ critical date; not prior art for this claim unless the priority claim fails".
 
 ## Rules
 
-- "Disclosed n of m" counts only rows with a quoted, anchored passage.
+- "Disclosed n of m" counts only rows with a quoted, anchored passage from a tool result.
 - Score the examiner's art and the found art on the same element rows.
-- Every track appears in the log, with every query, including the ones that
+- Every track is in the log, with every query, including the ones that
   returned 0.
 - "No better art found" is a result, not a failure. Keep the full Baseline and
   the full log with it.
@@ -72,5 +70,5 @@ critical date; not prior art for this claim unless the priority claim fails".
 
 The working record holds what the report leaves out: the claim concordance
 (searched claim numbers to granted claims), every candidate seen and why it was
-dropped (date, not of record, no element match), the full text of each quote,
-and the commands that ran.
+dropped (date, already of record, no element match), the full text of each quote with
+the tool and input it came from, and every tool call that ran.

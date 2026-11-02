@@ -3,15 +3,17 @@ name: recipe-maintenance-fees
 description: "Check the maintenance-fee status and deadlines of US patents: the 3.5, 7.5 and 11.5-year windows from the grant date, the fees actually paid according to the USPTO transaction events, and the next deadline with its surcharge dates. Use it when the user asks whether maintenance fees are due or paid, when the next fee is due, whether a US patent is still in force for fees, or for a fee check across a portfolio. Dates and status only, never fee amounts."
 metadata:
   requires:
-    skills: ["flowleap-shared", "flowleap-uspto", "flowleap-legal"]
+    skills: ["recipe-patent-to-report"]
 ---
 
 # Recipe: Maintenance-Fee Check
 
-Compute maintenance-fee deadlines for US utility patents and report what is
-paid, due, and docketable — from official USPTO data, never from memory.
+**Tools.** This method calls the FlowLeap patent tools by name. In the FlowLeap Patent AI app the office tools are built in; `patent_analytics`, `get_fulltext` and the `patstat_*` tools are FlowLeap Data tools, named `mcp__flowleap__<name>`, which exist only when the firm or the user has FlowLeap Data. With the FlowLeap connector in another client, call the connector tool of the same name. When `get_claims` answers that it has no US source, call the tool that its answer names.
 
-In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. The steps stay the same.
+**Missing keys.** When a tool answers that an office's key is missing or not configured, that office is a user-action stop, never an exhausted route: finish the work with the other offices, name the gap in the result as a missing-key gap (not as "no results"), never fill it with data from the web, and at the end tell the user which key is missing and where the tool's answer says to add it. Never ask for a key value in the chat.
+
+Compute maintenance-fee deadlines for US utility patents and report what is
+paid, due, and docketable, from official USPTO data, never from memory.
 
 **Scope guard — dates and status only.** Fee *amounts* depend on the current
 USPTO fee schedule and entity status and change over time. Never state dollar
@@ -21,9 +23,7 @@ right column.
 
 ## Step 1: Applicability guard (run before any computation)
 
-```bash
-flowleap --json uspto grant <patent-number>        # or: uspto application <app-number>
-```
+Call `get_us_grant` (`patent_number`), or `get_us_application` (`application_number`) when you have the application number.
 
 From `applicationMetaData`, check the application type **first**:
 
@@ -40,9 +40,7 @@ No grant date (pre-grant application) → there is nothing to compute; say so.
 
 ## Step 2: Read what was actually paid
 
-```bash
-flowleap --json uspto transactions <app-number>
-```
+Call `get_transactions` (`application_number`): the events of `eventDataBag`, each with its code, description and date.
 
 Scan the events for:
 
@@ -68,8 +66,10 @@ All dates run from **grant date** (PTA does not move them):
 | 12th-year | grant + 11y | grant + 11.5y | grant + 12y | grant + 12y |
 
 Ground the rule text rather than asserting it: read 37 CFR 1.362 and MPEP
-Chapter 2500 from the office's own page with `flowleap-legal`, and quote the
-rule with its URL and edition.
+Chapter 2500 from the office's own page with your web tool, and quote the
+rule with its URL and edition. The FlowLeap Patent AI app has no web tool:
+there, write the rule as a "check: 37 CFR 1.362" item and write that the page
+was not read.
 
 If all three windows are past, report historical status only.
 
@@ -82,9 +82,11 @@ Then exactly one action line:
 
 > **Next action: docket `<the nearest unmet deadline>`**
 
-**Portfolio mode:** given a list of patents (or hits from
-`flowleap uspto search`), run the same check per patent and present one
-summary table sorted by next deadline, nearest first.
+**Portfolio mode:** given a list of patents, the hits of `search_patents`
+(`provider: "uspto"`), or the applications of
+`search_uspto_portfolio_by_customer_number` (`customer_number`), run the same
+check per patent and present one summary table sorted by next deadline,
+nearest first.
 
 Every response ends with the verification footer:
 
@@ -92,8 +94,13 @@ Every response ends with the verification footer:
 > verify in USPTO Patent Center before docketing. Fee amounts: USPTO fee
 > schedule (entity status on record: `<status>`).
 
+When the user asks for a file, in the FlowLeap Patent AI app save the report
+with `write_patent_results` (no template, `filePath`, `content`). Elsewhere,
+write a Markdown file.
+
 ## Related
 
-- Full prosecution history: `flowleap uspto transactions` (see
-  `flowleap-uspto`); single-patent dossier: `recipe-patent-to-report`.
-- Official PTA day counts (term, not fees): `flowleap uspto adjustment`.
+- Full prosecution history: `get_transactions`; single-patent dossier:
+  `recipe-patent-to-report`.
+- Official PTA day counts (term, not fees): `get_patent_term_adjustment`
+  (`application_number`).

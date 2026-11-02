@@ -5,15 +5,15 @@ amendment drawn from the description. A chart that covers the independent
 claims but not the fallbacks stops where the litigator's work starts. This
 file is the detail for Steps 2, 7 and 8 of `recipe-invalidity-analysis`.
 
-In the CLI, the Agents window and the plugin pack, no tool checks the
-ladder, the coverage counts, the quotes or the round log. In the app's chat
-panel a writer and a completion guard enforce them. Here you write them by
-hand, and the reader checks them. Say so in the report, in the Limitations
-line.
+In the FlowLeap Patent AI app, `write_patent_results` with `template:
+"invalidity-claim-chart"` builds the ladder from the recorded `get_claims`
+call and checks the coverage counts, the quotes and the round log. In another
+client no tool checks them: you write them by hand, the reader checks them,
+and the Limitations line of the report says so.
 
 ## Build the Fallback Ladder (Step 2)
 
-1. Run `flowleap --json ops claims <target-patent>` and keep the output.
+1. Call `get_claims` (`patent_number`: the target) and keep the result.
 2. Number the claims from the text. A claim with no reference to another
    claim is independent.
 3. For each dependent claim, read the reference wording (table below) and
@@ -83,7 +83,7 @@ Write `<target-patent>.invalidity.md`:
 # Invalidity Analysis: <target-patent>
 
 Critical date: <YYYY-MM-DD> (<basis: earliest priority, or filing date when the priority claim fails>).
-Legal status: <in force / lapsed, from summary>. Venue and clock: <from Step 6>.
+Legal status: <in force / lapsed, from get_patent_summary>. Venue and clock: <from Step 6>.
 Offices searched: <EPO, USPTO>. Offices not searched: <office, reason>.
 
 ## Claim <n>
@@ -110,8 +110,8 @@ Claim <n>: <k> of <m> elements disclosed; fallbacks: <k> of <j> covered (<p> par
 
 | Round | Answered | Query | Count | Found |
 |---|---|---|---|---|
-| 0 | first search | flowleap --json patent search --query "<CQL>" --limit 30 | <n> | <ref or none> |
-| 1 | rung-3, rung-4 | flowleap --json npl "<terms>" --to-year <year> --limit 20 | <n> | <ref or none> |
+| 0 | first search | search_patents epo_ops: <CQL> | <n> | <ref or none> |
+| 1 | rung-3, rung-4 | search_npl: <terms> (to_year <year>) | <n> | <ref or none> |
 
 ## Open points after the last round
 
@@ -119,14 +119,15 @@ Claim <n>: <k> of <m> elements disclosed; fallbacks: <k> of <j> covered (<p> par
 
 ## Limitations
 
-The ladder, the coverage counts and the round log are unvalidated: written by the agent, not checked by a tool.
+<outside the app:> The ladder, the coverage counts and the round log are unvalidated: written by the agent, not checked by a tool.
 <missing-key gaps, offices not searched, claims with no text source>
 
 AI-assisted analysis for review by a registered patent attorney — not legal advice.
 ```
 
 Round 0 is the first search of Step 3. Every later round carries the ids the
-expert chose in "Answered". Copy each query exactly as you ran it.
+expert chose in "Answered". Copy each query exactly as you ran it, with its
+tool.
 
 ## Open points and their ids (Step 8)
 
@@ -174,9 +175,10 @@ answers.
    lateral insertion; [rung-4] resilient tab at the side opening."
 2. New Discriminating Terms for the added limitation of each chosen point. Do
    not reuse the terms of the independent claim.
-3. Search in this order: reformulate in `flowleap --json patent search`, the
-   other office with `flowleap --json uspto search`, then
-   `flowleap --json npl` and `flowleap --json academic search`, then the web.
+3. Search in this order: reformulate in `search_patents` (`provider:
+   "epo_ops"`), the other office with `search_patents` (`provider: "uspto"`),
+   then `search_npl` and `search_academic`, then a web search where the client
+   has a web tool (the app has none: name the web as not searched).
    Search only for the chosen points. Keep the critical date on every query.
 4. Update the ladder table and the chart rows the round changed.
 5. Add the round to "Search rounds" with its ids and every query as run.
@@ -189,7 +191,7 @@ One round per answer. "Not covered" after a round is a complete result.
 The patent, the claims and the prior art below are invented to show the
 shape. `XX` is not an office code. Never cite these numbers as real documents.
 
-Target `XX0000001B1`, a bicycle bottle holder. `ops claims` returned:
+Target `XX0000001B1`, a bicycle bottle holder. `get_claims` returned:
 
 1. A bottle holder for a bicycle frame, comprising a base plate with two
    mounting holes and a cage formed of a single bent wire attached to the base
@@ -217,11 +219,9 @@ Echo: "Running: [rung-3] side opening for lateral insertion; [rung-4]
 resilient tab at the side opening." New Discriminating Terms: "side entry",
 "lateral insertion", "retaining tab", "side-loading cage". Round 1 queries:
 
-```bash
-flowleap --json patent search --query "ta=(\"side entry\" OR \"lateral insertion\") AND ta=cage AND ta=bottle" --limit 30
-flowleap --json uspto search --query "\"side loading\" AND bottle AND cage" --limit 30
-flowleap --json npl "side-loading bottle cage retaining tab" --to-year 2009 --limit 20
-```
+- `search_patents` (`provider: "epo_ops"`): `(ta="side entry" OR ta="lateral insertion") AND ta=cage AND ta=bottle`, `range: "1-30"`
+- `search_patents` (`provider: "uspto"`): `applicationMetaData.inventionTitle:"side loading" AND applicationMetaData.inventionTitle:bottle`, `limit: 30`
+- `search_npl`: `side-loading bottle cage retaining tab`, `filter.to_year: 2009`, `limit: 20`
 
 Claim 3 is found in a dated product review (`XX-NPL-1`). Claim 4 is still not
 found. Ladder row 3 becomes "covered, XX-NPL-1, p. 2". "Search rounds" gains

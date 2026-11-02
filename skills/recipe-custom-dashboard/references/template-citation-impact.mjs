@@ -2,93 +2,134 @@
 /*=============================================================================
  * Dashboard template: CITATION IMPACT (forward-citation distribution)
  *
- * QUESTION  How influential is a patent? The distribution of the patents that
- *           cite it (forward citations) — by examiner category and over time.
- * DATA      `flowleap citation forward "<cited document>" --json`
- *           Response: { success, total, data:[{ applicationNumber, category(X/Y/A),
- *           rejectedClaims, officeActionDate }], citedDocument }.
- *           Source: USPTO Enriched Citations (Office Actions Oct 2017–present).
+ * QUESTION  How influential is a patent? The distribution of the US office
+ *           actions that cite it (forward citations): by examiner category
+ *           and over time.
+ * DATA      Answers of the office tool `search_enriched_citations`
+ *           ({ cited_document, size, offset, examiner_cited_only }), one per
+ *           page, each saved unchanged to data/citations-<offset>.json:
+ *             { total, citations:[{ id, applicationNumber, citedDocument,
+ *               category (X/Y/A), rejectedClaims, examinerCited,
+ *               officeActionDate, officeActionType, ... }] }
+ *           Source: USPTO enriched citation data (office actions).
  *
  * HOW TO ADAPT
- *   1. Pin CITED_DOCUMENT to the exact publication/patent number.
- *   2. Run `node generate.mjs`.
+ *   1. Pin CITED_DOCUMENT to the number as offices print it in citations,
+ *      with spaces and kind code, e.g. 'US 20150284881 A1'.
+ *   2. `node generate.mjs --plan` prints the first page call and its file.
+ *      Make the call and save the answer, then run `node generate.mjs`. When
+ *      `total` needs more pages, the program stops (exit 4) and names the next
+ *      call and file; repeat until it renders.
  *
- * NOTE  The citation envelope carries no edition field, so the dataset-identity
- *       row renders the explicit "dataset identity unavailable" (rule 5). This
- *       template does NOT need PATSTAT.
+ * CHECKS    Every page must cite CITED_DOCUMENT, carry the same total, and hold
+ *           the rows its offset implies; the pages together must hold `total`
+ *           distinct rows (exit 4 otherwise). The answer carries no edition
+ *           field, so the dataset-identity row renders the explicit "dataset
+ *           identity unavailable" (rule 5). This template does NOT need PATSTAT.
  *===========================================================================*/
 
 // ---- PINNED CONSTANTS (edit these) -----------------------------------------
 const CITED_DOCUMENT = 'US 20150284881 A1';
-const SUBJECT_SLUG = 'citation-impact'; // subject-based, no timestamps
+const PAGE_SIZE = 25; // small pages keep each answer short enough to save unchanged
 // ----------------------------------------------------------------------------
 
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+
+/** The tool call of the page that starts at `offset`. */
+const page = (offset) => ({
+	tool: 'search_enriched_citations',
+	input: { cited_document: CITED_DOCUMENT, size: PAGE_SIZE, offset, examiner_cited_only: false },
+	file: `citations-${offset}.json`,
+});
 
 /*======================= COMMON BLOCK (copy-in) ==============================
- * Identical across the four dashboard templates: CLI subprocess seam, inline
- * SVG chart helpers, HTML shell, and the provenance/reproduce footer.
+ * Identical across the four dashboard templates: the reader of the saved tool
+ * answers, inline SVG chart helpers, HTML shell, and the provenance/reproduce
+ * footer.
  *===========================================================================*/
 
 const OUT_DIR = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(OUT_DIR, 'data');
-const FLOWLEAP_BIN = process.env.FLOWLEAP_CLI_BIN || 'flowleap';
 
-/** Error carrying the parsed FlowLeap envelope so callers can branch on code. */
-class CliError extends Error {
-	constructor(message, { code = null, status = null, args = [], candidates = null } = {}) {
+/** A saved tool answer that is missing, is not the answer to the pinned input, or is an error answer. */
+class ToolAnswerError extends Error {
+	constructor(message, { code = null, candidates = null, exitCode = 4 } = {}) {
 		super(message);
 		this.code = code;
-		this.status = status;
-		this.args = args;
 		this.candidates = candidates;
+		this.exitCode = exitCode;
 	}
 }
 
-/** Read the machine `error.code` out of a failed-run envelope (client wrap or bare body). */
-function envelopeError(parsed) {
-	if (!parsed || typeof parsed !== 'object') return null;
-	const body = parsed.body && typeof parsed.body === 'object' ? parsed.body : parsed;
+/** The error of an error answer ({ error:{ code, message, details } }, also inside { body }), or null. */
+function answerError(value) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+	const body = value.body && typeof value.body === 'object' ? value.body : value;
 	const err = body.error && typeof body.error === 'object' ? body.error : null;
-	if (!err) return null;
-	return { code: err.code ?? null, message: err.message ?? '', candidates: err.candidates ?? null };
+	if (!err && body.success !== false) return null;
+	return { code: err?.code ?? null, message: err?.message ?? '', candidates: err?.details?.candidates ?? null };
 }
 
-/** Run `flowleap <args> --json` as a subprocess and return the parsed body. Never holds a token. */
-function runCli(args) {
-	try {
-		const out = execFileSync(FLOWLEAP_BIN, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-		return JSON.parse(out);
-	} catch (e) {
-		const stdout = typeof e.stdout === 'string' ? e.stdout : '';
-		let parsed = null;
-		try { parsed = JSON.parse(stdout); } catch { /* not JSON */ }
-		const info = envelopeError(parsed);
-		if (info) {
-			throw new CliError(info.message || `flowleap ${args.join(' ')} failed`, {
-				code: info.code, status: e.status ?? null, args, candidates: info.candidates,
-			});
-		}
-		if (e.code === 'ENOENT') {
-			throw new CliError(`Could not spawn "${FLOWLEAP_BIN}". Install the FlowLeap CLI or set FLOWLEAP_CLI_BIN.`, { args });
-		}
-		throw new CliError((e.stderr || e.message || 'unknown error').toString().trim(), { status: e.status ?? null, args });
+/** Parse saved answer text: the answer JSON itself, or a list of text blocks that holds it. */
+function parseAnswerText(text, file) {
+	let value;
+	try { value = JSON.parse(text); } catch {
+		throw new ToolAnswerError(`${file} is not JSON. Save the tool answer exactly as the tool returned it.`);
+	}
+	if (Array.isArray(value) && value.length > 0 && value.every((b) => b && b.type === 'text' && typeof b.text === 'string')) {
+		return parseAnswerText(value.map((b) => b.text).join(''), file);
+	}
+	return value;
+}
+
+/**
+ * Read the saved answer of one tool call. source = { tool, input, file }.
+ * Returns { value, savedAt } (savedAt = the time the answer file was written).
+ * Throws ToolAnswerError for a missing file, a file that is not JSON, or an error answer.
+ */
+function readToolAnswer(source) {
+	const rel = `data/${source.file}`;
+	const path = join(DATA_DIR, source.file);
+	if (!existsSync(path)) {
+		throw new ToolAnswerError(`Missing ${rel}. Call ${source.tool} with ${JSON.stringify(source.input)} and save its answer there.`);
+	}
+	const value = parseAnswerText(readFileSync(path, 'utf8'), rel);
+	const err = answerError(value);
+	if (err) {
+		throw new ToolAnswerError(`${rel}: ${source.tool} answered an error${err.code ? ` (${err.code})` : ''}: ${err.message}`,
+			{ code: err.code, candidates: err.candidates });
+	}
+	return { value, savedAt: statSync(path).mtime.toISOString() };
+}
+
+/** Stop when a saved answer does not match its pinned input or its own totals. */
+function expectAnswer(cond, source, what) {
+	if (!cond) {
+		throw new ToolAnswerError(`data/${source.file} is not the answer of ${source.tool} with ${JSON.stringify(source.input)}: ${what}. Call the tool again and save its answer without changes.`);
 	}
 }
 
-/** Run a subprocess expecting plain text (e.g. `flowleap --version`). */
-function runCliText(args) {
-	return execFileSync(FLOWLEAP_BIN, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }).trim();
-}
+const sum = (rows, key) => rows.reduce((a, r) => a + (typeof r[key] === 'number' ? r[key] : 0), 0);
+const sameList = (a, b) => JSON.stringify([...(a ?? [])].sort()) === JSON.stringify([...(b ?? [])].sort());
 
-/** Persist one raw-JSON sidecar per backend call under ./data/. */
-function saveSidecar(name, value) {
-	mkdirSync(DATA_DIR, { recursive: true });
-	writeFileSync(join(DATA_DIR, name), JSON.stringify(value, null, 2));
-	return `data/${name}`;
+/**
+ * Entry point: `node generate.mjs --plan` prints the tool calls to make and the
+ * file of each answer as JSON; `node generate.mjs` renders the dashboard.
+ */
+function run(sources, main) {
+	if (process.argv.includes('--plan')) {
+		console.log(JSON.stringify(sources.map((s) => ({ tool: s.tool, input: s.input, saveTo: `data/${s.file}` })), null, 2));
+		return;
+	}
+	try {
+		main();
+	} catch (e) {
+		if (!(e instanceof ToolAnswerError)) throw e;
+		console.error(e.message);
+		process.exit(e.exitCode);
+	}
 }
 
 const fmtInt = (n) => Number(n ?? 0).toLocaleString('en-US');
@@ -230,27 +271,31 @@ function heatmap({ title, source, rows, cols, matrix, valueLabel = 'Filings' }) 
 }
 
 /**
- * Provenance + reproduce footer. `sources` is one descriptor per backend call:
- * { verb, params, datasetIdentity, retrievedAt, sidecar }. A null datasetIdentity
+ * Provenance + reproduce footer. `sources` is one descriptor per tool call:
+ * { tool, input, datasetIdentity, savedAt, sidecar }. A null datasetIdentity
  * renders the explicit "dataset identity unavailable" row (never omitted).
  */
-function renderFooter({ generatedAt, cliVersion, backend, sources, reproduce }) {
+function renderFooter({ generatedAt, sources }) {
 	const rows = sources.map((s) => `<li>
-		<code>${htmlEsc(s.verb)}</code> <span class="params">${htmlEsc(s.params)}</span><br>
+		<code>${htmlEsc(s.tool)}</code> <span class="params">${htmlEsc(JSON.stringify(s.input))}</span><br>
 		<span class="lbl">Dataset identity:</span> ${s.datasetIdentity ? htmlEsc(s.datasetIdentity) : '<em>dataset identity unavailable</em>'}<br>
-		<span class="lbl">Retrieved:</span> ${htmlEsc(s.retrievedAt)}
+		<span class="lbl">Retrieved:</span> ${htmlEsc(s.savedAt)} (answer saved)
 		${s.sidecar ? ` &middot; <a href="${htmlEsc(s.sidecar)}">${htmlEsc(s.sidecar)}</a>` : ''}
 	</li>`).join('\n');
+	const reproduce = [
+		'# Call each tool with this input and save its answer, unchanged, to the named file:',
+		...sources.map((s) => `${s.tool} ${JSON.stringify(s.input)}  ->  ${s.sidecar}`),
+		'node generate.mjs',
+	].join('\n');
 	return `<footer id="provenance" data-provenance="footer">
 	<h2>Provenance &amp; Reproduce</h2>
-	<p class="meta"><span class="lbl">Generated:</span> ${htmlEsc(generatedAt)}
-	 &middot; <span class="lbl">CLI / backend:</span> ${htmlEsc(cliVersion)} / ${htmlEsc(backend)}</p>
+	<p class="meta"><span class="lbl">Generated:</span> ${htmlEsc(generatedAt)}</p>
 	<h3>Data sources</h3>
 	<ul class="sources">${rows}</ul>
 	<h3>Reproduce</h3>
 	<pre class="reproduce">${htmlEsc(reproduce)}</pre>
 	<p class="note">Every figure above is computed in <code>generate.mjs</code> from the linked
-	<code>data/</code> sidecars — none is typed by hand. Regenerate by re-running the script.</p>
+	<code>data/</code> files, each the saved answer of one tool call. None is typed by hand. Regenerate by re-running the script.</p>
 </footer>`;
 }
 
@@ -311,66 +356,86 @@ ${footerHtml}
 
 /** Print the chat summary block: computed numbers + file paths, for the agent to paste. */
 function printSummaryBlock(lines, htmlPath) {
-	const out = ['```', ...lines, `Dashboard: ${htmlPath}`, `(open locally: open "${htmlPath}")`, '```'];
+	const out = ['```', ...lines, `Dashboard: ${htmlPath}`, '```'];
 	console.log(out.join('\n'));
 }
 
+
 /*======================= END COMMON BLOCK ===================================*/
 
-/** Impact narrative — every number interpolated from computed `c` (rule 1). */
+const compact = (s) => String(s ?? '').replace(/\s+/g, '').toUpperCase();
+
+/** Read every page that `total` implies and check each against the pinned input. */
+function readAllPages() {
+	const first = readToolAnswer(page(0));
+	const total = first.value.total;
+	expectAnswer(Number.isInteger(total), page(0), 'total is missing');
+	const pages = [{ source: page(0), answer: first }];
+	for (let offset = PAGE_SIZE; offset < total; offset += PAGE_SIZE) {
+		pages.push({ source: page(offset), answer: readToolAnswer(page(offset)) });
+	}
+	const ids = new Set();
+	const rows = [];
+	for (const { source, answer } of pages) {
+		const v = answer.value;
+		const citations = v.citations ?? [];
+		expectAnswer(v.total === total, source, `total is ${v.total}, the first page says ${total}`);
+		expectAnswer(citations.length === Math.min(PAGE_SIZE, total - source.input.offset), source, `it holds ${citations.length} rows`);
+		for (const r of citations) {
+			expectAnswer(compact(r.citedDocument) === compact(CITED_DOCUMENT), source, `a row cites ${JSON.stringify(r.citedDocument)}`);
+			ids.add(r.id);
+			rows.push(r);
+		}
+	}
+	expectAnswer(ids.size === total, page(0), `the pages hold ${ids.size} distinct rows, total is ${total}`);
+	return { total, rows, pages };
+}
+
+/** Impact narrative: every number interpolated from computed `c` (rule 1). */
 function renderNarrative(c) {
 	const domCat = Object.entries(c.byCategory).sort((a, b) => b[1] - a[1])[0];
 	const CAT_MEANING = { X: 'novelty-destroying (35 USC 102)', Y: 'obviousness (35 USC 103)', A: 'background' };
 	const peak = c.byYearArr.reduce((a, b) => (b.count > a.count ? b : a), c.byYearArr[0] || { year: '—', count: 0 });
 	const parts = [
-		`${htmlEsc(c.citedDocument)} has ${fmtInt(c.total)} forward citations in USPTO office actions.`,
-		domCat ? `Most are ${domCat[0]}-category (${CAT_MEANING[domCat[0]] || domCat[0]}): ${fmtInt(domCat[1])} citations.` : '',
+		`${htmlEsc(c.citedDocument)} has ${fmtInt(c.total)} forward citations in USPTO office actions, in ${fmtInt(c.applications)} US applications.`,
+		domCat && domCat[1] ? `Most are ${domCat[0]}-category (${CAT_MEANING[domCat[0]] || domCat[0]}): ${fmtInt(domCat[1])} citations.` : '',
 		peak && peak.count ? `Citing activity peaked in ${peak.year} (${fmtInt(peak.count)} citations).` : '',
-		c.byCategory.X ? `${fmtInt(c.byCategory.X)} are X-category — the strongest signal this patent is potent prior art.` : '',
+		c.byCategory.X ? `${fmtInt(c.byCategory.X)} are X-category, the strongest signal that this patent is potent prior art.` : '',
 	];
 	return parts.filter(Boolean).join(' ');
 }
 
 function main() {
 	const generatedAt = new Date().toISOString();
-	let cliVersion = 'unknown', backend = 'unknown';
-	try { cliVersion = runCliText(['--version']); } catch { /* best effort */ }
-	try {
-		const d = runCli(['--json', 'doctor']);
-		backend = d.baseUrl ? `${d.baseUrl} (health: ${d?.backend?.healthStatus ?? 'unknown'})` : 'unknown';
-	} catch { /* best effort */ }
+	const { total, rows, pages } = readAllPages();
 
-	const args = ['--json', 'citation', 'forward', CITED_DOCUMENT];
-	const res = runCli(args);
-	const sidecar = saveSidecar('citation-forward.json', res);
-	const rows = res.data ?? [];
-
-	// Compute distributions from the raw citations (rule 1).
+	// Compute distributions from the citation rows (rule 1).
 	const byCategory = { X: 0, Y: 0, A: 0 };
 	const yearMap = new Map();
 	for (const r of rows) {
-		const cat = (r.category || '').toUpperCase();
+		const cat = String(r.category || '').toUpperCase();
 		if (cat in byCategory) byCategory[cat] += 1;
 		const yr = String(r.officeActionDate || '').slice(0, 4);
 		if (/^\d{4}$/.test(yr)) yearMap.set(yr, (yearMap.get(yr) || 0) + 1);
 	}
 	const years = [...yearMap.keys()].sort();
 	const byYearArr = years.map((y) => ({ year: y, count: yearMap.get(y) }));
-	const c = { citedDocument: res.citedDocument ?? CITED_DOCUMENT, total: res.total ?? rows.length, byCategory, byYearArr };
+	const applications = new Set(rows.map((r) => r.applicationNumber)).size;
+	const c = { citedDocument: CITED_DOCUMENT, total, applications, byCategory, byYearArr };
 
 	const catChart = barChart({
 		title: 'Forward Citations by Examiner Category',
-		source: 'flowleap citation forward (USPTO Enriched Citations)',
+		source: 'search_enriched_citations (USPTO enriched citation data)',
 		categories: ['X', 'Y', 'A'],
 		series: [{ name: 'Citations', values: ['X', 'Y', 'A'].map((k) => byCategory[k]) }], yLabel: 'Citations',
 	});
 	const yearChart = lineChart({
 		title: 'Forward Citations Over Time',
-		source: 'flowleap citation forward (USPTO Enriched Citations; office-action year)',
+		source: 'search_enriched_citations (USPTO enriched citation data; office-action year)',
 		categories: years, series: [{ name: 'Citations', values: byYearArr.map((r) => r.count) }], yLabel: 'Citations',
 	});
 	const CAT_MEANING = { X: 'Novelty-destroying (102)', Y: 'Obviousness (103)', A: 'Background' };
-	const catRows = ['X', 'Y', 'A'].map((k) => `<tr><td>${k} — ${htmlEsc(CAT_MEANING[k])}</td><td>${fmtInt(byCategory[k])}</td></tr>`).join('');
+	const catRows = ['X', 'Y', 'A'].map((k) => `<tr><td>${k}: ${htmlEsc(CAT_MEANING[k])}</td><td>${fmtInt(byCategory[k])}</td></tr>`).join('');
 
 	const bodyHtml = `
 <section class="card"><h2>Impact Summary</h2><p class="lead">${renderNarrative(c)}</p></section>
@@ -378,32 +443,25 @@ function main() {
 <table><thead><tr><th>Category</th><th>Citations</th></tr></thead><tbody>${catRows}</tbody></table></section>
 <section class="card"><h2>Over Time</h2>${yearChart}</section>`;
 
-	const reproduce = [
-		`# Cited document pinned once with the user:`,
-		`#   CITED_DOCUMENT = "${CITED_DOCUMENT}"`,
-		`flowleap --json citation forward "${CITED_DOCUMENT}"`,
-		'node generate.mjs',
-	].join('\n');
-
 	const footerHtml = renderFooter({
-		generatedAt, cliVersion, backend,
-		sources: [{
-			verb: 'citation forward', params: `"${CITED_DOCUMENT}"`,
-			datasetIdentity: null, // USPTO Enriched Citations carries no edition field in the envelope
-			retrievedAt: generatedAt, sidecar,
-		}],
-		reproduce,
+		generatedAt,
+		sources: pages.map(({ source, answer }) => ({
+			tool: source.tool, input: source.input,
+			datasetIdentity: null, // the answer carries no edition field
+			savedAt: answer.savedAt, sidecar: `data/${source.file}`,
+		})),
 	});
 	const html = htmlDoc({
-		title: `Citation Impact — ${c.citedDocument}`,
+		title: `Citation Impact: ${c.citedDocument}`,
 		subtitle: `Forward citations from USPTO office actions · ${fmtInt(c.total)} citing references`,
 		summary: '', bodyHtml, footerHtml,
 	});
 	const htmlPath = join(OUT_DIR, 'dashboard.html');
 	writeFileSync(htmlPath, html);
 	printSummaryBlock([
-		`Citation impact — ${c.citedDocument}`,
-		`Forward citations: ${fmtInt(c.total)}  (X: ${byCategory.X}, Y: ${byCategory.Y}, A: ${byCategory.A})`,
+		`Citation impact: ${c.citedDocument}`,
+		`Forward citations: ${fmtInt(c.total)}  (X: ${byCategory.X}, Y: ${byCategory.Y}, A: ${byCategory.A})  US applications: ${fmtInt(applications)}`,
 	], htmlPath);
 }
-main();
+
+run([page(0)], main);

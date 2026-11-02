@@ -1,12 +1,11 @@
 {
-  "success": true,
-  "searchDescription": "keywords: machine learning; cpc: G06N, H04L, G06F, A61B, G16H",
+  "searchDescription": "phrases: \"machine learning\"; cpc: G06N, H04L, G06F, A61B, G16H",
   "request": {
-    "keywords": [
-      "machine learning"
-    ],
     "dateFrom": "2015-01-01",
-    "dateTo": "2024-12-31"
+    "dateTo": "2024-12-31",
+    "phrases": [
+      "machine learning"
+    ]
   },
   "analytics": {
     "byYear": [
@@ -105,5 +104,6 @@
         "count": 1180
       }
     ]
-  }
+  },
+  "data_slice": "BigQuery patent_analytics.publications_slim @ 2026-07-07T20:16:39.406Z"
 }

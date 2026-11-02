@@ -1,9 +1,10 @@
 //! Runs the recipe-custom-dashboard template smoke test (a zero-dependency
 //! Node script) inside `cargo test` so it rides the existing CI job. The
 //! script copies each of the four dashboard templates into a temp bundle,
-//! runs it with the FlowLeap CLI stubbed by recorded fixtures, and asserts the
-//! product invariants (numbers-from-code rendering, provenance footer, inline
-//! SVG, offline-safe HTML, guardrail on ambiguous applicants). See
+//! puts recorded tool answers in its data/ folder, and asserts the product
+//! invariants (numbers-from-code rendering, the input check of each saved
+//! answer, provenance footer, inline SVG, offline-safe HTML, guardrail on
+//! ambiguous applicants). See
 //! skills/recipe-custom-dashboard/references/smoke.mjs for the assertions.
 //!
 //! Node >= 18 is required. GitHub's ubuntu-latest runner ships Node, so this
