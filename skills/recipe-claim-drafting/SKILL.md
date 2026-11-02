@@ -1,6 +1,6 @@
 ---
 name: recipe-claim-drafting
-description: Prosecution recipe for drafting patent claims grounded in prior art — search the closest art, study its claim language, decompose the invention into elements, iterate drafts through claim analysis, and check formal drafting rules against MPEP/EPO guidelines. Trigger when the user asks to draft or improve patent claims, write independent and dependent claims, or stress-test draft claims against known art and formal requirements.
+description: "Draft patent claims on the basis of the prior art: find the closest art, study its claim language, break the invention into elements, improve the drafts through claim analysis, and check the formal rules against the MPEP and the EPO Guidelines. Use it when the user asks to draft or improve claims, to write independent and dependent claims, or to test draft claims against known art and formal requirements."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-ops", "flowleap-legal"]

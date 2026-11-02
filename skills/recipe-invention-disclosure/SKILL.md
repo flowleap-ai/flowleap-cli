@@ -1,6 +1,6 @@
 ---
 name: recipe-invention-disclosure
-description: Prosecution recipe for turning an inventor conversation into a complete invention disclosure form (IDF) — structured technical capture, bar-date audit, novelty pre-check across patents and literature, landscape context, and a filing recommendation. Trigger when the user asks to document an invention, create an invention disclosure, or run a pre-filing novelty sanity check.
+description: "Turn a conversation with an inventor into a complete invention disclosure form: structured technical capture, a bar-date check, a novelty check across patents and literature, landscape context and a filing recommendation. Use it when the user asks to document an invention, to create an invention disclosure, or to run a novelty check before filing."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-academic", "flowleap-npl"]

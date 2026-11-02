@@ -1,6 +1,6 @@
 ---
 name: flowleap-legal
-description: Read patent law from the office's own page (the MPEP, 35 USC and 37 CFR, the EPC and the EPO Guidelines, the PCT rules) and quote it with its URL and edition. Trigger when an agent needs legal grounds, examination-guideline citations, statute text, or authoritative references for a patent-law question, or when the user names a section such as 35 USC 103 or EPC Art. 54.
+description: "Read patent law from the office's own page (the MPEP, 35 USC and 37 CFR, the EPC and the EPO Guidelines, the PCT rules) and quote it with its URL and edition. Use it when the task needs the legal basis, an examination-guideline citation or statute text for a patent-law question, or when the user names a provision such as 35 USC 103 or EPC Art. 54."
 ---
 
 # FlowLeap Legal (patent law from the official page)

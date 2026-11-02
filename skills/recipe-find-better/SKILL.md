@@ -1,6 +1,6 @@
 ---
 name: recipe-find-better
-description: Find Better recipe for a granted patent — read the code-computed Examiner Baseline (every document cited across the family, by office), run three logged expansion tracks (two-hop backward citations, inventor and author networks, classifications with Discriminating Terms), and score the examiner's best art and the art found on the same claim elements as "disclosed n of m". Trigger when the user asks whether earlier or closer prior art exists than the examiners cited, or what the examiners missed on a granted patent. Not for a pre-filing novelty search (recipe-prior-art-search) or for venue, grounds and invalidity charts (recipe-invalidity-analysis).
+description: "Find closer prior art than the examiners cited against a granted patent: read the Examiner Baseline (every document cited across the family, by office), run three logged search tracks (backward citations two levels deep, inventor and author networks, classifications with discriminating terms), and score the examiners' best art and the new art on the same claim elements as 'disclosed n of m'. Use it when the user asks whether earlier or closer prior art exists than the examiners cited, or what the examiners missed on a granted patent. Not for a novelty search before filing (recipe-prior-art-search) or for an invalidity case (recipe-invalidity-analysis)."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-ops", "flowleap-citation", "flowleap-academic", "flowleap-patstat-graph", "recipe-claim-analysis"]

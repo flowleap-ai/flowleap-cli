@@ -69,7 +69,7 @@ rebuild it from other calls. Fields are only added, never renamed.
    KR member gives citations and English abstracts only; say that element
    mapping against those documents is not possible.
 5. **Stops are not gaps.** A key gate, 401, 402, 429 or 410 stops the verb with
-   its usual exit code and hint. Follow `flowleap-keys` or `flowleap-shared`;
+   its usual exit code and hint. Follow `flowleap-shared` ("The key gate");
    do not report a partial Baseline as complete.
 
 ## Ranking the examiner's best art per independent claim

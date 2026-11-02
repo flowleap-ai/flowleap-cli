@@ -1,6 +1,6 @@
 ---
 name: recipe-prior-art-search
-description: Comprehensive prior-art / novelty search before filing or on a published patent — per-element synonym rows, dual EPO/USPTO patent search with a classification-only track and a citation track, an NPL sweep (OpenAlex first), a recall check against the Examiner Baseline, and X/Y/A tagging of the closest hits. Trigger when the user asks to find prior art for an invention, run a novelty search, or check what already exists before filing.
+description: "Search for prior art before filing or against a published patent: synonym rows for each element, patent searches in the EPO and USPTO databases with a classification-only track and a citation track, a literature search (OpenAlex first), a recall check against the Examiner Baseline, and X/Y/A tags on the closest hits. Use it when the user asks to find prior art for an invention, to run a novelty search, or to check what already exists before filing."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-uspto", "flowleap-npl", "flowleap-academic", "flowleap-ops", "flowleap-citation"]
@@ -113,7 +113,7 @@ flowleap ops abstract <application-or-publication-number>
 missing. Do not narrow the search to the office whose key happens to be set, and
 do not fill the gap with web-scraped results: run the live office in full,
 report the other as a missing-key gap (not "no prior art found" and not "limited
-coverage"), and ask for the free key at the end. See `flowleap-keys`.
+coverage"), and ask for the free key at the end. See `flowleap-shared` ("The key gate").
 
 **Run at least two independent tracks**, so a document one misses another can
 catch:

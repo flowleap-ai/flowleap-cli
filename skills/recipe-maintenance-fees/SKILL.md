@@ -1,6 +1,6 @@
 ---
 name: recipe-maintenance-fees
-description: Check US patent maintenance-fee status and deadlines — compute the 3.5/7.5/11.5-year windows from the grant date, read which fees were actually paid from USPTO transaction events, and report the next docketable deadline with surcharge dates. Trigger when the user asks whether maintenance fees are due or paid, when the next fee deadline is, whether a US patent is still in force fee-wise, or for a fee-status sweep over a portfolio. Dates and status only — never fee amounts.
+description: "Check the maintenance-fee status and deadlines of US patents: the 3.5, 7.5 and 11.5-year windows from the grant date, the fees actually paid according to the USPTO transaction events, and the next deadline with its surcharge dates. Use it when the user asks whether maintenance fees are due or paid, when the next fee is due, whether a US patent is still in force for fees, or for a fee check across a portfolio. Dates and status only, never fee amounts."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-uspto", "flowleap-legal"]

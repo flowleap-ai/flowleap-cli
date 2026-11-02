@@ -1,6 +1,6 @@
 ---
 name: recipe-audit-report
-description: Governance recipe for producing an auditable record of AI-assisted patent research — reproducible command log, data provenance for every finding, portfolio status verification, and an AI-usage disclosure section suitable for internal or filing-adjacent records. Trigger when the user asks for an audit trail of patent research, an AI-assistance disclosure, or a verifiable methodology write-up of analysis work.
+description: "Produce an auditable record of AI-assisted patent research: a reproducible log of each search and read, the data source of every finding, a check of each patent's status, and an AI-use disclosure for internal or filing-related records. Use it when the user asks for an audit trail of patent research, a disclosure of AI assistance, or a verifiable write-up of the method."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-tools", "recipe-custom-dashboard"]

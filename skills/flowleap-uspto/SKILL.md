@@ -1,6 +1,6 @@
 ---
 name: flowleap-uspto
-description: Search USPTO Open Data Portal records with Lucene queries you write yourself, fetch granted patents, applications, continuity chains, and file-wrapper data (prosecution transactions, assignments, foreign priority, PTA, attorney of record), and list IFW documents and read office actions as OCR-extracted text. Trigger when an agent needs US application/prosecution metadata, grant lookups, continuity (parent/child) chains, office-action text, chain of title, or USPTO-specific searches.
+description: "Search US patent and application records (USPTO Open Data Portal) and read the file wrapper: grants, applications, continuity chains, prosecution transactions, assignments, foreign priority, patent term adjustment, attorney of record, and the text of office actions and other file-wrapper documents. Use it when the task needs US prosecution data, a grant or application record, parent and child applications, office-action text, the chain of title, or a US-specific search."
 ---
 
 # FlowLeap USPTO (Open Data Portal)
@@ -51,7 +51,7 @@ command you actually ran returned an explicit gate **code** — the CLI's
 is freely editable, so a reword can neither invent nor erase a gate. A gate is a
 user-action stop: do not substitute web-scraped US data for it, deliver the
 other office's results in full, name the gap as a missing-key gap, and ask for
-the free key at the end. See `flowleap-keys`.
+the free key at the end. See `flowleap-shared` ("The key gate").
 
 ## Search with a full request body
 

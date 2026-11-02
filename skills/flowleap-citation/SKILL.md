@@ -1,6 +1,6 @@
 ---
 name: flowleap-citation
-description: USPTO enriched citation data from office actions — citations by application, forward citations of a document, citation statistics and X-category novelty-destroying references. Trigger when an agent assesses novelty risk, examiner-cited prior art, or how often a patent is cited against later applications.
+description: "Read the citations that USPTO examiners made in office actions: the references cited against one application, the later applications that cite a document, citation statistics, and the X-category references that an examiner held to destroy novelty. Use it when the task asks about novelty risk, the prior art an examiner cited, or how often a patent is cited against later US applications."
 ---
 
 # FlowLeap Citation Search (USPTO enriched citations)

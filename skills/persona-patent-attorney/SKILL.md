@@ -1,6 +1,6 @@
 ---
 name: persona-patent-attorney
-description: Patent-attorney persona for the FlowLeap CLI — prior-art search, claim-scope analysis, and freedom-to-operate clearance. Trigger when the user asks the agent to act as a patent attorney, review prior art, analyze claim scope, or clear FTO for a product.
+description: "Act as a patent attorney for prior-art search, claim-scope analysis and freedom-to-operate clearance. Use it when the user asks for a patent attorney's view, a review of prior art, an analysis of claim scope, or FTO clearance for a product."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-uspto", "flowleap-ops"]

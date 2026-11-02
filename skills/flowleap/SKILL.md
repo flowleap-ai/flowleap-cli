@@ -1,6 +1,6 @@
 ---
 name: flowleap
-description: Start here — the umbrella skill for the FlowLeap Patent AI CLI. Maps every command family (patent/USPTO/OPS/academic/NPL/legal/citation reads, analytics, OCR, one-call patent verbs, the tools facade, and the raw API escape hatch) and routes to the specialist skills. Trigger when a user asks an agent to use FlowLeap, query the FlowLeap backend, verify local or deployed FlowLeap API health, run patent research commands, or debug FlowLeap CLI/API behavior.
+description: "Start here for patent research with FlowLeap. Maps the patent, legal, literature, citation and analytics methods of the FlowLeap pack and sends each task to the right specialist skill or recipe. Use it when the user asks to use FlowLeap for patent work and the right method is not yet clear, or to check that FlowLeap patent data is reachable."
 ---
 
 # FlowLeap CLI
@@ -93,7 +93,7 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
   office, never an exhausted route**: do not substitute web-scraped data for it,
   for searches or single-document reads. Finish the live office, name the gap as
   a missing-key gap, ask at the end; PATSTAT, legal, and academic/NPL stay live
-  keyless as *different* data. Full doctrine: `flowleap-keys`.
+  keyless as *different* data. Full doctrine: `flowleap-shared` ("The key gate").
 - **Patent search & CQL** → `flowleap-patent`; **USPTO ODP** → `flowleap-uspto`.
 - **EPO document data** (biblio, claims, description, family, legal, EP
   Register representatives and opponents) → `flowleap-ops`. "How many EP

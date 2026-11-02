@@ -19,7 +19,7 @@ FlowLeap is a CLI for the FlowLeap Patent AI backend: patent/USPTO/OPS/academic/
 
 ### Command Reference
 
-#### flowleap — Start here — the umbrella skill for the FlowLeap Patent AI CLI.
+#### flowleap — Start here for patent research with FlowLeap.
 
 ```bash
 flowleap --json doctor
@@ -28,13 +28,13 @@ flowleap upgrade --check
 flowleap skills update
 ```
 
-#### flowleap-academic — Search academic literature (Semantic Scholar + arXiv) through the FlowLeap backend with per-source and publication-year filters.
+#### flowleap-academic — Search scholarly papers in Semantic Scholar and arXiv, with source and publication-year filters, as prior art or technical background.
 
 ```bash
 flowleap academic search <query> [flags]
 ```
 
-#### flowleap-auth — Authenticate the FlowLeap CLI — OAuth 2.0 device flow login (user code + verification URL), long-lived fl_pat_ personal API tokens for headless agents, status checks, and targeted logout.
+#### flowleap-auth — Sign in the FlowLeap command-line tool: device-flow login, personal API tokens (fl_pat_) for agents and CI, status checks and logout.
 
 ```bash
 flowleap auth login
@@ -45,7 +45,7 @@ flowleap auth status
 flowleap auth logout
 ```
 
-#### flowleap-citation — USPTO enriched citation data from office actions — citations by application, forward citations of a document, citation statistics and X-category novelty-destroying references.
+#### flowleap-citation — Read the citations that USPTO examiners made in office actions: the references cited against one application, the later applications that cite a document, citation statistics, and the X-category references that an examiner held to destroy novelty.
 
 ```bash
 flowleap --json citation search 16123456 --size 20
@@ -54,7 +54,7 @@ flowleap --json citation stats 16123456
 flowleap --json citation novelty 16123456
 ```
 
-#### flowleap-keys — Manage BYOK patent-data keys (EPO OPS consumer key/secret, USPTO ODP API key) for the FlowLeap CLI — check status, validate live, hand off to a human for the interactive setup wizard, and apply the key-gate doctrine (a gated office is a user-action stop, never an exhausted route).
+#### flowleap-keys — Set up and check the patent-office data keys (EPO OPS key and secret, USPTO ODP key) of the FlowLeap command-line tool: key status, live validation, the gate codes, and the hand-over to the human for the setup wizard.
 
 ```bash
 flowleap --json keys list
@@ -65,7 +65,7 @@ flowleap --json keys set epo --key <consumer-key> --secret <consumer-secret>
 
 #### flowleap-legal — Read patent law from the office's own page (the MPEP, 35 USC and 37 CFR, the EPC and the EPO Guidelines, the PCT rules) and quote it with its URL and edition.
 
-#### flowleap-npl — Search non-patent literature (scholarly works via OpenAlex) with year, open-access and publication-type filters, and resolve a cited paper (DOI, OpenAlex id or an office's citation string) to its record.
+#### flowleap-npl — Search non-patent literature (journal articles, conference papers, theses, standards and preprints in OpenAlex) with year, open-access and publication-type filters, and identify a paper that an examiner cited from its DOI or citation string.
 
 ```bash
 flowleap --json npl "perovskite solar cell stability" --limit 5
@@ -77,7 +77,7 @@ flowleap --json npl-work "SMITH J: 'Hydraulic actuator control', IEEE TRANS., 20
 flowleap --json ops biblio EP3000000A3 --resolve-npl
 ```
 
-#### flowleap-ops — Direct EPO Open Patent Services access through the FlowLeap backend — CQL search, EP Register search by representative or opponent, plus per-document bibliography, family, legal status and abstract worldwide, and claims and description for EP and WO (US claims from BigQuery, English only).
+#### flowleap-ops — Read authoritative EPO data for a known publication: bibliography, family members, legal status and abstract for documents worldwide, claims and description for EP and WO, and US claims in English, plus EPO search in CQL and EP Register search by representative or opponent.
 
 ```bash
 flowleap ops search --cql <query> [flags]
@@ -91,14 +91,14 @@ flowleap ops abstract <doc>
 flowleap ops register-biblio <EP-doc>
 ```
 
-#### flowleap-patent — Search EPO patents with CQL you write yourself — field reference, the discriminating-term rule, and the mandatory count probe.
+#### flowleap-patent — Search European and worldwide patents in the EPO database with a CQL query built from the invention: the field reference, the discriminating-term rule, and a count check before each full search.
 
 ```bash
 flowleap patent search --query <query> [flags]
 flowleap patstat query "SELECT symbol, title FROM flowleap.cpc_scheme WHERE title ILIKE '%photovoltaic%' ORDER BY symbol LIMIT 15" --question "candidate CPC codes for photovoltaics"
 ```
 
-#### flowleap-patstat — Portfolio Analytics AND guarded SQL over the PATSTAT snapshot — structured-criteria aggregates by applicant/CPC/office/year/family/grant status, priority and continuation chains, decoded legal events, concept-to-CPC text discovery, INPADOC extended-family coverage, every number carrying a Data Edition citation.
+#### flowleap-patstat — Count and analyse patent filings in the PATSTAT database (a twice-yearly EPO snapshot): an applicant's portfolio, counts by applicant, CPC class, office, year, family or grant status, priority and continuation chains, decoded legal events, the CPC codes that a concept uses, and the reach of an extended family, with the database edition cited on every number.
 
 ```bash
 flowleap --json tools run patstat_portfolio applicant="<applicant name>"
@@ -107,13 +107,13 @@ flowleap patstat docs --section examples
 flowleap patstat query "SELECT office, COUNT(DISTINCT family_id) AS inventions FROM flowleap.applications a JOIN flowleap.applicants ap ON ap.application_id = a.application_id WHERE UPPER(ap.name) LIKE 'SIEMENS%' GROUP BY office ORDER BY inventions DESC" --question "where does Siemens hold the most inventions?"
 ```
 
-#### flowleap-patstat-graph — Graph Analytics over the PATSTAT snapshot — a named node and the relationships around it.
+#### flowleap-patstat-graph — Trace the relationships around one patent or applicant in the PATSTAT database: who cites a patent (examiner or applicant), how two patents connect through citations or families, where a family has coverage, an applicant's co-applicants with their top CPC classes and countries, the CPC codes for a technology keyword, and the landscape of one CPC area (top applicants, filing trend, grant rate, new entrants).
 
 ```bash
 flowleap patstat graph resolve EP3477840
 ```
 
-#### flowleap-shared — Shared reference for every FlowLeap skill — authentication (OAuth device flow, fl_pat_ personal API tokens), credential storage, config precedence, global flags, and output formats.
+#### flowleap-shared — Common rules for every FlowLeap skill: the tool to call for each method in the FlowLeap Patent AI app and in chat clients, what to do when a patent office needs a data key, which offices each text tool covers, and, for the FlowLeap command-line tool, sign-in, settings and output formats.
 
 ```bash
 flowleap config set base-url https://api.flowleap.co
@@ -123,7 +123,7 @@ flowleap --json health api
 flowleap upgrade --check --json
 ```
 
-#### flowleap-tools — Discover and run FlowLeap backend tools through the agent-first /v1/tools facade — one stable contract (search_patents, get_bibliography, get_claims, get_patent_summary, compare_patents, …) instead of provider-specific endpoints.
+#### flowleap-tools — Discover and run FlowLeap tools from the command line through one tool interface (search_patents, get_bibliography, get_claims, get_patent_summary, compare_patents and more) instead of provider-specific commands.
 
 ```bash
 flowleap --json tools list
@@ -133,7 +133,7 @@ flowleap --json tools run get_bibliography patent_number=EP1000000
 flowleap --json health api
 ```
 
-#### flowleap-uspto — Search USPTO Open Data Portal records with Lucene queries you write yourself, fetch granted patents, applications, continuity chains, and file-wrapper data (prosecution transactions, assignments, foreign priority, PTA, attorney of record), and list IFW documents and read office actions as OCR-extracted text.
+#### flowleap-uspto — Search US patent and application records (USPTO Open Data Portal) and read the file wrapper: grants, applications, continuity chains, prosecution transactions, assignments, foreign priority, patent term adjustment, attorney of record, and the text of office actions and other file-wrapper documents.
 
 ```bash
 flowleap --json uspto search --query 'applicationMetaData.inventionTitle:"machine learning"' --limit 5
@@ -149,22 +149,22 @@ flowleap --json uspto attorney 14412875
 
 ### Workflow Triggers
 
-- **persona-ip-analyst** — IP-analyst persona for the FlowLeap CLI — technology-landscape mapping, portfolio assessment, white-space identification, and filing-trend analytics. Trigger when the user asks the agent to act as an IP analyst, map a landscape, assess a competitor portfolio, or report patent filing trends.
-- **persona-patent-attorney** — Patent-attorney persona for the FlowLeap CLI — prior-art search, claim-scope analysis, and freedom-to-operate clearance. Trigger when the user asks the agent to act as a patent attorney, review prior art, analyze claim scope, or clear FTO for a product.
-- **persona-researcher** — Researcher persona for the FlowLeap CLI — parallel academic-literature and patent exploration to map what is published versus what is protected. Trigger when the user asks the agent to act as a researcher, survey a technology across papers and patents, or find gaps between academic work and filed IP.
-- **persona-startup-founder** — Startup-founder persona for the FlowLeap CLI — novelty sanity checks, freedom-to-operate scans, and competitor-patent monitoring. Trigger when the user asks the agent to validate a startup's IP position, check whether an idea is already patented, or scope competitor patents before building.
-- **recipe-academic-literature-review** — Map the gap between published research and filed patents — a scholarly sweep across Semantic Scholar, arXiv, and OpenAlex aligned against a matching patent search, output centered on the published-versus-protected gap rather than a ranked novelty list. Trigger when the user asks for a literature review, a state-of-the-art survey, or a comparison of academic research against patents.
-- **recipe-audit-report** — Governance recipe for producing an auditable record of AI-assisted patent research — reproducible command log, data provenance for every finding, portfolio status verification, and an AI-usage disclosure section suitable for internal or filing-adjacent records. Trigger when the user asks for an audit trail of patent research, an AI-assistance disclosure, or a verifiable methodology write-up of analysis work.
-- **recipe-claim-analysis** — Decompose a patent's claims into elements, keywords, and search queries with full supporting context — claims text, abstract, bibliography, description, and family. Trigger when the user asks to analyze what a patent claims, break claims into elements, or interpret claim scope against its specification.
-- **recipe-claim-drafting** — Prosecution recipe for drafting patent claims grounded in prior art — search the closest art, study its claim language, decompose the invention into elements, iterate drafts through claim analysis, and check formal drafting rules against MPEP/EPO guidelines. Trigger when the user asks to draft or improve patent claims, write independent and dependent claims, or stress-test draft claims against known art and formal requirements.
-- **recipe-custom-dashboard** — Presentation-craft recipe for turning verified FlowLeap patent data into a disposable, self-contained HTML dashboard — the agent writes one small zero-dependency Node program per question that fetches through the CLI, computes every number in code, and emits an offline single-file dashboard with inline SVG charts and a full provenance footer. Trigger when the user asks to make, build, generate, or visualize a dashboard, chart, or visual report of patent data — a company's portfolio, filing trends across competitors, a technology landscape / white-space map, or citation impact.
-- **recipe-find-better** — Find Better recipe for a granted patent — read the code-computed Examiner Baseline (every document cited across the family, by office), run three logged expansion tracks (two-hop backward citations, inventor and author networks, classifications with Discriminating Terms), and score the examiner's best art and the art found on the same claim elements as "disclosed n of m". Trigger when the user asks whether earlier or closer prior art exists than the examiners cited, or what the examiners missed on a granted patent. Not for a pre-filing novelty search (recipe-prior-art-search) or for venue, grounds and invalidity charts (recipe-invalidity-analysis).
-- **recipe-freedom-to-operate** — Freedom-to-operate clearance for a product or technology — per-feature query generation, dual-database blocking-patent search, and legal-status, family, and all-elements claim checks on every live candidate. Trigger when the user asks whether a product or technology can launch without infringing, or requests an FTO/clearance search.
-- **recipe-infringement-charting** — Litigation recipe for an element-by-element infringement claim chart — verify the patent is in force where it matters, decompose the asserted claims, extract accused-product evidence (OCR datasheets and manuals), and map every element with literal and doctrine-of-equivalents columns. Trigger when the user asks whether a product infringes a patent, wants a claim chart, or needs element-by-element infringement mapping.
-- **recipe-invalidity-analysis** — Litigation recipe for building an invalidity case against a target patent — pin the critical date, build the Fallback Ladder (every dependent claim with the limitation it adds) from the claims text, hunt patent and non-patent prior art for every element and every rung, chart it with X/Y/A tags and Fallback Coverage counts, then write a Round Report and run one Search Round per expert answer. Trigger when the user asks to invalidate a patent, find 102/103 or Art. 54/56 prior art against granted claims, or assess how strong a patent really is.
-- **recipe-invention-disclosure** — Prosecution recipe for turning an inventor conversation into a complete invention disclosure form (IDF) — structured technical capture, bar-date audit, novelty pre-check across patents and literature, landscape context, and a filing recommendation. Trigger when the user asks to document an invention, create an invention disclosure, or run a pre-filing novelty sanity check.
-- **recipe-maintenance-fees** — Check US patent maintenance-fee status and deadlines — compute the 3.5/7.5/11.5-year windows from the grant date, read which fees were actually paid from USPTO transaction events, and report the next docketable deadline with surcharge dates. Trigger when the user asks whether maintenance fees are due or paid, when the next fee deadline is, whether a US patent is still in force fee-wise, or for a fee-status sweep over a portfolio. Dates and status only — never fee amounts.
-- **recipe-office-action-response** — Prosecution recipe for the office action analysis of one EP or US application — find the action type and posture, read the newest examiner action, list each objection with its legal basis, interpret the disputed claim terms, read each cited document at the passages the examiner relied on, run the novelty and inventive-step tests, and write an analysis with response options and deadlines for the attorney, with each statement about a cited document tied to its source passage. Trigger when the user asks to analyse or respond to an office action, an EPO communication, search opinion or search report, or a USPTO rejection, or when a routine instruction names an application and a new office action event.
-- **recipe-patent-landscape** — Patent-landscape analysis for a technology area — scoped dual-database search, key-player identification, full-corpus filing analytics, and CPC-versus-year white-space detection. Trigger when the user asks to map a technology space, identify who patents in an area, or report filing trends and white space.
-- **recipe-patent-to-report** — Formatted single-patent dossier — pull bibliography, abstract, claims, description, family, legal status, prosecution timeline, figures, and related art into one structured Markdown report. Trigger when the user asks for a complete profile, dossier, or report on a specific patent.
-- **recipe-prior-art-search** — Comprehensive prior-art / novelty search before filing or on a published patent — per-element synonym rows, dual EPO/USPTO patent search with a classification-only track and a citation track, an NPL sweep (OpenAlex first), a recall check against the Examiner Baseline, and X/Y/A tagging of the closest hits. Trigger when the user asks to find prior art for an invention, run a novelty search, or check what already exists before filing.
+- **persona-ip-analyst** — Act as an IP analyst for technology-landscape mapping, portfolio assessment, white-space identification and filing-trend analysis. Use it when the user asks for an IP analyst's view, a landscape map, an assessment of a competitor's portfolio, or patent filing trends.
+- **persona-patent-attorney** — Act as a patent attorney for prior-art search, claim-scope analysis and freedom-to-operate clearance. Use it when the user asks for a patent attorney's view, a review of prior art, an analysis of claim scope, or FTO clearance for a product.
+- **persona-researcher** — Act as a researcher who explores academic literature and patents side by side to show what is published and what is protected. Use it when the user asks for a researcher's view, a survey of a technology across papers and patents, or the gaps between academic work and filed patents.
+- **persona-startup-founder** — Act as an adviser to a startup founder for novelty checks, freedom-to-operate scans and the monitoring of competitor patents. Use it when the user asks to check a startup's patent position, whether an idea is already patented, or which competitor patents matter before building.
+- **recipe-academic-literature-review** — Compare published research with filed patents for a technology: a literature search in Semantic Scholar, arXiv and OpenAlex beside a matching patent search, with the result organised around the gap between what is published and what is protected, not as a ranked novelty list. Use it when the user asks for a literature review, a state-of-the-art survey, or a comparison of academic research with patents.
+- **recipe-audit-report** — Produce an auditable record of AI-assisted patent research: a reproducible log of each search and read, the data source of every finding, a check of each patent's status, and an AI-use disclosure for internal or filing-related records. Use it when the user asks for an audit trail of patent research, a disclosure of AI assistance, or a verifiable write-up of the method.
+- **recipe-claim-analysis** — Break a patent's claims into elements, keywords and search queries, with the claims, abstract, bibliography, description and family as context. Use it when the user asks what a patent claims, to break claims into elements, or to interpret claim scope in the light of the specification.
+- **recipe-claim-drafting** — Draft patent claims on the basis of the prior art: find the closest art, study its claim language, break the invention into elements, improve the drafts through claim analysis, and check the formal rules against the MPEP and the EPO Guidelines. Use it when the user asks to draft or improve claims, to write independent and dependent claims, or to test draft claims against known art and formal requirements.
+- **recipe-custom-dashboard** — Turn verified patent data into a self-contained HTML dashboard with charts, where code computes every number and a footer gives the source of each one. With the FlowLeap command-line tool it writes the dashboard file; in the FlowLeap Patent AI app and in chat clients it reports the verified numbers. Use it when the user asks for a dashboard, chart or visual report of patent data, such as a company's portfolio, filing trends across competitors, a technology landscape or white-space map, or citation impact.
+- **recipe-find-better** — Find closer prior art than the examiners cited against a granted patent: read the Examiner Baseline (every document cited across the family, by office), run three logged search tracks (backward citations two levels deep, inventor and author networks, classifications with discriminating terms), and score the examiners' best art and the new art on the same claim elements as 'disclosed n of m'. Use it when the user asks whether earlier or closer prior art exists than the examiners cited, or what the examiners missed on a granted patent. Not for a novelty search before filing (recipe-prior-art-search) or for an invalidity case (recipe-invalidity-analysis).
+- **recipe-freedom-to-operate** — Freedom-to-operate clearance for a product or technology: search queries for each product feature, a search for blocking patents in the EPO and USPTO databases, and checks of legal status, family and all claim elements for each live candidate. Use it when the user asks whether a product or technology can launch without infringing, or asks for an FTO or clearance search.
+- **recipe-infringement-charting** — Build an element-by-element infringement claim chart: check that the patent is in force where it matters, break the asserted claims into elements, extract evidence about the accused product (with OCR of datasheets and manuals), and map each element with literal and doctrine-of-equivalents columns. Use it when the user asks whether a product infringes a patent, wants a claim chart, or needs an element-by-element infringement map.
+- **recipe-invalidity-analysis** — Build an invalidity case against a patent: fix the critical date, build the Fallback Ladder (each dependent claim with the limitation it adds) from the claims, search patent and non-patent prior art for every element and every rung, chart it with X/Y/A tags and Fallback Coverage counts, then write a Round Report and run one search round for each expert answer. Use it when the user asks to invalidate a patent, to find 102/103 or Art. 54/56 prior art against granted claims, or to assess how strong a patent is.
+- **recipe-invention-disclosure** — Turn a conversation with an inventor into a complete invention disclosure form: structured technical capture, a bar-date check, a novelty check across patents and literature, landscape context and a filing recommendation. Use it when the user asks to document an invention, to create an invention disclosure, or to run a novelty check before filing.
+- **recipe-maintenance-fees** — Check the maintenance-fee status and deadlines of US patents: the 3.5, 7.5 and 11.5-year windows from the grant date, the fees actually paid according to the USPTO transaction events, and the next deadline with its surcharge dates. Use it when the user asks whether maintenance fees are due or paid, when the next fee is due, whether a US patent is still in force for fees, or for a fee check across a portfolio. Dates and status only, never fee amounts.
+- **recipe-office-action-response** — Analyse the office action of one EP or US application: find the action type and posture, read the newest examiner action, list each objection with its legal basis, interpret the disputed claim terms, read each cited document at the passages the examiner relied on, run the novelty and inventive-step tests, and write an analysis with response options and deadlines for the attorney, with each statement about a cited document tied to its source passage. Use it when the user asks to analyse or respond to an office action, an EPO communication, search opinion or search report, or a USPTO rejection, or when a routine names an application and a new office-action event.
+- **recipe-patent-landscape** — Map the patents of a technology area: a scoped search in the EPO and USPTO databases, the key players, filing analytics over the full corpus, and white space found by CPC class against year. Use it when the user asks to map a technology area, to find who patents in it, or to report filing trends and white space.
+- **recipe-patent-to-report** — Write a complete report on one patent: bibliography, abstract, claims, description, family, legal status, prosecution timeline, figures and related art in one structured Markdown dossier. Use it when the user asks for a full profile, dossier or report on a specific patent.
+- **recipe-prior-art-search** — Search for prior art before filing or against a published patent: synonym rows for each element, patent searches in the EPO and USPTO databases with a classification-only track and a citation track, a literature search (OpenAlex first), a recall check against the Examiner Baseline, and X/Y/A tags on the closest hits. Use it when the user asks to find prior art for an invention, to run a novelty search, or to check what already exists before filing.

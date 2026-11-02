@@ -1,6 +1,6 @@
 ---
 name: flowleap-patstat
-description: Portfolio Analytics AND guarded SQL over the PATSTAT snapshot — structured-criteria aggregates by applicant/CPC/office/year/family/grant status, priority and continuation chains, decoded legal events, concept-to-CPC text discovery, INPADOC extended-family coverage, every number carrying a Data Edition citation. Trigger when an agent needs a named applicant's filing portfolio, structured-criteria corpus counts, what descended from a filing, which codes a legal concept spells out to at an office, which CPC codes a concept actually uses, where an extended family reaches, any other PATSTAT aggregate, or any number that must carry a PATSTAT edition citation.
+description: "Count and analyse patent filings in the PATSTAT database (a twice-yearly EPO snapshot): an applicant's portfolio, counts by applicant, CPC class, office, year, family or grant status, priority and continuation chains, decoded legal events, the CPC codes that a concept uses, and the reach of an extended family, with the database edition cited on every number. Use it when the task needs a company's filing portfolio, filing statistics, what descended from a filing, or any number that must cite a PATSTAT edition."
 ---
 
 # FlowLeap Patstat (Portfolio Analytics)
@@ -62,7 +62,7 @@ answers `provider_keys_required`. You may offer it to keep work moving, framed
 for what it is: aggregate counts from a twice-yearly snapshot, not documents and
 not current. It never answers "what prior art exists for this claim", and a
 PATSTAT table never closes a missing-key gap in a prior-art, FTO or invalidity
-deliverable. See `flowleap-keys`.
+deliverable. See `flowleap-shared` ("The key gate").
 
 `patstat portfolio` and `graph applicant` draw entity boundaries differently:
 `portfolio` groups by name-prefix aliases, `graph applicant` takes one

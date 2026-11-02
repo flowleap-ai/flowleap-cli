@@ -1,6 +1,6 @@
 ---
 name: recipe-invalidity-analysis
-description: Litigation recipe for building an invalidity case against a target patent — pin the critical date, build the Fallback Ladder (every dependent claim with the limitation it adds) from the claims text, hunt patent and non-patent prior art for every element and every rung, chart it with X/Y/A tags and Fallback Coverage counts, then write a Round Report and run one Search Round per expert answer. Trigger when the user asks to invalidate a patent, find 102/103 or Art. 54/56 prior art against granted claims, or assess how strong a patent really is.
+description: "Build an invalidity case against a patent: fix the critical date, build the Fallback Ladder (each dependent claim with the limitation it adds) from the claims, search patent and non-patent prior art for every element and every rung, chart it with X/Y/A tags and Fallback Coverage counts, then write a Round Report and run one search round for each expert answer. Use it when the user asks to invalidate a patent, to find 102/103 or Art. 54/56 prior art against granted claims, or to assess how strong a patent is."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-ops", "flowleap-citation", "flowleap-academic", "flowleap-npl", "flowleap-legal"]
@@ -50,7 +50,7 @@ flowleap --json academic search "<element keywords>" --to-year <priority-year> -
 
 NPL hits hard here: printed publications are fully usable in IPR, and examiners rarely searched them. Resolve papers already of record before the sweep: run `flowleap --json ops biblio <target-patent> --resolve-npl` (for an EP family, on the A3 search-report publication) or `flowleap --json npl-work "<cited string or DOI>"` for one paper. The sweep then logs them as art of record and aims past them. Only a `matched` record is the cited paper.
 
-Search both offices first. Ask about scope in the Round Report (Step 8), never before the first search. A `provider_keys_required` on either office is a missing patent-data key, not an exhausted search: hunt the live office and the non-patent art in full, record the gated office as an open missing-key gap in the chart, and ask for the free key at the end. See `flowleap-keys`.
+Search both offices first. Ask about scope in the Round Report (Step 8), never before the first search. A `provider_keys_required` on either office is a missing patent-data key, not an exhausted search: hunt the live office and the non-patent art in full, record the gated office as an open missing-key gap in the chart, and ask for the free key at the end. See `flowleap-shared` ("The key gate").
 
 Log every query with its count, empty results too. The round log of Step 7 is built from this log.
 

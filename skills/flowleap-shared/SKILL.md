@@ -1,6 +1,6 @@
 ---
 name: flowleap-shared
-description: Shared reference for every FlowLeap skill — authentication (OAuth device flow, fl_pat_ personal API tokens), credential storage, config precedence, global flags, and output formats. Trigger when a FlowLeap skill runs in a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, when a FlowLeap command needs credentials set up, a global flag explained, config file locations, or output-format guidance; for the overall command map start from the `flowleap` skill.
+description: "Common rules for every FlowLeap skill: the tool to call for each method in the FlowLeap Patent AI app and in chat clients, what to do when a patent office needs a data key, which offices each text tool covers, and, for the FlowLeap command-line tool, sign-in, settings and output formats. Use it when another FlowLeap skill refers to it, when a patent office answers that its data key is missing, or when the office coverage of a text tool matters."
 user-invocable: false
 ---
 
@@ -19,9 +19,9 @@ names for the command.
 `auth`, `doctor`, `setup`, `init`, `keys`, `config`, `skills`, `upgrade`,
 `api`, `health`, and `mcp` have no tool in either host. Global flags
 (`--json`, `--dry-run`, `--output`) do not apply: a tool call always returns
-the JSON envelope. **Never ask for a key value in the chat.** The key-gate
-doctrine in `flowleap-keys` (a gated office is a user-action stop) applies in
-both hosts; only where the user adds a key differs.
+the JSON envelope. **Never ask for a key value in the chat.** "The key gate"
+below (a gated office is a user-action stop) applies in both hosts; only where
+the user adds a key differs.
 
 ### Chat clients with the FlowLeap connector
 
@@ -90,6 +90,77 @@ firm administrator or the desktop user sets up outside the chat.
 
 The one-call verbs (`summary`, `compare`, `timeline`, `figures`,
 `convert-number`) map the same way; their table is in the `flowleap` skill.
+
+## The key gate
+
+**A key gate is a USER-ACTION STOP, never an exhausted route.** A gate means
+that office needs a key only the user can obtain — it is not a transient error,
+not a zero-result, and not a route you have exhausted. So for the gated office:
+
+- **Never substitute web-scraped data for it** — not for searches, and not for
+  single-document reads. "Give me the claims of EP…" with no EPO OPS key is
+  declined *for that office* with the key named as the one-step fix; it is never
+  quietly served from Google Patents, Espacenet, freepatentsonline, or a web
+  search instead. Only the user adding the key opens that office.
+- **The keys are FREE** from each office (EPO OPS and USPTO ODP both issue them
+  at no cost, browser signup). Never frame the ask as a paywall, an upsell, or a
+  FlowLeap limitation.
+- **A gate is READ, never INFERRED.** An office is gated only when a call you
+  actually made returned an explicit gate: with the CLI or in a chat client, one
+  of the gate **codes** in `flowleap-keys` ("Which codes mean gated"); in the
+  FlowLeap Patent AI app, a tool answer that says the office's key is not
+  configured. Never conclude a gate from an empty result set, a truncated or
+  partial payload, a 5xx, a timeout, from an error message that happens to name
+  a credential, or from `keys list` showing nothing. Anything short of an
+  explicit gate is an ordinary dead or empty route, and normal
+  persistence and fallbacks apply to it in full — reformulate, try the alternate
+  office or route, then the usual web fallback where a web tool exists.
+- The forbid rule covers **only** an office gated on a missing patent-data key.
+  Offices with no backend route at all (CN/JP/KR) and routes that are genuinely
+  dead or empty *with a working key* keep their existing fallbacks unchanged.
+
+**Never ask for the key value in the chat.** A key typed into a chat reaches
+the transcript and every log that keeps it. Tell the human where the key is
+added instead: with the CLI and in a chat client, see `flowleap-keys`; in the
+FlowLeap Patent AI app, see "The FlowLeap Patent AI app" above.
+
+**Proceed, then ask.** When one provider is live and the other is gated:
+
+1. Complete the LIVE office fully — every search, read, and analysis the task
+   asks of it. A missing key for one office is not a reason to do less work in
+   the other.
+2. Deliver those results as the normal deliverable.
+3. Name the gap explicitly as a **missing-key gap**, never as a data or coverage
+   finding: "EP coverage is missing because your EPO OPS key is not set" — not
+   "no EP results were found", not "EP coverage is limited", not silence.
+4. Ask for the missing key once, at the END of the turn, after the results.
+5. **Never silently narrow scope.** A prior-art, novelty, patentability,
+   freedom-to-operate, invalidity, or landscape task keeps the scope the work
+   requires; the unsearched office is stated as an open gap in the deliverable,
+   so no one mistakes a configuration detail for a clearance result.
+
+**Keyless pivot — offer it as DIFFERENT data, never as a substitute.** These
+need no patent-data key and stay live while an office is gated; label each for
+what it actually is:
+
+- PATSTAT (`flowleap-patstat`, `flowleap-patstat-graph`; in the app only with
+  FlowLeap Data) — aggregates from a twice-yearly SNAPSHOT, not documents and
+  not current. It does not answer "what prior art exists for this claim".
+- Patent LAW (MPEP, EPC, guidelines) comes from the office's own page, read
+  with your web tool (`flowleap-legal`; the app has no web tool), not from a
+  FlowLeap key. It gives the legal standard, never what has been published or
+  filed.
+- `flowleap-academic` / `flowleap-npl` — scholarly LITERATURE. Papers are prior
+  art in their own right, but they are a different corpus from patents.
+
+Say plainly that this is different data, not a stand-in for the gated office's
+live search.
+
+**Resume — merge, do not restart.** When the user says they added the missing
+key, re-run ONLY the previously gated office and merge its results into the
+deliverable you already produced. Do not redo the live office's work. With the
+CLI, a new key reaches the next command; on the desktop app, a key saved in
+Settings reaches the next tool call. Neither needs a new session.
 
 ## Authentication
 
@@ -166,7 +237,7 @@ web-scraped patent data for the gated office — searches and single-document
 reads alike. The keys are free from each office. Read the gate, never infer it:
 only the explicit gate codes mean gated, so an empty result, a truncated
 payload, or a 5xx stays an ordinary dead route with the normal fallbacks. Full
-doctrine (proceed-then-ask, keyless pivot, resume): `flowleap-keys`.
+doctrine (proceed-then-ask, keyless pivot, resume): "The key gate" above.
 
 | Exit code | Meaning |
 |-----------|---------|

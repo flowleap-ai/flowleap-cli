@@ -1,6 +1,6 @@
 ---
 name: recipe-claim-analysis
-description: Decompose a patent's claims into elements, keywords, and search queries with full supporting context — claims text, abstract, bibliography, description, and family. Trigger when the user asks to analyze what a patent claims, break claims into elements, or interpret claim scope against its specification.
+description: "Break a patent's claims into elements, keywords and search queries, with the claims, abstract, bibliography, description and family as context. Use it when the user asks what a patent claims, to break claims into elements, or to interpret claim scope in the light of the specification."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-ops"]

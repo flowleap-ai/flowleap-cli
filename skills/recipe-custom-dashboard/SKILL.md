@@ -1,6 +1,6 @@
 ---
 name: recipe-custom-dashboard
-description: Presentation-craft recipe for turning verified FlowLeap patent data into a disposable, self-contained HTML dashboard — the agent writes one small zero-dependency Node program per question that fetches through the CLI, computes every number in code, and emits an offline single-file dashboard with inline SVG charts and a full provenance footer. Trigger when the user asks to make, build, generate, or visualize a dashboard, chart, or visual report of patent data — a company's portfolio, filing trends across competitors, a technology landscape / white-space map, or citation impact.
+description: "Turn verified patent data into a self-contained HTML dashboard with charts, where code computes every number and a footer gives the source of each one. With the FlowLeap command-line tool it writes the dashboard file; in the FlowLeap Patent AI app and in chat clients it reports the verified numbers. Use it when the user asks for a dashboard, chart or visual report of patent data, such as a company's portfolio, filing trends across competitors, a technology landscape or white-space map, or citation impact."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patstat", "flowleap-citation"]

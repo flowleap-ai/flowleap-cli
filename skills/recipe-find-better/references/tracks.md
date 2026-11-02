@@ -153,4 +153,4 @@ flowleap --json ops description <candidate>
 
 A `provider_keys_required` answer is a missing patent-data key for that
 office. Finish the live office, log the gated office as an open missing-key
-gap, and ask for the key at the end (`flowleap-keys`).
+gap, and ask for the key at the end (`flowleap-shared` ("The key gate")).

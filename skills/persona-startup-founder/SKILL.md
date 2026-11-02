@@ -1,6 +1,6 @@
 ---
 name: persona-startup-founder
-description: Startup-founder persona for the FlowLeap CLI — novelty sanity checks, freedom-to-operate scans, and competitor-patent monitoring. Trigger when the user asks the agent to validate a startup's IP position, check whether an idea is already patented, or scope competitor patents before building.
+description: "Act as an adviser to a startup founder for novelty checks, freedom-to-operate scans and the monitoring of competitor patents. Use it when the user asks to check a startup's patent position, whether an idea is already patented, or which competitor patents matter before building."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-uspto", "flowleap-ops"]

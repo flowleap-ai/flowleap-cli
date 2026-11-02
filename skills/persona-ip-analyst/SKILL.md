@@ -1,6 +1,6 @@
 ---
 name: persona-ip-analyst
-description: IP-analyst persona for the FlowLeap CLI — technology-landscape mapping, portfolio assessment, white-space identification, and filing-trend analytics. Trigger when the user asks the agent to act as an IP analyst, map a landscape, assess a competitor portfolio, or report patent filing trends.
+description: "Act as an IP analyst for technology-landscape mapping, portfolio assessment, white-space identification and filing-trend analysis. Use it when the user asks for an IP analyst's view, a landscape map, an assessment of a competitor's portfolio, or patent filing trends."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-ops", "flowleap-academic"]

@@ -1,6 +1,6 @@
 ---
 name: recipe-patent-landscape
-description: Patent-landscape analysis for a technology area — scoped dual-database search, key-player identification, full-corpus filing analytics, and CPC-versus-year white-space detection. Trigger when the user asks to map a technology space, identify who patents in an area, or report filing trends and white space.
+description: "Map the patents of a technology area: a scoped search in the EPO and USPTO databases, the key players, filing analytics over the full corpus, and white space found by CPC class against year. Use it when the user asks to map a technology area, to find who patents in it, or to report filing trends and white space."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-uspto", "flowleap-ops", "recipe-custom-dashboard"]
@@ -49,7 +49,7 @@ map the live office in full, label the landscape as covering that office only
 because of a missing key — never as the shape of the field — and ask for the
 free key at the end. `flowleap patstat` aggregates stay available keyless, but
 they are twice-yearly snapshot counts, not a substitute for live search. See
-`flowleap-keys`.
+`flowleap-shared` ("The key gate").
 
 Done when both databases have returned their result sets, or the gated office is
 named as an open missing-key gap.

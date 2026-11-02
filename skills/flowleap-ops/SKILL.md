@@ -1,6 +1,6 @@
 ---
 name: flowleap-ops
-description: Direct EPO Open Patent Services access through the FlowLeap backend — CQL search, EP Register search by representative or opponent, plus per-document bibliography, family, legal status and abstract worldwide, and claims and description for EP and WO (US claims from BigQuery, English only). Trigger when an agent needs authoritative EPO document data for a known publication number, claims or description text for EP, WO or US, family members, legal-status events, a raw OPS CQL search, or how many EP filings a professional representative handles. For query-building or ranked discovery use flowleap-patent; use OPS for authoritative per-document data.
+description: "Read authoritative EPO data for a known publication: bibliography, family members, legal status and abstract for documents worldwide, claims and description for EP and WO, and US claims in English, plus EPO search in CQL and EP Register search by representative or opponent. Use it when the task needs the record of a specific patent, its claims or description, its family or legal events, or how many EP cases a representative handles. To build a search query and rank results use flowleap-patent."
 ---
 
 # FlowLeap OPS
@@ -19,7 +19,7 @@ the free key as the fix; never serve the claims, description, or bibliography
 from Google Patents, Espacenet, or a web search instead. Only those explicit
 codes mean gated, and only the code — never the message wording — decides: an
 empty payload, a truncated response, or a 5xx is an ordinary dead route with the
-usual fallbacks. See `flowleap-keys`.
+usual fallbacks. See `flowleap-shared` ("The key gate").
 
 ## Commands
 

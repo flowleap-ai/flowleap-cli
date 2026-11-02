@@ -1,6 +1,6 @@
 ---
 name: flowleap-academic
-description: Search academic literature (Semantic Scholar + arXiv) through the FlowLeap backend with per-source and publication-year filters. Trigger when an agent needs scholarly papers as prior art or technical background — topic searches, restricting to arXiv or Semantic Scholar, or bounding results by publication year. For OpenAlex-backed NPL search see flowleap-npl.
+description: "Search scholarly papers in Semantic Scholar and arXiv, with source and publication-year filters, as prior art or technical background. Use it when the task needs academic papers on a topic, only arXiv or only Semantic Scholar results, or papers from a given period. For the first literature pass (OpenAlex) use flowleap-npl."
 ---
 
 # FlowLeap Academic
@@ -18,7 +18,7 @@ flowleap academic search <query> [flags]
 Runs the `search_academic` tool on the Tools facade. Returns academic papers
 with title, authors, year, and source. No patent-data key is needed, so this
 corpus stays live while EPO or USPTO is key-gated — offer it as *different*
-data (literature, not patents), never as a substitute (see `flowleap-keys`).
+data (literature, not patents), never as a substitute (see `flowleap-shared` ("The key gate")).
 
 ## Flags
 

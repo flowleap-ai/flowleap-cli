@@ -1,6 +1,6 @@
 ---
 name: persona-researcher
-description: Researcher persona for the FlowLeap CLI — parallel academic-literature and patent exploration to map what is published versus what is protected. Trigger when the user asks the agent to act as a researcher, survey a technology across papers and patents, or find gaps between academic work and filed IP.
+description: "Act as a researcher who explores academic literature and patents side by side to show what is published and what is protected. Use it when the user asks for a researcher's view, a survey of a technology across papers and patents, or the gaps between academic work and filed patents."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-uspto", "flowleap-ops", "flowleap-academic", "flowleap-npl"]

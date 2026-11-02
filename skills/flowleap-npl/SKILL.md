@@ -1,6 +1,6 @@
 ---
 name: flowleap-npl
-description: Search non-patent literature (scholarly works via OpenAlex) with year, open-access and publication-type filters, and resolve a cited paper (DOI, OpenAlex id or an office's citation string) to its record. Trigger when an agent needs journal articles, conference papers, theses, standards or preprints as prior art or scientific background, or needs to identify a paper an examiner cited — the first NPL source; flowleap-academic (Semantic Scholar/arXiv) is the second pass.
+description: "Search non-patent literature (journal articles, conference papers, theses, standards and preprints in OpenAlex) with year, open-access and publication-type filters, and identify a paper that an examiner cited from its DOI or citation string. Use it when the task needs scientific literature as prior art or background, or the record of a cited paper. It is the first literature source; flowleap-academic (Semantic Scholar, arXiv) is the second pass."
 ---
 
 # FlowLeap NPL Search (OpenAlex)
@@ -64,4 +64,4 @@ Tools-facade equivalent: `get_npl_work` (`reference=`), and
 No patent-data key is needed, so this corpus stays live while EPO or USPTO is
 key-gated. Papers are prior art in their own right, but they are a different
 corpus from patents — offer them as *different* data, never as a substitute for
-a gated office's search (see `flowleap-keys`).
+a gated office's search (see `flowleap-shared` ("The key gate")).

@@ -1,6 +1,6 @@
 ---
 name: flowleap-patent
-description: Search EPO patents with CQL you write yourself — field reference, the discriminating-term rule, and the mandatory count probe. Trigger when an agent needs European or worldwide patent search results, needs to turn an invention description into a CQL query, or wants to tune a query for recall versus precision. For US-specific ODP searches see flowleap-uspto.
+description: "Search European and worldwide patents in the EPO database with a CQL query built from the invention: the field reference, the discriminating-term rule, and a count check before each full search. Use it when the task needs patent search results for an invention or a technology, an invention description turned into a search query, or a query tuned for recall or precision. For US searches use flowleap-uspto."
 ---
 
 # FlowLeap Patent
@@ -14,7 +14,7 @@ EP/WO search runs on the user's own EPO patent-data key. A
 exhausted route**: do not fall back to web-scraped patent data, deliver whatever
 the live office (US via `flowleap uspto search`) returns in full, name the gap as
 a missing-key gap, and ask for the free key at the end of the turn. A zero-result
-search is not a gate — reformulate and persist as normal. See `flowleap-keys`.
+search is not a gate — reformulate and persist as normal. See `flowleap-shared` ("The key gate").
 
 ## Search Patents
 

@@ -579,8 +579,8 @@ mod skill_validation_tests {
                 description.len()
             );
             assert!(
-                description.contains("Trigger when"),
-                "{name}: description lacks a \"Trigger when\" routing clause: {description}"
+                description.contains("Use it when"),
+                "{name}: description lacks a \"Use it when\" routing clause: {description}"
             );
         }
     }

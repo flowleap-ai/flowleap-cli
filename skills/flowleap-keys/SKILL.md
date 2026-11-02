@@ -1,6 +1,6 @@
 ---
 name: flowleap-keys
-description: Manage BYOK patent-data keys (EPO OPS consumer key/secret, USPTO ODP API key) for the FlowLeap CLI — check status, validate live, hand off to a human for the interactive setup wizard, and apply the key-gate doctrine (a gated office is a user-action stop, never an exhausted route). Trigger when a FlowLeap command fails with provider_keys_required or provider_keys_invalid, when patent data calls error about EPO/USPTO credentials, or when the user asks to configure provider keys.
+description: "Set up and check the patent-office data keys (EPO OPS key and secret, USPTO ODP key) of the FlowLeap command-line tool: key status, live validation, the gate codes, and the hand-over to the human for the setup wizard. Use it when a FlowLeap command fails with provider_keys_required or provider_keys_invalid, or when the user asks to configure patent-office keys for the command-line tool."
 user-invocable: false
 ---
 
@@ -84,7 +84,7 @@ envelope, with its own `code` (`provider_keys_required`,
 Either layer is a valid match; both are codes.
 
 **The budget gate is the soft one.** `trial_budget_exhausted` follows the same
-doctrine below (never substitute scraped data, keys are free, ask the user),
+doctrine in `flowleap-shared` (never substitute scraped data, keys are free, ask the user),
 with one extra exit: the hint carries `resetsAt`, so with the user's blessing an
 agent may also pause the gated office until then instead of requiring keys now.
 A success envelope may warn first: a `trial_data_budget_low` entry in
@@ -99,29 +99,9 @@ a gate whose message changes tomorrow is still a gate. Read `error.code` (or
 
 ## The key-gate doctrine
 
-**A key gate is a USER-ACTION STOP, never an exhausted route.** A gate means
-that office needs a key only the user can obtain — it is not a transient error,
-not a zero-result, and not a route you have exhausted. So for the gated office:
-
-- **Never substitute web-scraped data for it** — not for searches, and not for
-  single-document reads. "Give me the claims of EP…" with no EPO OPS key is
-  declined *for that office* with the key named as the one-step fix; it is never
-  quietly served from Google Patents, Espacenet, freepatentsonline, or a web
-  search instead. Only the user adding the key opens that office.
-- **The keys are FREE** from each office (EPO OPS and USPTO ODP both issue them
-  at no cost, browser signup). Never frame the ask as a paywall, an upsell, or a
-  FlowLeap limitation.
-- **A gate is READ, never INFERRED.** An office is gated only when a command you
-  actually ran returned an explicit gate **code** (the exact set is in
-  "Which codes mean gated" below). Never conclude a gate from an empty result
-  set, a truncated or partial payload, a 5xx, a timeout, from an error message
-  that happens to name a credential, or from `keys list` showing nothing.
-  Anything short of those codes is an ordinary dead or empty route, and normal
-  persistence and fallbacks apply to it in full — reformulate, try the alternate
-  office or route, then the usual web fallback.
-- The forbid rule covers **only** an office gated on a missing patent-data key.
-  Offices with no backend route at all (CN/JP/KR) and routes that are genuinely
-  dead or empty *with a working key* keep their existing fallbacks unchanged.
+The doctrine for a gated office (a user-action stop, never an exhausted route;
+proceed, then ask; the keyless pivot; resume) is in `flowleap-shared`, section
+"The key gate". It applies to every gate code below.
 
 **Where the human adds the key (CLI and chat client).** The human adds the key on the FlowLeap
 "Patent-data keys" page (https://www.flowleap.co/en/dashboard/keys) or in the
@@ -129,46 +109,6 @@ client's own key setting (`flowleap setup` / `flowleap keys set` for this CLI).
 A stored key from that page is used whenever no forwarded key is present, so
 one visit to the page opens the office on every surface. When the hint carries
 `keysPageUrl` or a `nextStep`, give the human that link.
-
-**Never ask for the key value in the chat.** A key typed into a chat reaches
-the transcript and every log that keeps it. Give the human the page link or
-the local setup command instead; the human types the key there.
-
-**Proceed, then ask.** When one provider is live and the other is gated:
-
-1. Complete the LIVE office fully — every search, read, and analysis the task
-   asks of it. A missing key for one office is not a reason to do less work in
-   the other.
-2. Deliver those results as the normal deliverable.
-3. Name the gap explicitly as a **missing-key gap**, never as a data or coverage
-   finding: "EP coverage is missing because your EPO OPS key is not set" — not
-   "no EP results were found", not "EP coverage is limited", not silence.
-4. Ask for the missing key once, at the END of the turn, after the results.
-5. **Never silently narrow scope.** A prior-art, novelty, patentability,
-   freedom-to-operate, invalidity, or landscape task keeps the scope the work
-   requires; the unsearched office is stated as an open gap in the deliverable,
-   so no one mistakes a configuration detail for a clearance result.
-
-**Keyless pivot — offer it as DIFFERENT data, never as a substitute.** These
-need no patent-data key and stay live while an office is gated; label each for
-what it actually is:
-
-- `flowleap patstat …` (portfolio, guarded SQL, graph) — aggregates from a
-  twice-yearly SNAPSHOT, not documents and not current. It does not answer
-  "what prior art exists for this claim".
-- Patent LAW (MPEP, EPC, guidelines) comes from the office's own page, read
-  with your web tool (`flowleap-legal`), not from a FlowLeap key. It gives the
-  legal standard, never what has been published or filed.
-- `flowleap academic search …` / `flowleap npl …` — scholarly LITERATURE. Papers
-  are prior art in their own right, but they are a different corpus from patents.
-
-Say plainly that this is different data, not a stand-in for the gated office's
-live search.
-
-**Resume — merge, do not restart.** When the user says they added the missing
-key, re-run ONLY the previously gated office and merge its results into the
-deliverable you already produced. Do not redo the live office's work. Keys reach
-the request headers on the next invocation: no restart, no new session.
 
 ## The agent protocol — when keys are missing or rejected
 

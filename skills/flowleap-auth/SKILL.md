@@ -1,6 +1,6 @@
 ---
 name: flowleap-auth
-description: Authenticate the FlowLeap CLI — OAuth 2.0 device flow login (user code + verification URL), long-lived fl_pat_ personal API tokens for headless agents, status checks, and targeted logout. Trigger when a FlowLeap command fails with 401/unauthenticated, when setting up credentials for an agent or CI, or when the user asks to log in to FlowLeap or mint, list, or revoke API tokens.
+description: "Sign in the FlowLeap command-line tool: device-flow login, personal API tokens (fl_pat_) for agents and CI, status checks and logout. Use it when a FlowLeap command fails with 401 or unauthenticated, when an agent or CI needs credentials, or when the user asks to log in to FlowLeap or to create, list or revoke API tokens."
 user-invocable: false
 ---
 

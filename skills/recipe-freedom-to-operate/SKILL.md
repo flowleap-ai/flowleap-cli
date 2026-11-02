@@ -1,6 +1,6 @@
 ---
 name: recipe-freedom-to-operate
-description: Freedom-to-operate clearance for a product or technology — per-feature query generation, dual-database blocking-patent search, and legal-status, family, and all-elements claim checks on every live candidate. Trigger when the user asks whether a product or technology can launch without infringing, or requests an FTO/clearance search.
+description: "Freedom-to-operate clearance for a product or technology: search queries for each product feature, a search for blocking patents in the EPO and USPTO databases, and checks of legal status, family and all claim elements for each live candidate. Use it when the user asks whether a product or technology can launch without infringing, or asks for an FTO or clearance search."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-patent", "flowleap-uspto", "flowleap-ops"]
@@ -45,7 +45,7 @@ answers `provider_keys_required`, search the live office fully and carry the
 gated office into the deliverable as an explicit missing-key gap — an
 unsearched jurisdiction is not a cleared one, and web-scraped patent data is not
 an acceptable substitute for it. Ask for the free key at the end of the turn;
-when the user adds it, re-run only that office and merge. See `flowleap-keys`.
+when the user adds it, re-run only that office and merge. See `flowleap-shared` ("The key gate").
 
 Done when both databases have been searched for every feature, or the gated
 office is recorded as an open missing-key gap.

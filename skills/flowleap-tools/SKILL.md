@@ -1,6 +1,6 @@
 ---
 name: flowleap-tools
-description: Discover and run FlowLeap backend tools through the agent-first /v1/tools facade — one stable contract (search_patents, get_bibliography, get_claims, get_patent_summary, compare_patents, …) instead of provider-specific endpoints. Trigger when an agent needs patent data and wants a uniform tool interface, needs to discover what the backend can do, or wants compound operations like patent summaries, comparisons, or prosecution timelines.
+description: "Discover and run FlowLeap tools from the command line through one tool interface (search_patents, get_bibliography, get_claims, get_patent_summary, compare_patents and more) instead of provider-specific commands. Use it when an agent at a terminal needs a uniform tool interface, wants to list what FlowLeap can do, or wants compound reads such as patent summaries, comparisons or prosecution timelines."
 user-invocable: false
 ---
 

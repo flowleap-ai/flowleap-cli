@@ -1,6 +1,6 @@
 ---
 name: recipe-academic-literature-review
-description: Map the gap between published research and filed patents — a scholarly sweep across Semantic Scholar, arXiv, and OpenAlex aligned against a matching patent search, output centered on the published-versus-protected gap rather than a ranked novelty list. Trigger when the user asks for a literature review, a state-of-the-art survey, or a comparison of academic research against patents.
+description: "Compare published research with filed patents for a technology: a literature search in Semantic Scholar, arXiv and OpenAlex beside a matching patent search, with the result organised around the gap between what is published and what is protected, not as a ranked novelty list. Use it when the user asks for a literature review, a state-of-the-art survey, or a comparison of academic research with patents."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-academic", "flowleap-npl", "flowleap-patent", "recipe-custom-dashboard"]

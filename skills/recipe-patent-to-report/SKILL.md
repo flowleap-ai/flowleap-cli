@@ -1,6 +1,6 @@
 ---
 name: recipe-patent-to-report
-description: Formatted single-patent dossier — pull bibliography, abstract, claims, description, family, legal status, prosecution timeline, figures, and related art into one structured Markdown report. Trigger when the user asks for a complete profile, dossier, or report on a specific patent.
+description: "Write a complete report on one patent: bibliography, abstract, claims, description, family, legal status, prosecution timeline, figures and related art in one structured Markdown dossier. Use it when the user asks for a full profile, dossier or report on a specific patent."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-ops", "flowleap-patent"]

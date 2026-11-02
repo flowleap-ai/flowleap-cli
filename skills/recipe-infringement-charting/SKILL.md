@@ -1,6 +1,6 @@
 ---
 name: recipe-infringement-charting
-description: Litigation recipe for an element-by-element infringement claim chart — verify the patent is in force where it matters, decompose the asserted claims, extract accused-product evidence (OCR datasheets and manuals), and map every element with literal and doctrine-of-equivalents columns. Trigger when the user asks whether a product infringes a patent, wants a claim chart, or needs element-by-element infringement mapping.
+description: "Build an element-by-element infringement claim chart: check that the patent is in force where it matters, break the asserted claims into elements, extract evidence about the accused product (with OCR of datasheets and manuals), and map each element with literal and doctrine-of-equivalents columns. Use it when the user asks whether a product infringes a patent, wants a claim chart, or needs an element-by-element infringement map."
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-ops", "flowleap-legal", "flowleap-tools"]
