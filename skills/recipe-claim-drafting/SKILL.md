@@ -10,7 +10,7 @@ metadata:
 
 Draft claims that are novel over the closest art and formally sound.
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. The steps stay the same.
 
 ## Step 1: Find the Closest Art First
 

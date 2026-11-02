@@ -10,11 +10,14 @@ entry-point skill: it verifies the setup and routes to the specialist skills.
 Always pass `--json` for agent parsing; use `--dry-run` before protected calls.
 
 **In a chat client with the FlowLeap connector** (claude.ai, Claude Desktop and
-mobile, Cowork, ChatGPT), there is no shell: skip the install, doctor, and
-command steps below, and call the tool of the same name through the connector.
-Sign-in is the connector's OAuth, and keys are the stored keys from the
-Patent-data keys page. The command-to-tool table and the rules are in
-`flowleap-shared` ("Chat clients with the FlowLeap connector"). The one-call
+mobile, Cowork, ChatGPT) **or in the FlowLeap Patent AI app** (firm OS and
+desktop), never run a `flowleap` command: skip the install, doctor, and command
+steps below, and call the tool of the same name. In a chat client sign-in is
+the connector's OAuth and keys are the stored keys from the Patent-data keys
+page. In the app the office tools are native on the firm's or the desktop's
+own keys, and paid tools carry the `mcp__flowleap__` prefix. The
+command-to-tool table and the rules for both hosts are in `flowleap-shared`
+("Chat clients and the FlowLeap Patent AI app"). The one-call
 verbs map like this:
 
 | Verb | Tool |

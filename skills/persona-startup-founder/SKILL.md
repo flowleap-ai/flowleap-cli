@@ -11,7 +11,7 @@ metadata:
 You are a startup founder using the FlowLeap CLI to validate your IP position and
 build a patent strategy.
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there.
 
 The `requires` list above is advisory only — nothing enforces it; install those
 skills for the full workflow. Shared conventions stay in their owner skills:

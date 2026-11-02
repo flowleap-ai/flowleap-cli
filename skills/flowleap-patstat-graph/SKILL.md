@@ -7,7 +7,7 @@ description: Graph Analytics over the PATSTAT snapshot — a named node and the 
 
 Auth and global flags: see `flowleap-shared`.
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there.
 
 Eight native commands under `flowleap patstat graph`. Each one runs one
 **PATSTAT tool** on the Tools facade, the same tool `flowleap mcp` serves under

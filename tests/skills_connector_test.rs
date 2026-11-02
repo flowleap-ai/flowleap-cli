@@ -1,8 +1,9 @@
-//! Connector-first guidance in the skills (#122). In a chat client with the
-//! FlowLeap connector there is no shell, so the skills route the agent to
-//! the tool of the same name. These tests keep that routing true:
+//! Tool-first guidance in the skills (#122). A chat client with the FlowLeap
+//! connector has no shell, and the FlowLeap Patent AI app has no `flowleap`
+//! command to run, so the skills route the agent to the tool of the same
+//! name. These tests keep that routing true:
 //!
-//! - every tool name in the `flowleap-shared` connector table and in the
+//! - every tool name in the `flowleap-shared` tool table and in the
 //!   umbrella skill's one-call verb table exists in the registry, read from
 //!   the vendored list in `tests/support/registry-tools.txt` (refresh it with
 //!   the command in its header when the registry changes);
@@ -15,7 +16,7 @@ use std::collections::BTreeSet;
 
 use support::skills::{read, root, skill, skills};
 
-const ROUTING_SENTENCE: &str = "In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.";
+const ROUTING_SENTENCE: &str = "In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there.";
 
 fn registry_tools() -> BTreeSet<String> {
     read(&root().join("tests/support/registry-tools.txt"))
@@ -95,7 +96,7 @@ fn invokes_flowleap_matches_command_lines_only() {
 fn shared_connector_table_names_only_registry_tools() {
     let names = table_tool_names(
         "flowleap-shared",
-        "## Chat clients with the FlowLeap connector",
+        "## Chat clients and the FlowLeap Patent AI app",
         1,
     );
     // The ticket's mapping lists 38 distinct tools; guard against a parser
@@ -175,4 +176,40 @@ fn no_skill_names_the_retired_legal_search() {
         hits.is_empty(),
         "skills still name the retired legal search: {hits:#?}"
     );
+}
+
+/// The frontmatter block of `text`: the lines between the opening `---` and
+/// the next `---`.
+fn frontmatter(text: &str) -> Vec<&str> {
+    text.lines()
+        .skip(1)
+        .take_while(|line| *line != "---")
+        .collect()
+}
+
+#[test]
+fn reference_and_cli_only_skills_stay_out_of_slash_menus() {
+    // Their steps have no tool in a chat client or the FlowLeap Patent AI
+    // app, so a human picks none of them from a `/` menu; the model still
+    // loads them when a CLI error or another skill names them.
+    let hidden = [
+        "flowleap-auth",
+        "flowleap-keys",
+        "flowleap-shared",
+        "flowleap-tools",
+    ];
+    for (name, text) in skills() {
+        let marked = frontmatter(&text).contains(&"user-invocable: false");
+        assert_eq!(
+            marked,
+            hidden.contains(&name.as_str()),
+            "{name}: `user-invocable: false` must be set exactly on {hidden:?}"
+        );
+        assert!(
+            !frontmatter(&text)
+                .iter()
+                .any(|line| line.starts_with("disable-model-invocation")),
+            "{name}: the model must be able to load every skill"
+        );
+    }
 }

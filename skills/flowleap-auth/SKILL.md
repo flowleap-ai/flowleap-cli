@@ -1,13 +1,14 @@
 ---
 name: flowleap-auth
 description: Authenticate the FlowLeap CLI — OAuth 2.0 device flow login (user code + verification URL), long-lived fl_pat_ personal API tokens for headless agents, status checks, and targeted logout. Trigger when a FlowLeap command fails with 401/unauthenticated, when setting up credentials for an agent or CI, or when the user asks to log in to FlowLeap or mint, list, or revoke API tokens.
+user-invocable: false
 ---
 
 # FlowLeap Auth
 
 Global flags and configuration: see `flowleap-shared`.
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. No tool replaces the auth commands: sign-in is the connector's OAuth.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. No tool replaces the auth commands: in a chat client sign-in is the connector's OAuth, and the app needs no FlowLeap sign-in.
 
 ## Commands
 

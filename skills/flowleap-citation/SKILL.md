@@ -7,7 +7,7 @@ description: USPTO enriched citation data from office actions — citations by a
 
 Auth and global flags: see `flowleap-shared`.
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there.
 
 ## Which citation universe?
 

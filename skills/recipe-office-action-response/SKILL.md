@@ -10,7 +10,7 @@ metadata:
 
 Turn the newest office action (OA) of one application into an analysis and a response plan. The attorney decides. You read, compare and propose.
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. The steps stay the same.
 
 Read the two references before Step 1: [action types and deadlines](references/action-types-and-deadlines.md) and [legal tests](references/legal-tests.md). Write the report in the [analysis layout](references/analysis-layout.md).
 

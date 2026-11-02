@@ -1,6 +1,7 @@
 ---
 name: flowleap-shared
-description: Shared reference for every FlowLeap skill — authentication (OAuth device flow, fl_pat_ personal API tokens), credential storage, config precedence, global flags, and output formats. Trigger when a FlowLeap command needs credentials set up, a global flag explained, config file locations, or output-format guidance; for the overall command map start from the `flowleap` skill.
+description: Shared reference for every FlowLeap skill — authentication (OAuth device flow, fl_pat_ personal API tokens), credential storage, config precedence, global flags, and output formats. Trigger when a FlowLeap skill runs in a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, when a FlowLeap command needs credentials set up, a global flag explained, config file locations, or output-format guidance; for the overall command map start from the `flowleap` skill.
+user-invocable: false
 ---
 
 # FlowLeap CLI — Shared Reference
@@ -9,31 +10,60 @@ Shared authentication, configuration, and global-flag reference used by every
 other FlowLeap skill. For the overall map of commands, skills, and workflows,
 start from the `flowleap` skill.
 
-## Chat clients with the FlowLeap connector
+## Chat clients and the FlowLeap Patent AI app
+
+Two hosts run these skills without the CLI. In both, never run a `flowleap …`
+command and never tell the user to run one: call the tool that the table below
+names for the command.
+
+`auth`, `doctor`, `setup`, `init`, `keys`, `config`, `skills`, `upgrade`,
+`api`, `health`, and `mcp` have no tool in either host. Global flags
+(`--json`, `--dry-run`, `--output`) do not apply: a tool call always returns
+the JSON envelope. **Never ask for a key value in the chat.** The key-gate
+doctrine in `flowleap-keys` (a gated office is a user-action stop) applies in
+both hosts; only where the user adds a key differs.
+
+### Chat clients with the FlowLeap connector
 
 In claude.ai, Claude Desktop and mobile, Cowork, and ChatGPT, FlowLeap is a
-connector to the **hosted MCP server**, not a CLI. These clients have no shell,
-so no `flowleap …` command can run there.
+connector to the **hosted MCP server**. These clients have no shell.
 
 - **Call the tool of the same name through the connector.** The connector lists
   the same registry as `flowleap tools list`: the same tool names, input schemas
-  (`snake_case` parameters), success envelope, and error codes. The table below
-  gives the tool behind each command family.
+  (`snake_case` parameters), success envelope, and error codes.
 - **Sign-in is the connector's OAuth.** The user connects FlowLeap in the
-  client's connector settings. `auth`, `doctor`, `setup`, `init`, `keys`,
-  `config`, `skills`, `upgrade`, `api`, `health`, and `mcp` have no tool: do
-  not tell the user to run them in a chat client. In place of `health`,
-  call `server_info`: it reports the backend's configured providers and
-  available tools.
+  client's connector settings. In place of `health`, call `server_info`: it
+  reports the backend's configured providers and available tools.
 - **Patent-data keys are stored keys.** The CLI forwards the keys kept on the
   user's machine; a chat client has no keys to forward, so the backend uses the
   stored key the user added on the FlowLeap Patent-data keys page
   (https://www.flowleap.co/en/dashboard/keys). When a tool answers a key gate,
   relay that page (the error's `keysPageUrl` and `nextStep`, when present).
-  **Never ask for a key value in the chat.** The rest of the key doctrine in
-  `flowleap-keys` applies unchanged.
-- **Global flags do not apply.** `--json`, `--dry-run`, and `--output` are CLI
-  flags; a tool call always returns the JSON envelope.
+
+### The FlowLeap Patent AI app (firm OS and desktop)
+
+The app runs the office tools in its own process on the firm's or the user's
+own office keys. It has no FlowLeap sign-in and no `flowleap` command for you
+to run.
+
+- **Office tools are native, under the table names with no prefix**
+  (`search_patents`, `get_bibliography`, `get_us_grant`, `ocr`, …). The app also
+  has `compare_claims` and `read_pdf` (OCR of a workspace file).
+- **Paid tools need FlowLeap Data.** `patent_analytics`, the `patstat_*` tools,
+  `get_fulltext`, and `server_info` exist only as `mcp__flowleap__<name>`, and
+  only when the firm or the user has FlowLeap Data. US claims come from
+  `mcp__flowleap__get_claims`: the native `get_claims` has no US source, and its
+  answer names that tool. When a paid tool is not in your tool list, tell the
+  user that the step needs FlowLeap Data, and continue with the native tools.
+- **Office keys are the firm's or the desktop's.** On the firm OS the
+  administrator sets the office keys (EPO OPS, USPTO ODP, Semantic Scholar,
+  Mistral) for the whole firm; an attorney cannot change them. On the desktop
+  the user adds them in Settings > Patent data connectors. A tool without its
+  key answers with a message that names the connector: relay it. The
+  flowleap.co keys page does not apply in the app.
+- **No network outside the tools.** Shell commands have no network, so use the
+  shell only for local files, such as a skill's `references/`. The firm OS has
+  no web search or web fetch tool.
 
 | Command family | Tool(s) | Notes |
 |---|---|---|
@@ -47,13 +77,13 @@ so no `flowleap …` command can run there.
 | `uspto documents` / `document-text` | `get_application_documents`, `read_application_document` | |
 | `citation search` / `forward` / `stats` | `search_office_action_citations`, `search_enriched_citations`, `get_citation_stats` | `citation novelty` is `search_office_action_citations` with `category: "X"`, `examiner_cited_only: true` |
 | EPO forward citations (no command) | `get_citations` | |
-| `patent examiner-baseline` | `examiner_baseline` | In a chat client call the examiner_baseline tool; it returns the same JSON. |
+| `patent examiner-baseline` | `examiner_baseline` | The tool returns the same JSON. |
 | `academic search`, `npl` | `search_academic`, `search_npl` | |
 | `npl-work` | `get_npl_work` | one cited paper: DOI, OpenAlex id or citation string |
-| `analytics` | `patent_analytics` | |
+| `analytics` | `patent_analytics` | App: `mcp__flowleap__patent_analytics`, FlowLeap Data only |
 | `ocr` | `ocr` | |
-| `patstat portfolio` / `query` / `docs` | `patstat_portfolio`, `patstat_query`, `patstat_docs` | |
-| `patstat graph resolve` / `cpc` / `patent` / `applicant` / `technology` / `neighborhood` / `path` / `explain` | `patstat_resolve`, `patstat_cpc`, `patstat_patent`, `patstat_applicant`, `patstat_technology`, `patstat_neighborhood`, `patstat_path`, `patstat_explain` | |
+| `patstat portfolio` / `query` / `docs` | `patstat_portfolio`, `patstat_query`, `patstat_docs` | App: `mcp__flowleap__` prefix, FlowLeap Data only |
+| `patstat graph resolve` / `cpc` / `patent` / `applicant` / `technology` / `neighborhood` / `path` / `explain` | `patstat_resolve`, `patstat_cpc`, `patstat_patent`, `patstat_applicant`, `patstat_technology`, `patstat_neighborhood`, `patstat_path`, `patstat_explain` | App: `mcp__flowleap__` prefix, FlowLeap Data only |
 | `tools run <name>` | the same names | |
 
 The one-call verbs (`summary`, `compare`, `timeline`, `figures`,

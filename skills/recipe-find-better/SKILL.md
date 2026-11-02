@@ -13,7 +13,7 @@ examining offices cited. Show, per independent claim, the examiner's best art
 beside the best art found, as element counts. "No better art found" with the
 full Examiner Baseline and the full tracks log is a complete result.
 
-In a chat client with the FlowLeap connector, call the tools named in the `flowleap-shared` connector table instead of these commands. The steps stay the same.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. The steps stay the same.
 
 Find Better makes no invalidity statement and gives no model-rated score. The
 only comparison is a count over quoted element rows.
@@ -24,7 +24,7 @@ only comparison is a count over quoted element rows.
 flowleap --json patent examiner-baseline <granted-publication>
 ```
 
-In a chat client call the examiner_baseline tool; it returns the same JSON.
+In a chat client or the FlowLeap Patent AI app, call the `examiner_baseline` tool; it returns the same JSON.
 
 Read `documents[]`, `gaps[]` and `membersWalked[]` (field guide:
 [references/baseline-json.md](references/baseline-json.md)). Record the
