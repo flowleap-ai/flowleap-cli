@@ -52,7 +52,7 @@ Scan the events for these. Match on the description text; the codes are the ones
 
 **Required phrasing:** a window with no payment event is "no payment event
 recorded" — never "unpaid." ODP ingestion lags; a fee paid recently may not
-appear yet. Live records can also lack an earlier payment event while a later window is paid (for example `M2552` and `M2553` with no 4th-year event): report the earlier window as "no payment event recorded; a later window is paid, so the patent is not lapsed now" and add "check: a late payment or a reinstatement of this window (37 CFR 1.378; intervening rights, 35 USC 41(c)(2)); not proof that the fee was paid on time".
+appear yet. Live records can also lack an earlier payment event while a later window is paid (for example `M2552` and `M2553` with no 4th-year event): report the earlier window as "no payment event recorded; a later window is paid, so this window did not cause a lapse" (take the current status from the latest window and the latest `EXP.` or `PMFG` event) and add "check: a late payment or a reinstatement of this window (37 CFR 1.378; intervening rights, 35 USC 41(c)(2)); not proof that the fee was paid on time".
 
 ## Step 3: Compute the windows
 
