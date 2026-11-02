@@ -138,7 +138,7 @@ Read the open points off the report. Keep the ids stable across rounds.
 | `rung-3`, `rung-d1` | a rung partly covered or not covered (`d1` = the first description fallback) |
 | `element-1.2` | the second element of claim 1 is not disclosed in the cited art |
 | `scope-XX0000004A` | a cited document from an office outside the searched scope |
-| `date-XX0000005A` | a cited document published after the critical date, or with no date found (an earlier application can still be novelty art: EPC Art. 54(3), 89, 153(5) for a European application or a Euro-PCT application in the European phase (Rule 165 EPC); 35 USC 102(a)(2), 102(d) for a US patent, published US application or WO designating the US that names another inventor, subject to 102(b)(2), or pre-AIA 35 USC 102(e) for claims with an effective filing date before 2013-03-16; a national earlier right is a check item, EPC Art. 139(2)) |
+| `date-XX0000005A` | a cited document published after the critical date, or with no date found (an earlier application can still be novelty art: EPC Art. 54(3), 89, 153(5) for a European application or a Euro-PCT application in the European phase (Rule 165 EPC); 35 USC 102(a)(2), 102(d) for a US patent, published US application or WO designating the US that names another inventor, subject to 102(b)(2), or pre-AIA 35 USC 102(e) for an application whose claims all have an effective filing date before 2013-03-16 (AIA §3(n)(1)); a national earlier right is a check item, EPC Art. 139(2)) |
 | `search-1` | a search that failed (error, timeout, key gate) and did not run again |
 
 List them in this order: rungs, elements, scope, date, search. Each question
@@ -152,7 +152,7 @@ Report written: <path>. Claim 1: fallbacks 1 of 4 covered; not covered: claims 3
 
 1. [rung-3] No cited document shows a side opening. Recommended: search "side entry" and "lateral insertion" cages in both offices, then cycling NPL.
 2. [rung-4] No cited document shows a retaining tab. Recommended: search "retaining tab" with the side-opening terms.
-3. [date-XX0000006A] XX0000006A was published 2009-07-01, after the critical date. Recommended: drop it unless it is an earlier application with an earlier effective or effectively filed date (check EPC Art. 54(3), 89, 153(5) and Rule 165; 35 USC 102(a)(2), 102(d), 102(b)(2), or pre-AIA 102(e) for claims filed before 2013-03-16), or check whether the priority claim of claim 1 holds.
+3. [date-XX0000006A] XX0000006A was published 2009-07-01, after the critical date. Recommended: drop it unless it is an earlier application with an earlier effective or effectively filed date (check EPC Art. 54(3), 89, 153(5) and Rule 165; 35 USC 102(a)(2), 102(d), 102(b)(2), or pre-AIA 102(e) when all claims have an effective filing date before 2013-03-16), or check whether the priority claim of claim 1 holds.
 4. [search-1] The USPTO search failed with a key gate. Recommended: add the free USPTO ODP key and run it again.
 
 Reply with the ids to run (for example rung-3, element-1.3), 'all', or your own steer.

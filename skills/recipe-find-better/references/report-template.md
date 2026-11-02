@@ -61,13 +61,13 @@ that entered the European phase (Rule 165 EPC), with an earlier effective date
 (EPC Art. 54(3), 89, 153(5)); in the US a US patent, a published US application
 or a WO application designating the US that names another inventor and has an
 earlier effectively filed date (35 USC 102(a)(2), 102(d)), subject to the
-102(b)(2) exceptions; for claims with an effective filing date before
-2013-03-16, pre-AIA 35 USC 102(e) applies instead (a WO application counts only
-if it designates the US and was published in English); a national earlier right
-is a check item (EPC Art. 139(2)). At the EPO such art counts for novelty only;
-in the US it also counts for obviousness. Flag such a document (often category
-E) as "earlier application published after the critical date: check Art. 54(3) /
-102(a)(2)".
+102(b)(2) exceptions; for an application whose claims all have an effective
+filing date before 2013-03-16 (AIA §3(n)(1)), pre-AIA 35 USC 102(e) applies
+instead (a WO application counts only if it designates the US and was published
+in English); a national earlier right is a check item (EPC Art. 139(2)). At the
+EPO such art counts for novelty only; in the US it also counts for obviousness.
+Flag such a document (often category E) as "earlier application published after
+the critical date: check Art. 54(3) / 102(a)(2) or pre-AIA 102(e)".
 
 ## Rules
 
