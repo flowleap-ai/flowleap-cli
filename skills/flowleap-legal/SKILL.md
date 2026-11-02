@@ -8,6 +8,8 @@ description: Read patent law from the office's own page (the MPEP, 35 USC and 37
 Read patent law from the office's own page at the moment of the question, and
 quote the text the page gives. No FlowLeap command and no FlowLeap key is part
 of this method: the page is public, and you fetch it with your own web tool.
+The FlowLeap Patent AI app has no web tool: there, tell the user that this step
+needs the office's page, and quote only text from a file the user supplies.
 
 ## Steps
 

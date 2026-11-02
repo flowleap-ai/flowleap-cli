@@ -24,7 +24,22 @@ The marketplace distribution unit: a plugin in the `flowleap-plugins` monorepo
 containing CLI skills copied byte-for-byte from a pinned flowleap-cli tag
 (`sync.json` ref, drift-checked in CI). The website marketplace renders its
 catalog from Skill Packs at build time. Skill Packs ship CLI skills only —
-app skills never flow through them.
+app skills never flow through them. The **FlowLeap Patent AI app** also runs
+the Skill Pack; the CLI skills route it to its tools.
+
+**FlowLeap Patent AI app**:
+The self-hosted firm OS and the desktop app, built on the agent harness. They
+run the Skill Pack (CLI dialect) with the office tools native under their
+registry names, on the data keys of the firm or of the desktop user; their
+shell has no network, they have no web tool, and no `flowleap` command runs
+there. In a CLI skill, "the app" means this app.
+_Avoid_: "the app" for the VS Code extension of **App skill**.
+
+**FlowLeap Data**:
+The paid FlowLeap backend tools in the **FlowLeap Patent AI app**
+(`patent_analytics`, the PATSTAT tools, `get_fulltext`, `server_info`, US
+claims through `get_claims`), listed there as `mcp__flowleap__<name>` only
+when the firm administrator or the desktop user has set it up.
 
 **MCP server**:
 The `flowleap mcp` stdio bridge the CLI binary embeds: it mirrors the backend

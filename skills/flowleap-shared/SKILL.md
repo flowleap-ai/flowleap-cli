@@ -42,9 +42,10 @@ connector to the **hosted MCP server**. These clients have no shell.
 
 ### The FlowLeap Patent AI app (firm OS and desktop)
 
-The app runs the office tools in its own process on the firm's or the user's
-own office keys. It has no FlowLeap sign-in and no `flowleap` command for you
-to run.
+The app runs the office tools in its own process on the data keys of the firm
+or of the desktop user. It has no `flowleap` command for you to run. The office
+tools need no FlowLeap sign-in; the paid tools need FlowLeap Data, which the
+firm administrator or the desktop user sets up outside the chat.
 
 - **Office tools are native, under the table names with no prefix**
   (`search_patents`, `get_bibliography`, `get_us_grant`, `ocr`, …). The app also
@@ -55,15 +56,17 @@ to run.
   `mcp__flowleap__get_claims`: the native `get_claims` has no US source, and its
   answer names that tool. When a paid tool is not in your tool list, tell the
   user that the step needs FlowLeap Data, and continue with the native tools.
-- **Office keys are the firm's or the desktop's.** On the firm OS the
-  administrator sets the office keys (EPO OPS, USPTO ODP, Semantic Scholar,
-  Mistral) for the whole firm; an attorney cannot change them. On the desktop
-  the user adds them in Settings > Patent data connectors. A tool without its
-  key answers with a message that names the connector: relay it. The
-  flowleap.co keys page does not apply in the app.
+- **Data keys are the firm's or the desktop user's.** The app's data keys are
+  the Patent-Data Keys (EPO OPS, USPTO ODP) and the Semantic Scholar and
+  Mistral OCR keys. On the firm OS the administrator sets them for the whole
+  firm, and an attorney cannot change them: when a tool answers that its key
+  is missing, tell the attorney to ask the firm administrator. On the desktop
+  the user adds them in Settings > Patent data connectors: relay the tool's
+  message, which names the connector. The flowleap.co keys page does not apply
+  in the app.
 - **No network outside the tools.** Shell commands have no network, so use the
-  shell only for local files, such as a skill's `references/`. The firm OS has
-  no web search or web fetch tool.
+  shell only for local files, such as a skill's `references/`. The app has no
+  web search or web fetch tool.
 
 | Command family | Tool(s) | Notes |
 |---|---|---|
@@ -269,8 +272,8 @@ and relay `actor: "human"` steps (title + `url`) to the user; re-run doctor
 until `ready` is true. One exception: run a `store-epo-keys` /
 `store-uspto-key` agent step only with keys the user gave you without being
 asked. Otherwise relay the FlowLeap Patent-data keys page
-(https://www.flowleap.co/en/dashboard/keys) — never ask for the key value in
-the chat (see `flowleap-keys`).
+(https://www.flowleap.co/en/dashboard/keys; CLI and chat client only) — never
+ask for the key value in the chat (see `flowleap-keys`).
 
 ## Updating the CLI
 

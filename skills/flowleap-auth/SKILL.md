@@ -8,7 +8,7 @@ user-invocable: false
 
 Global flags and configuration: see `flowleap-shared`.
 
-In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. No tool replaces the auth commands: in a chat client sign-in is the connector's OAuth, and the app needs no FlowLeap sign-in.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. No tool replaces the auth commands: in a chat client sign-in is the connector's OAuth, and in the FlowLeap Patent AI app the firm administrator or the desktop user sets up the FlowLeap Data sign-in outside the chat.
 
 ## Commands
 

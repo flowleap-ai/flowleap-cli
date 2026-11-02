@@ -6,7 +6,7 @@ user-invocable: false
 
 # FlowLeap Patent-Data Keys (BYOK)
 
-In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. No tool replaces the keys commands. In a chat client the user adds a stored key on the Patent-data keys page; in the app the keys are the firm's or the desktop's own (see `flowleap-shared`). Never ask for the key value in the chat.
+In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there. No tool replaces the keys commands. In a chat client the user adds a stored key on the Patent-data keys page; in the app the firm administrator or the desktop user sets the keys (see `flowleap-shared`). Never ask for the key value in the chat.
 
 Patent data flows through provider APIs that may need the USER's own
 credentials: EPO OPS (consumer key + secret — always a pair) and USPTO ODP
@@ -123,7 +123,7 @@ not a zero-result, and not a route you have exhausted. So for the gated office:
   Offices with no backend route at all (CN/JP/KR) and routes that are genuinely
   dead or empty *with a working key* keep their existing fallbacks unchanged.
 
-**Where the human adds the key.** The human adds the key on the FlowLeap
+**Where the human adds the key (CLI and chat client).** The human adds the key on the FlowLeap
 "Patent-data keys" page (https://www.flowleap.co/en/dashboard/keys) or in the
 client's own key setting (`flowleap setup` / `flowleap keys set` for this CLI).
 A stored key from that page is used whenever no forwarded key is present, so
@@ -197,7 +197,7 @@ them. Relay the step's `title` and `url` to the human:
 ```
 
 **Getting keys requires a browser signup — an agent cannot complete this
-alone. Do not retry, do not invent keys.** Tell the user:
+alone. Do not retry, do not invent keys.** With the CLI, tell the user:
 
 > This command needs EPO OPS credentials (free from https://developers.epo.org).
 > Please add them on the FlowLeap Patent-data keys page

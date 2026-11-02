@@ -189,9 +189,11 @@ fn frontmatter(text: &str) -> Vec<&str> {
 
 #[test]
 fn reference_and_cli_only_skills_stay_out_of_slash_menus() {
-    // Their steps have no tool in a chat client or the FlowLeap Patent AI
-    // app, so a human picks none of them from a `/` menu; the model still
-    // loads them when a CLI error or another skill names them.
+    // One frontmatter serves every host. flowleap-shared and flowleap-tools
+    // are references; flowleap-auth and flowleap-keys have no tool in a chat
+    // client or the FlowLeap Patent AI app. Hiding them from `/` menus costs
+    // the CLI user a visible entry, but the model still loads each one when a
+    // CLI error or another skill names it.
     let hidden = [
         "flowleap-auth",
         "flowleap-keys",
