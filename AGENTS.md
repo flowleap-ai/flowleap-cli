@@ -195,6 +195,14 @@ renders each hint as an info box on stderr:
 - `rateLimitHint` (429) — `{ retryAfterSeconds?, message }`. When
   `retryAfterSeconds` is present (from the `Retry-After` header, also surfaced
   top-level on the envelope), wait exactly that long before retrying.
+- `sharedQuotaHint` (503) — `{ code: "shared_epo_quota_busy", provider: "epo",
+  bucket, perMinute?, retryAfterSeconds?, requiresHumanIntervention: false,
+  keysPageUrl?, nextStep?, signup, verify, message }`. FlowLeap's House EPO
+  keys (used by everyone without an own EPO key) are out of quota for that OPS
+  service. Wait `retryAfterSeconds`, never resend in a loop; the durable way
+  out is the user's own free EPO key (own quota). Built from the backend's
+  structured `shared_quota` field only. Not a human stop: the exit code is the
+  503's. A 5xx with a `Retry-After` over 5 seconds is not retried in-band.
 - `endpointGoneHint` (410) — `{ code: "endpoint_gone", requiresUpgrade: true,
   successor?, reason?, serverMessage?, message }`. The build is stale: the
   endpoint is retired for good. Upgrade the CLI; never retry the same call.
