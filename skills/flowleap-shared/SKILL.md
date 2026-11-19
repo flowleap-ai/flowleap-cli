@@ -154,8 +154,10 @@ work without a subscription, so setup can always be diagnosed.
 Error envelopes carry additive hints — `subscriptionHint` (402, has
 `upgradeUrl`, needs a human), `providerKeysHint` (missing/rejected EPO/USPTO
 patent-data keys, or the trial's shared data budget spent for today — needs a
-human), `rateLimitHint` (429, has `retryAfterSeconds`), and `endpointGoneHint`
-(410, `{ requiresUpgrade: true, successor?, reason?, message }`).
+human), `rateLimitHint` (429, has `retryAfterSeconds`), `sharedQuotaHint` (503:
+the shared EPO quota of FlowLeap's House keys is busy — wait `retryAfterSeconds`,
+never resend in a loop; the user's own free EPO key has its own quota), and
+`endpointGoneHint` (410, `{ requiresUpgrade: true, successor?, reason?, message }`).
 
 **Branch on codes, never on message text.** Backend codes come from a closed
 registry and never change once shipped; wording is freely editable by policy, so

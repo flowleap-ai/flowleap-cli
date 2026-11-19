@@ -137,18 +137,36 @@ fn clarify_transport_error(err: reqwest::Error) -> anyhow::Error {
     }
 }
 
-/// The short, bounded delay a 429 asks us to wait, if any. `None` when there is
-/// no Retry-After, it is unparseable, or it exceeds `RETRY_AFTER_MAX_SECS`.
-fn retry_after_short(resp: &Response) -> Option<Duration> {
-    let secs = resp
-        .headers()
+/// The Retry-After of a response in whole seconds, if it has a parseable one.
+fn retry_after_secs(resp: &Response) -> Option<u64> {
+    resp.headers()
         .get(reqwest::header::RETRY_AFTER)?
         .to_str()
         .ok()?
         .trim()
         .parse::<u64>()
-        .ok()?;
+        .ok()
+}
+
+/// The short, bounded delay a 429 asks us to wait, if any. `None` when there is
+/// no Retry-After, it is unparseable, or it exceeds `RETRY_AFTER_MAX_SECS`.
+fn retry_after_short(resp: &Response) -> Option<Duration> {
+    let secs = retry_after_secs(resp)?;
     (secs <= RETRY_AFTER_MAX_SECS).then(|| Duration::from_secs(secs))
+}
+
+/// The in-band wait before resending after a 5xx. A 5xx with no Retry-After gets
+/// the jittered backoff; one whose Retry-After fits `RETRY_AFTER_MAX_SECS` waits
+/// exactly that; a longer Retry-After is not retried in-band, because a resend
+/// before it ends only fails again (a busy shared EPO quota refills one search
+/// every 12 seconds), so the envelope goes back to the caller with
+/// `retryAfterSeconds`.
+fn server_error_wait(resp: &Response, attempt: u32) -> Option<Duration> {
+    match retry_after_secs(resp) {
+        None => Some(backoff(attempt)),
+        Some(secs) if secs <= RETRY_AFTER_MAX_SECS => Some(Duration::from_secs(secs)),
+        Some(_) => None,
+    }
 }
 
 /// Exit codes for the documented contract (see AGENTS.md "Exit Codes").
@@ -631,6 +649,72 @@ pub fn rate_limit_hint(retry_after_seconds: Option<&Value>) -> Value {
     hint
 }
 
+/// Structured hint for a `503 upstream_unavailable` that refused the shared EPO
+/// quota of FlowLeap's House keys: every caller without an own EPO key spends
+/// it, and OPS can cut it to a few searches a minute. Driven by the backend's
+/// structured `shared_quota` field alone (top level on the legacy envelope,
+/// under `details` on the tools facade), never by the message. It is NOT a
+/// human gate: waiting `retryAfterSeconds` works, so it never changes the exit
+/// code. The durable way out is the user's own free EPO key, which has its own
+/// quota.
+pub fn shared_quota_hint(body: &Value, retry_after_seconds: Option<&Value>) -> Option<Value> {
+    if error_code(body)? != "upstream_unavailable" {
+        return None;
+    }
+    let field = |name: &str| {
+        body.pointer(&format!("/error/{name}"))
+            .or_else(|| body.pointer(&format!("/error/details/{name}")))
+    };
+    let quota = field("shared_quota").filter(|quota| quota.is_object())?;
+    let bucket = quota
+        .get("bucket")
+        .and_then(Value::as_str)
+        .unwrap_or("search");
+    let per_minute = quota.get("per_minute").and_then(Value::as_u64);
+    let rate = match per_minute {
+        Some(n) => format!("{n} {bucket} requests per minute"),
+        None => format!("a limited number of {bucket} requests per minute"),
+    };
+    let wait = match retry_after_seconds.and_then(Value::as_u64) {
+        Some(secs) => format!("Wait {secs} seconds before the next {bucket} request"),
+        None => format!("Wait before the next {bucket} request"),
+    };
+    let keys_page_url = field("keysPageUrl").and_then(Value::as_str);
+    let where_to_add = match keys_page_url {
+        Some(url) => {
+            format!("on the FlowLeap Patent-data keys page ({url}) or with 'flowleap setup'")
+        }
+        None => "with 'flowleap setup' (or 'flowleap keys set epo')".to_string(),
+    };
+    let mut hint = json!({
+        "code": "shared_epo_quota_busy",
+        "provider": "epo",
+        "bucket": bucket,
+        "requiresHumanIntervention": false,
+        "message": format!(
+            "FlowLeap's shared EPO quota (used by everyone without their own EPO key) allows \
+             {rate}, and it is used up for now. {wait}, and do not send {bucket} requests in \
+             a loop: each one sent early fails again. For a quota of their own, the user can \
+             add a free EPO OPS key {where_to_add}. Never ask for the key value in the chat."
+        ),
+        "signup": "https://developers.epo.org (free, 'My apps' → create app)",
+        "verify": "flowleap keys test",
+    });
+    if let Some(n) = per_minute {
+        hint["perMinute"] = json!(n);
+    }
+    if let Some(secs) = retry_after_seconds {
+        hint["retryAfterSeconds"] = secs.clone();
+    }
+    if let Some(url) = keys_page_url {
+        hint["keysPageUrl"] = json!(url);
+    }
+    if let Some(step) = field("nextStep").filter(|step| step.is_object()) {
+        hint["nextStep"] = step.clone();
+    }
+    Some(hint)
+}
+
 /// Structured hint for a `410 endpoint_gone` body: this build called an
 /// endpoint the backend has retired for good. Driven by the code alone; the
 /// backend's own `successor` and `reason` fields are relayed verbatim so the
@@ -745,6 +829,38 @@ pub fn print_subscription_hint_box(hint: &Value) {
 
 /// Human-readable info box for the 429 rate-limit hint, printed to stderr so
 /// it never corrupts parseable stdout.
+pub fn print_shared_quota_hint_box(hint: &Value) {
+    use colored::Colorize;
+    let title = "Shared EPO quota busy";
+
+    eprintln!();
+    eprintln!(
+        "┌─ {} {}",
+        title.yellow().bold(),
+        "─".repeat(50_usize.saturating_sub(title.len()))
+    );
+    let bucket = hint["bucket"].as_str().unwrap_or("search");
+    match hint["perMinute"].as_u64() {
+        Some(n) => eprintln!(
+            "│ FlowLeap's shared EPO quota allows {n} {bucket} requests per minute, for everyone."
+        ),
+        None => eprintln!("│ FlowLeap's shared EPO quota is used up for now."),
+    }
+    match hint["retryAfterSeconds"].as_u64() {
+        Some(secs) => eprintln!(
+            "│ Retry in {} — do not resend sooner.",
+            format!("{} seconds", secs).cyan().bold()
+        ),
+        None => eprintln!("│ Back off, then retry."),
+    }
+    let where_to_add = hint["keysPageUrl"].as_str().unwrap_or("'flowleap setup'");
+    eprintln!(
+        "│ Your own free EPO key has its own quota: add it at {}",
+        where_to_add.cyan()
+    );
+    eprintln!("└{}", "─".repeat(64));
+}
+
 pub fn print_rate_limit_hint_box(hint: &Value) {
     use colored::Colorize;
     let title = "Rate limited";
@@ -907,8 +1023,9 @@ impl Context {
 
     /// Execute a request with bounded, jittered retry on transient failures.
     /// Every FlowLeap endpoint the CLI calls is read-only or idempotent, so a
-    /// resend is safe. Retries: 5xx (server transient), connection-level errors
-    /// (refused/reset/unreachable), and a 429 whose Retry-After is short. A
+    /// resend is safe. Retries: 5xx (server transient) unless its Retry-After is
+    /// long, connection-level errors (refused/reset/unreachable), and a 429 whose
+    /// Retry-After is short. A
     /// request timeout and any 4xx are never retried. A non-cloneable body
     /// (streaming) is attempted exactly once, and so is every request under
     /// [`RetryPolicy::Never`].
@@ -932,7 +1049,7 @@ impl Context {
                 Ok(resp) if resp.status() == StatusCode::TOO_MANY_REQUESTS => {
                     retry_after_short(resp)
                 }
-                Ok(resp) if resp.status().is_server_error() => Some(backoff(attempt)),
+                Ok(resp) if resp.status().is_server_error() => server_error_wait(resp, attempt),
                 Ok(_) => None,
                 Err(err) if is_retryable_transport(err) => Some(backoff(attempt)),
                 Err(_) => None,
@@ -1176,6 +1293,13 @@ impl Context {
                     let hint = rate_limit_hint(envelope.get("retryAfterSeconds"));
                     envelope["rateLimitHint"] = hint;
                 }
+                503 => {
+                    if let Some(hint) =
+                        shared_quota_hint(&envelope["body"], envelope.get("retryAfterSeconds"))
+                    {
+                        envelope["sharedQuotaHint"] = hint;
+                    }
+                }
                 _ => {}
             }
         }
@@ -1251,7 +1375,7 @@ impl Context {
     }
 
     /// Print an error envelope; in human/table formats also render the
-    /// structured hints (provider keys, subscription, rate limit) as info
+    /// structured hints (provider keys, subscription, rate limit, shared quota) as info
     /// boxes on stderr.
     fn print_error_envelope(&self, envelope: &Value) {
         crate::output::print_value(&self.output_format, envelope, &[]);
@@ -1264,6 +1388,9 @@ impl Context {
             }
             if let Some(hint) = envelope.get("rateLimitHint") {
                 print_rate_limit_hint_box(hint);
+            }
+            if let Some(hint) = envelope.get("sharedQuotaHint") {
+                print_shared_quota_hint_box(hint);
             }
             if let Some(hint) = envelope.get("endpointGoneHint") {
                 print_endpoint_gone_box(hint);
