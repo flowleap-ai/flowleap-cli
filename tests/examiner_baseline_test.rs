@@ -62,7 +62,8 @@ async fn mount_family(server: &MockServer) {
     mount_tool(
         server,
         "get_family",
-        json!({ "patent_number": "EP2110298B1" }),
+        // The walk needs every member: since backend #635 the default answer is one page.
+        json!({ "patent_number": "EP2110298B1", "view": "full" }),
         ok(
             "get_family",
             json!({ "representatives": { "members": [

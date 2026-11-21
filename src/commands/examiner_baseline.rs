@@ -138,9 +138,16 @@ pub(crate) struct Collected {
 async fn collect(ctx: &Context, publication: &str) -> Result<Collected> {
     // The family is the walk itself: without it there is nothing to report,
     // so any failure here stops the verb with the ordinary error envelope.
-    let family = tools::call_tool_data(ctx, "get_family", &json!({ "patent_number": publication }))
-        .await?
-        .unwrap_or(Value::Null);
+    // `view: "full"`: the walk needs every member. Since backend #635 the default
+    // `get_family` answer is one summary page of 100 representatives; a backend
+    // before it ignores the key and answers in full anyway.
+    let family = tools::call_tool_data(
+        ctx,
+        "get_family",
+        &json!({ "patent_number": publication, "view": "full" }),
+    )
+    .await?
+    .unwrap_or(Value::Null);
     let members = family_members(&family, publication);
 
     let mut collected = Collected {
