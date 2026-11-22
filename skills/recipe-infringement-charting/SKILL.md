@@ -30,7 +30,7 @@ flowleap --json tools run get_patent_term patent_number=<asserted-patent>  # exp
 flowleap --json ops family <asserted-patent>                             # where it is in force
 ```
 
-Only chart in jurisdictions with a live family member. In the legal status, `eventDate` is the date of an event and `date` is the date the office recorded it; when `eventsReturned` is less than `eventsTotal`, get the remaining events (`--limit`, `--offset`) before you call the patent live.
+Only chart in jurisdictions with a live family member. An answer of `ops legal` or `ops family` with `live: false` is a dated answer from FlowLeap's hosted data (as of `asOf`): it is never proof that the patent is in force. Wait the `retryAfterSeconds` of the answer and read the live answer (`live: true`) before you rely on the status (see `flowleap-keys`). In the legal status, `eventDate` is the date of an event and `date` is the date the office recorded it; when `eventsReturned` is less than `eventsTotal`, get the remaining events (`--limit`, `--offset`) before you call the patent live.
 
 ## Step 3: Decompose the Asserted Claims
 

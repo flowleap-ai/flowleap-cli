@@ -109,7 +109,23 @@ flowleap --json uspto search --query 'applicationMetaData.inventionTitle:earbuds
 flowleap ops abstract <application-or-publication-number>
 ```
 
-**If one office answers `provider_keys_required`**, its patent-data key is
+**Start in the publication index.** For each element row, run the plain words
+with `flowleap --json patent search --provider index … --to <day before the
+priority date>` (see `flowleap-patent`). The index covers every office and uses
+no office quota. It is one edition: read `asOf`, and run the EPO and USPTO
+searches of this step for the publications after `asOf`, for the CQL and
+classification tracks, and for the full search when the server has no index.
+Log the index queries with the other queries, with `asOf`.
+
+**If a live call answers "not now"** (`liveUnavailableHint`: the daily live
+data budget is spent, or the shared quota is busy), do not send it again before
+its `retryAfterSeconds`. Continue with the index, PATSTAT and the literature
+sweep, and report each search or read that did not run as an open step. An own
+free key for that office is optional and lifts the limit: tell the user one
+time, at the end. See `flowleap-keys`.
+
+**If one office answers `provider_keys_required`** (an older server; no user
+needs a key on a current one), its patent-data key is
 missing. Do not narrow the search to the office whose key happens to be set, and
 do not fill the gap with web-scraped results: run the live office in full,
 report the other as a missing-key gap (not "no prior art found" and not "limited

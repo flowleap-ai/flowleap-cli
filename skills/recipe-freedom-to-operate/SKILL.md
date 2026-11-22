@@ -40,7 +40,24 @@ flowleap --json uspto search --query "<recommended_query for feature 1>" --limit
 # Repeat for each feature
 ```
 
-**A missing patent-data key never narrows a clearance scope.** If one office
+**Find candidates in the publication index first.** Run each feature as plain
+words with `flowleap --json patent search --provider index …` (see
+`flowleap-patent`); it uses no office quota. The index is one edition: add the
+EPO and USPTO searches below for publications newer than its `asOf` date, and
+for the full search when the server has no index.
+
+**A dated legal status never clears a product.** When `ops legal` (or
+`ops family`) answers `live: false`, the answer is FlowLeap's hosted copy as of
+`asOf`: a lapse, a revocation or a missed fee after that date is not in it.
+Record the status as "last known as of `<asOf>`, not confirmed", wait the
+`retryAfterSeconds` of the answer, and read the live answer before you call a
+right in force or lapsed. A "not now" answer (`liveUnavailableHint`: the daily
+live data budget is spent or the shared quota is busy) leaves that check open:
+write it as an open step with the time it can run, never as "no blocking
+patent". See `flowleap-keys`.
+
+**A missing patent-data key never narrows a clearance scope.** No user needs a
+key; this gate comes only from an older server. If one office
 answers `provider_keys_required`, search the live office fully and carry the
 gated office into the deliverable as an explicit missing-key gap — an
 unsearched jurisdiction is not a cleared one, and web-scraped patent data is not

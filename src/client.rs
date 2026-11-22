@@ -596,7 +596,7 @@ pub fn print_keys_hint_box(hint: &Value) {
 /// HTTP status (when present) for the exit-code mapping. A patent-data-key
 /// gate takes precedence over the status class: the backend answers it with a
 /// 400, which would otherwise land on the generic failure code.
-fn printed_error_for(envelope: &Value) -> PrintedError {
+pub fn printed_error_for(envelope: &Value) -> PrintedError {
     if envelope.get("providerKeysHint").is_some() {
         return PrintedError::with_exit_code(EXIT_PROVIDER_KEYS);
     }
@@ -713,6 +713,144 @@ pub fn shared_quota_hint(body: &Value, retry_after_seconds: Option<&Value>) -> O
         hint["nextStep"] = step.clone();
     }
     Some(hint)
+}
+
+/// A wait in words: `45 seconds`, `12 minutes`, `5 h 12 min`.
+pub fn wait_in_words(seconds: u64) -> String {
+    if seconds < 120 {
+        return format!("{seconds} seconds");
+    }
+    let minutes = seconds.div_ceil(60);
+    if minutes < 120 {
+        return format!("{minutes} minutes");
+    }
+    format!("{} h {} min", minutes / 60, minutes % 60)
+}
+
+/// The words for a `liveUnavailable.reason` (backend ADR 0026 decision 7).
+pub fn live_unavailable_reason_text(reason: &str) -> &'static str {
+    match reason {
+        "shared_quota_busy" => "FlowLeap's shared office quota is busy",
+        "live_budget_spent" => "today's live data budget is spent",
+        _ => "the live office call cannot run now",
+    }
+}
+
+/// Structured hint for a "not now" refusal (backend ADR 0026 decision 7): the
+/// live office call cannot run now, and the tool has no hosted copy to answer
+/// a dated answer from. Built from structured fields only: the
+/// `error.liveUnavailable { reason, retryAfterSeconds }` object the backend
+/// adds while keyless access is on, or the code `live_data_budget_exhausted`
+/// (a License holder's spent live data budget, 429). Not a human stop: the
+/// wait works, and the user's own key for that office is optional.
+pub fn live_unavailable_hint(body: &Value, retry_after_seconds: Option<&Value>) -> Option<Value> {
+    let live = body
+        .pointer("/error/liveUnavailable")
+        .filter(|live| live.is_object());
+    let reason = match live
+        .and_then(|live| live.get("reason"))
+        .and_then(Value::as_str)
+    {
+        Some(reason) => reason,
+        None if error_code(body) == Some("live_data_budget_exhausted") => "live_budget_spent",
+        None => return None,
+    };
+    let field = |name: &str| {
+        body.pointer(&format!("/error/{name}"))
+            .or_else(|| body.pointer(&format!("/error/details/{name}")))
+    };
+    let wait = live
+        .and_then(|live| live.get("retryAfterSeconds"))
+        .and_then(Value::as_u64)
+        .or_else(|| field("retry_after").and_then(Value::as_u64))
+        .or_else(|| retry_after_seconds.and_then(Value::as_u64));
+    let keys_page_url = field("keysPageUrl").and_then(Value::as_str);
+    let when = match wait {
+        Some(secs) => format!("Retry in {}", wait_in_words(secs)),
+        None => "Retry later".to_string(),
+    };
+    let own_key = match keys_page_url {
+        Some(url) => format!(
+            "An own free key for that office is optional and lifts the limit: the user adds it \
+             on the FlowLeap Patent-data keys page ({url})."
+        ),
+        None => "An own free key for that office is optional and lifts the limit \
+                 ('flowleap setup')."
+            .to_string(),
+    };
+    let mut hint = json!({
+        "code": "live_unavailable",
+        "reason": reason,
+        "requiresHumanIntervention": false,
+        "message": format!(
+            "Not now: {}. {when}; do not send the call again sooner. {own_key} Never ask for \
+             the key value in the chat.",
+            live_unavailable_reason_text(reason)
+        ),
+    });
+    if let Some(secs) = wait {
+        hint["retryAfterSeconds"] = json!(secs);
+    }
+    if let Some(provider) = field("provider").and_then(Value::as_str) {
+        hint["provider"] = json!(provider);
+    }
+    if let Some(resets_at) = field("resets_at").and_then(Value::as_str) {
+        hint["resetsAt"] = json!(resets_at);
+    }
+    if let Some(allowance) = field("allowance").and_then(Value::as_str) {
+        hint["allowance"] = json!(allowance);
+    }
+    if let Some(url) = keys_page_url {
+        hint["keysPageUrl"] = json!(url);
+    }
+    Some(hint)
+}
+
+/// Human-readable info box for the "not now" hint, on stderr.
+pub fn print_live_unavailable_box(hint: &Value) {
+    use colored::Colorize;
+    let title = "Live data: not now";
+
+    eprintln!();
+    eprintln!(
+        "┌─ {} {}",
+        title.yellow().bold(),
+        "─".repeat(50_usize.saturating_sub(title.len()))
+    );
+    let reason = hint["reason"].as_str().unwrap_or("");
+    let what = match (reason, hint["allowance"].as_str()) {
+        ("live_budget_spent", Some("drawing_pages")) => {
+            "Today's drawing pages are used up.".to_string()
+        }
+        ("live_budget_spent", _) => match hint["provider"].as_str() {
+            Some(provider) => format!(
+                "Today's live data budget for {} is spent.",
+                provider.to_uppercase()
+            ),
+            None => "Today's live data budget is spent.".to_string(),
+        },
+        _ => {
+            let text = live_unavailable_reason_text(reason);
+            format!("{}{}.", text[..1].to_uppercase(), &text[1..])
+        }
+    };
+    eprintln!("│ {what}");
+    match hint["retryAfterSeconds"].as_u64() {
+        Some(secs) => eprintln!(
+            "│ Retry in {} — do not resend sooner.",
+            wait_in_words(secs).cyan().bold()
+        ),
+        None => eprintln!("│ Retry later."),
+    }
+    if let Some(resets_at) = hint["resetsAt"].as_str() {
+        eprintln!("│ The budget resets at {resets_at}.");
+    }
+    let where_to_add = hint["keysPageUrl"].as_str().unwrap_or("'flowleap setup'");
+    eprintln!(
+        "│ An own free key for that office is optional and lifts the limit: {}",
+        where_to_add.cyan()
+    );
+    eprintln!("└{}", "─".repeat(64));
 }
 
 /// Structured hint for a `410 endpoint_gone` body: this build called an
@@ -1284,12 +1422,19 @@ impl Context {
             if let Some(hint) = endpoint_gone_hint(&envelope["body"]) {
                 envelope["endpointGoneHint"] = hint;
             }
+            if let Some(hint) =
+                live_unavailable_hint(&envelope["body"], envelope.get("retryAfterSeconds"))
+            {
+                envelope["liveUnavailableHint"] = hint;
+            }
             match status.as_u16() {
                 402 => {
                     let hint = subscription_hint(&envelope["body"]);
                     envelope["subscriptionHint"] = hint;
                 }
-                429 => {
+                // A License holder's spent live data budget is not the
+                // per-user request limit: it gets the "not now" hint below.
+                429 if error_code(&envelope["body"]) != Some("live_data_budget_exhausted") => {
                     let hint = rate_limit_hint(envelope.get("retryAfterSeconds"));
                     envelope["rateLimitHint"] = hint;
                 }
@@ -1356,7 +1501,7 @@ impl Context {
     /// warning (with `remaining` and `resets_at`). Surface it on stderr in
     /// human formats so the wall never arrives unannounced; JSON consumers
     /// read `body.warnings` themselves, so JSON output stays untouched.
-    fn print_trial_budget_low_warning(&self, envelope: &Value) {
+    pub fn print_trial_budget_low_warning(&self, envelope: &Value) {
         if self.output_format == "json" {
             return;
         }
@@ -1380,17 +1525,34 @@ impl Context {
     fn print_error_envelope(&self, envelope: &Value) {
         crate::output::print_value(&self.output_format, envelope, &[]);
         if self.output_format != "json" {
+            // The shared-quota box already names the wait. Without it, a "not
+            // now" refusal gets its own box, which replaces the trial budget
+            // box and the rate-limit box: with keyless access (backend ADR
+            // 0026) a spent budget is a wait, and a key is optional.
+            let shared_quota = envelope.get("sharedQuotaHint");
+            let not_now = envelope
+                .get("liveUnavailableHint")
+                .filter(|_| shared_quota.is_none());
+            let budget_gate = envelope.pointer("/providerKeysHint/code")
+                == Some(&json!("trial_budget_exhausted"));
             if let Some(hint) = envelope.get("providerKeysHint") {
-                print_keys_hint_box(hint);
+                if !(budget_gate && not_now.is_some()) {
+                    print_keys_hint_box(hint);
+                }
             }
             if let Some(hint) = envelope.get("subscriptionHint") {
                 print_subscription_hint_box(hint);
             }
             if let Some(hint) = envelope.get("rateLimitHint") {
-                print_rate_limit_hint_box(hint);
+                if not_now.is_none() {
+                    print_rate_limit_hint_box(hint);
+                }
             }
-            if let Some(hint) = envelope.get("sharedQuotaHint") {
+            if let Some(hint) = shared_quota {
                 print_shared_quota_hint_box(hint);
+            }
+            if let Some(hint) = not_now {
+                print_live_unavailable_box(hint);
             }
             if let Some(hint) = envelope.get("endpointGoneHint") {
                 print_endpoint_gone_box(hint);
@@ -1398,7 +1560,6 @@ impl Context {
         }
     }
 
-    /// Require authentication, returning an error if not configured
     pub fn require_auth(&self) -> Result<()> {
         if self.dry_run {
             return Ok(());

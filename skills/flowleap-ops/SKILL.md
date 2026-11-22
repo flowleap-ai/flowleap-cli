@@ -11,7 +11,26 @@ In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, c
 
 Direct access to the European Patent Office (EPO) Open Patent Services API.
 
-OPS needs the user's own EPO patent-data key. If a command returns the gate code
+No user needs a Patent-Data Key. An OPS read uses FlowLeap's House keys inside
+the daily live data budget (300 live EPO calls and 50 drawing pages in one UTC
+day); an own free EPO key is optional and lifts those limits. To find
+candidates, search the publication index first (`flowleap patent search
+--provider index`, see `flowleap-patent`); use these commands to read a
+document now.
+
+**Read `live` on `ops legal`, `ops biblio`, `ops abstract` and `ops family`.**
+When the live call cannot run (the budget is spent, or the shared quota is
+busy), these four answer a **dated answer** from FlowLeap's hosted data:
+`live: false`, `source` (`patstat` or `publication_index`), `asOf`, and
+`liveUnavailable { reason, retryAfterSeconds }`. Table and human output print
+`note:` lines on stderr. Tell the user the date. **A dated legal status is
+never proof that a right is in force**: for a freedom-to-operate or validity
+conclusion, wait `retryAfterSeconds` and read the live answer (`live: true`).
+`ops claims`, `ops description`, the register commands and `figures` have no
+hosted copy: they fail with a `liveUnavailableHint` ("not now"). Wait its
+`retryAfterSeconds`; do not send the call again sooner. See `flowleap-keys`.
+
+The key gate is the fallback for an older server. If a command returns the gate code
 — the CLI's `providerKeysHint.code` `provider_keys_required`, raised from the
 backend's `data_keys_required` or `patent_provider_key_invalid` (each carrying
 `provider: "epo"`) — EP/WO is a **user-action stop**: decline that read and name

@@ -147,7 +147,74 @@ pub async fn call_tool(ctx: &Context, name: &str, input: &Value) -> Result<Value
 /// hints) and return the typed error, exactly as [`call_tool`] does.
 pub async fn call_tool_data(ctx: &Context, name: &str, input: &Value) -> Result<Option<Value>> {
     let result = call_tool(ctx, name, input).await?;
-    Ok(unwrap_tool_result(ctx, result))
+    let data = unwrap_tool_result(ctx, result);
+    // JSON output carries the dated-answer fields verbatim; the other formats
+    // print columns only, so say on stderr that the answer is not live.
+    if ctx.output_format != "json" {
+        if let Some(note) = data.as_ref().and_then(|data| dated_answer_note(name, data)) {
+            eprintln!("{note}");
+        }
+    }
+    Ok(data)
+}
+
+/// The stderr note for a dated answer (backend ADR 0026 decision 7), or `None`
+/// for a live answer.
+///
+/// When the live office call cannot run, `get_legal_status`, `get_bibliography`,
+/// `get_abstract` and `get_family` answer from FlowLeap's hosted data with
+/// `live: false`, `source`, `asOf` and `liveUnavailable { reason,
+/// retryAfterSeconds }`. A table prints the same columns as a live answer, so
+/// without this note a dated answer reads as the office's answer of today.
+/// Driven by the structured `live` field only; an answer without it (an older
+/// backend, or keyless access off) is printed as before.
+pub fn dated_answer_note(tool: &str, data: &Value) -> Option<String> {
+    if data.get("live").and_then(Value::as_bool) != Some(false) {
+        return None;
+    }
+    let source = match data.get("source").and_then(Value::as_str) {
+        Some("patstat") => "PATSTAT (FlowLeap's hosted edition)",
+        Some("publication_index") => "the publication index (FlowLeap's hosted edition)",
+        Some(other) => other,
+        None => "FlowLeap's hosted data",
+    };
+    let as_of = data
+        .get("asOf")
+        .and_then(Value::as_str)
+        .unwrap_or("an unknown date");
+    let mut lines = vec![format!(
+        "note: DATED answer, not live. Source: {source}. As of: {as_of}."
+    )];
+    let live = data.get("liveUnavailable");
+    let reason = live
+        .and_then(|live| live.get("reason"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let retry = match live
+        .and_then(|live| live.get("retryAfterSeconds"))
+        .and_then(Value::as_u64)
+    {
+        Some(secs) => format!(
+            "Retry in {} for the live answer.",
+            crate::client::wait_in_words(secs)
+        ),
+        None => "Retry later for the live answer.".to_string(),
+    };
+    lines.push(format!(
+        "note: The live office call did not run: {}. {retry}",
+        crate::client::live_unavailable_reason_text(reason)
+    ));
+    if tool == "get_legal_status" {
+        lines.push(
+            "note: A dated legal status is not proof that a right is in force: an event after \
+             the as-of date is not in it."
+                .to_string(),
+        );
+    }
+    if let Some(text) = data.pointer("/attribution/text").and_then(Value::as_str) {
+        lines.push(format!("note: {text}"));
+    }
+    Some(lines.join("\n"))
 }
 
 /// The one unwrap every data command shares: given a successful tool

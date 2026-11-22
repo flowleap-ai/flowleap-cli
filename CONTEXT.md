@@ -78,16 +78,67 @@ one actor; a task needing both is two steps.
 **Patent-Data Key**:
 A credential the USER holds at a patent office — the EPO OPS consumer
 key/secret pair, the USPTO ODP API key — that FlowLeap uses on the user's
-behalf so that office's data flows. Free at each office and obtained through a
-browser signup, so getting one is always a human step. Comes in two kinds, a
-**Forwarded key** and a **Stored key**. For one office a forwarded key wins,
-then a stored key, then (trial only) the **House keys**, FlowLeap's own
-credentials, which are not a Patent-Data Key. `provider_keys_required` /
-`provider_keys_invalid` / `trial_budget_exhausted` are the wire codes naming
-the concept in error envelopes, `providerKeysHint` the envelope field.
-_Avoid_: "provider keys" in prose (legacy CLI naming), and any wording that
-reads as a FlowLeap paywall — the office issues the key, FlowLeap only carries
-it.
+behalf for that office's data. Free at each office and obtained through a
+browser signup, so getting one is always a human step. **No user needs one**
+(backend ADR 0026): it is optional, and it lifts the limits of the **Live data
+budget** for its office. Comes in two kinds, a **Forwarded key** and a
+**Stored key**. For one office a forwarded key wins, then a stored key, then
+the **House keys**. `provider_keys_required` / `provider_keys_invalid` /
+`trial_budget_exhausted` are the wire codes naming the concept in error
+envelopes, `providerKeysHint` the envelope field.
+_Avoid_: "provider keys" in prose (legacy CLI naming); "BYOK" as the access
+rule (a key is an option, not a condition); and any wording that reads as a
+FlowLeap paywall — the office issues the key, FlowLeap only carries it.
+
+**House keys**:
+FlowLeap's own credential at each office (one for EPO OPS, one for USPTO ODP),
+kept on the server only. They are not a Patent-Data Key. With keyless access
+(backend ADR 0026) they serve every user with access, trial and License alike,
+inside the **Live data budget**; before it they served the trial only. All
+users share the office quota of the House keys, so a busy quota answers a
+`sharedQuotaHint` (`shared_epo_quota_busy`), a wait and not a human stop.
+`keys test` reports them as `source: "server"`.
+_Avoid_: "server keys" or "shared keys" in prose; "the House key of the user"
+(a user has none).
+
+**Publication index**:
+FlowLeap's hosted edition of every publication of every office: number, dates,
+kind, English title and abstract, CPC and IPC, applicants, inventors, simple
+family. It is the discovery layer (find candidates): `patent search --provider
+index` / `search_patents` `provider: "index"`, plain words and filters, no
+Patent-Data Key, no office quota, no live data budget. One quarterly edition
+from Google Patents Public Datasets: every answer gives the edition date
+(`asOf`) and the CC BY attribution, and a publication newer than `asOf` is not
+in it. It also holds the US claims that `get_claims` serves. A server without
+it refuses the provider; the CLI then says so in one line.
+_Avoid_: "the index" for PATSTAT (that is the analytics layer); "live" for an
+index answer; "search index" alone.
+
+**Live data budget**:
+The daily allowance of live office calls on the House keys, for each user
+(backend ADR 0026): 300 live calls for each office and 50 drawing pages in one
+UTC day, the same in trial and License. A cache hit, an index search, a PATSTAT
+call and a call on the user's own key are not counted. Spent, a tool with a
+hosted copy answers a **Dated answer** and every other tool answers "not now":
+`live_data_budget_exhausted` (429, exit 6) for a License holder,
+`trial_data_budget_exhausted` (429, exit 9) for a trial, each with
+`liveUnavailable` and, in the CLI envelope, a `liveUnavailableHint`. It resets
+at the next UTC midnight; an own key for that office lifts it.
+_Avoid_: "rate limit" (the 60 requests per minute limit is a different thing);
+"quota" (that word is for the office quota of the House keys).
+
+**Dated answer**:
+An answer from FlowLeap's hosted data, given when the live office call cannot
+run (the Live data budget is spent, or the shared quota of the House keys is
+busy). Only `get_legal_status`, `get_bibliography`, `get_abstract` and
+`get_family` have one. It carries `live: false`, `source` (`patstat` or
+`publication_index`), `asOf` (the date for which the copy is true) and
+`liveUnavailable { reason, retryAfterSeconds }`; a live answer carries
+`live: true` and `source: "office"`. Table and human output print it as
+`note:` lines on stderr. A dated legal status is never proof that a right is
+in force.
+_Avoid_: "cached answer" (a cache hit is a live answer that was read earlier),
+"stale", "fallback data".
 
 **Forwarded key**:
 A Patent-Data Key the client keeps on the user's machine and sends in the
@@ -112,7 +163,9 @@ _Avoid_: "saved key" or "remembered key" (say stored), "vault", and any wording
 that suggests FlowLeap can show the value back.
 
 **Key gate**:
-One office being unreachable because its Patent-Data Key is missing. A
+One office being unreachable because its Patent-Data Key is missing. With
+keyless access it is the fallback case only: an older server, a server with
+keyless access off, or an office for which FlowLeap has no House key. A
 **user-action stop**, not an exhausted route: only the user adding the key opens
 that office, so no web-scraped substitute stands in for it — searches and
 single-document reads alike. A gate is *read* from an explicit
@@ -122,15 +175,16 @@ _Avoid_: calling a gated office a coverage gap or a dead route — both hide tha
 a two-minute human action fixes it.
 
 **Trial data budget gate**:
-The soft sibling of the Key gate (backend ADR 0017): during the trial, today's
-SHARED data allowance on FlowLeap's own credentials is spent —
+The name of the **Live data budget** stop for a trialing user, and the whole
+budget before keyless access (backend ADR 0017): during the trial, today's
+data allowance on the House keys is spent —
 `trial_budget_exhausted` in the `providerKeysHint`, raised from the backend
 code `trial_data_budget_exhausted` (429). Same doctrine as the Key gate, one
 extra exit: the hint's `resetsAt` names when it lifts on its own, and the
 user's own free Patent-Data Keys lift it permanently. Announced ahead by the
 `trial_data_budget_low` warning on success envelopes.
-_Avoid_: treating it as a rate limit to back off from and retry — the durable
-fix is keys, not waiting.
+_Avoid_: sending the call again before `resetsAt`; framing the key as
+necessary (it is optional, and it lifts the limit).
 
 **Trial period**:
 The 7-day access window the backend grants at account creation (backend ADR
