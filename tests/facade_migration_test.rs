@@ -484,7 +484,7 @@ fn patstat_commands_map_onto_the_patstat_tools() {
 /// defaults apply.
 #[test]
 fn patstat_graph_verbs_map_onto_the_graph_tools() {
-    let cases: [(&[&str], &str, Value); 11] = [
+    let cases: [(&[&str], &str, Value); 15] = [
         (
             &["resolve", "EP3477840"],
             "patstat_resolve",
@@ -519,6 +519,50 @@ fn patstat_graph_verbs_map_onto_the_graph_tools() {
             &["technology", "H01M10/0562"],
             "patstat_technology",
             json!({ "cpc": "H01M10/0562" }),
+        ),
+        // `--cpc` with one value is the same request as the positional prefix.
+        (
+            &["technology", "--cpc", "H01M10/0562"],
+            "patstat_technology",
+            json!({ "cpc": "H01M10/0562" }),
+        ),
+        // The positional prefix and each `--cpc` value make one list.
+        (
+            &["technology", "H01M10/0562", "--cpc", "H01M10/052"],
+            "patstat_technology",
+            json!({ "cpc": ["H01M10/0562", "H01M10/052"] }),
+        ),
+        // Keywords only: no `cpc` key. One entry is a string.
+        (
+            &[
+                "technology",
+                "--keywords",
+                "\"solid electrolyte\" argyrodite",
+            ],
+            "patstat_technology",
+            json!({ "keywords": "\"solid electrolyte\" argyrodite" }),
+        ),
+        // Each `--keywords` value is one entry; several values are a list.
+        (
+            &[
+                "technology",
+                "--cpc",
+                "H01M10",
+                "--keywords",
+                "\"solid electrolyte\"",
+                "--keywords",
+                "sulfide or sulphide or argyrodite",
+                "--exclude-cpc",
+                "H01M8",
+                "--exclude-cpc",
+                "H01M12",
+            ],
+            "patstat_technology",
+            json!({
+                "cpc": "H01M10",
+                "keywords": ["\"solid electrolyte\"", "sulfide or sulphide or argyrodite"],
+                "exclude_cpc": ["H01M8", "H01M12"],
+            }),
         ),
         (
             &["neighborhood", "EP3477840"],
@@ -575,6 +619,32 @@ fn patstat_graph_verbs_map_onto_the_graph_tools() {
             "{args:?}"
         );
         assert_eq!(value["body"], body, "{args:?}");
+    }
+}
+
+/// `graph technology` needs a scope: a CPC prefix or a `--keywords` entry.
+/// With none of them (also with `--exclude-cpc` only) clap refuses the
+/// command before a request is made, and names the three ways to give one.
+#[test]
+fn patstat_graph_technology_without_a_scope_is_a_usage_error() {
+    for args in [
+        ["patstat", "graph", "technology"].as_slice(),
+        ["patstat", "graph", "technology", "--exclude-cpc", "H01M8"].as_slice(),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_flowleap"))
+            .args(args)
+            .arg("--dry-run")
+            .output()
+            .expect("run technology without a scope");
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stdout.is_empty(), "{args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("required arguments were not provided"),
+            "{stderr}"
+        );
+        assert!(stderr.contains("--cpc <PREFIX>"), "{stderr}");
+        assert!(stderr.contains("--keywords <TEXT>"), "{stderr}");
     }
 }
 

@@ -1,6 +1,6 @@
 ---
 name: flowleap-patstat-graph
-description: "Graph Analytics over the PATSTAT snapshot — a named node and the relationships around it. Worldwide DOCDB citation networks (who cites a patent, examiner vs applicant origin), citation/family paths between two patents, family coverage, an applicant's co-applicant network with top CPC and jurisdictions, the CPC codes that cover a technology keyword (`graph cpc`), and one CPC area's landscape (`graph technology`: top applicants, filing trend, grant rate, new entrants), every edge carrying a confidence tag (EXTRACTED/INFERRED/AMBIGUOUS) and a PATSTAT row provenance ref. Trigger when an agent needs a traversal answer about a specific patent or applicant — 'who cites EP3477840', 'how are patent X and patent Y connected', 'why does this patent matter', 'who does this company file with', where a family has coverage — or asks 'which CPC codes cover X', 'who dominates <technology area>', or wants the technology landscape for a CPC area; as opposed to other corpus aggregate counts (flowleap-patstat), free-text keyword analytics (flowleap analytics), or document retrieval (flowleap-patent/flowleap-ops)."
+description: "Graph Analytics over the PATSTAT snapshot — a named node and the relationships around it. Worldwide DOCDB citation networks (who cites a patent, examiner vs applicant origin), citation/family paths between two patents, family coverage, an applicant's co-applicant network with top CPC and jurisdictions, the CPC codes that cover a technology keyword (`graph cpc`), and the landscape of one CPC area or of a corpus of CPC prefixes and keywords (`graph technology`: top applicants, filing trend, grant rate, new entrants), every edge carrying a confidence tag (EXTRACTED/INFERRED/AMBIGUOUS) and a PATSTAT row provenance ref. Trigger when an agent needs a traversal answer about a specific patent or applicant — 'who cites EP3477840', 'how are patent X and patent Y connected', 'why does this patent matter', 'who does this company file with', where a family has coverage — or asks 'which CPC codes cover X', 'who dominates <technology area>', or wants the technology landscape for a CPC area; as opposed to other corpus aggregate counts (flowleap-patstat), free-text keyword analytics (flowleap analytics), or document retrieval (flowleap-patent/flowleap-ops)."
 ---
 
 # FlowLeap Patstat Graph (Graph Analytics)
@@ -26,7 +26,9 @@ document's text, claims or legal status is not: use `flowleap-patent`,
 
 A CPC/IPC-class landscape is Portfolio Analytics.
 `flowleap patstat graph technology <cpc>` is its fast path: find the code with
-`graph cpc` first. Use `patstat query` when the composite does not answer.
+`graph cpc` first. A topic that has no CPC code of its own is one call too:
+`graph technology --cpc <prefix> --keywords '<words>'` answers the landscape
+of that corpus. Use `patstat query` only when the composite does not answer.
 
 ## The eight commands
 
@@ -36,6 +38,7 @@ flowleap patstat graph cpc "solid electrolyte"
 flowleap patstat graph patent EP3477840
 flowleap patstat graph applicant 98765
 flowleap patstat graph technology H01M10/0562
+flowleap patstat graph technology --cpc H01M10 --keywords '"solid electrolyte"' --keywords 'sulfide or sulphide or argyrodite'
 flowleap patstat graph neighborhood pat:56123456 --depth 2 --edge-types cites,cited_by
 flowleap patstat graph path EP3477840 US5960411 --max-hops 3
 flowleap patstat graph explain EP3477840 --token-budget 4000
@@ -47,14 +50,15 @@ flowleap patstat graph explain EP3477840 --token-budget 4000
 | `cpc <keyword>` | `patstat_cpc` | sign-in, 30/min shared | Technology keyword → ranked CPC symbols with scheme title and application count |
 | `patent <number>` | `patstat_patent` | sign-in, 30/min shared | The whole patent picture in one call: anchor, backward/forward citations, family, applicants/inventors/CPC, priorities |
 | `applicant <psn_id>` | `patstat_applicant` | sign-in, 30/min shared | One harmonized entity: filings by year, top CPC, jurisdictions, co-applicants |
-| `technology <cpc>` | `patstat_technology` | sign-in, 30/min shared | Portfolio-shaped composite, served by the graph engine. One CPC area: top applicants, filing trend, grant rate by office, new entrants, seminal families, top inventors, geography |
+| `technology <cpc>` | `patstat_technology` | sign-in, 30/min shared | Portfolio-shaped composite, served by the graph engine. One CPC area: top applicants, filing trend, grant rate by office, new entrants, seminal families, top inventors, geography. With `--cpc` (more prefixes), `--keywords` or `--exclude-cpc`: the same sections for a corpus (see "A corpus landscape") |
 | `neighborhood <node>` | `patstat_neighborhood` | sign-in, 30/min shared | Bounded 1–2 hop expansion, examiner citations ranked first |
 | `path <a> <b>` | `patstat_path` | sign-in, 30/min shared | Shortest citation/family path between two patents |
 | `explain <node>` | `patstat_explain` | sign-in, 30/min shared | Node card + top connections, the remainder grouped with TRUE counts |
 
 Node ids are `pat:<appln_id>`, `person:<psn_id>`, `family:<docdb_family_id>`,
 `cpc:<symbol>`. Through `tools run` the inputs are snake_case: `q`, `number`,
-`psn_id`, `cpc`, `depth`, `edge_types` (an array), `max_hops`, `token_budget`.
+`psn_id`, `cpc`, `keywords`, `exclude_cpc` (each one string or an array),
+`depth`, `edge_types` (an array), `max_hops`, `token_budget`.
 
 ## Start with resolve, or with cpc
 
@@ -81,6 +85,56 @@ An ambiguous publication number has one answer per verb family, and none exits
   `patstat_invalid_request`, whose message names the candidates in prose.
 
 In each case, pass the `pat:` id the user meant.
+
+## A corpus landscape
+
+A topic such as "sulfide solid electrolytes" has no CPC code of its own. Do
+not write PATSTAT SQL for it first. Make one `technology` call with keywords
+and CPC prefixes:
+
+```bash
+flowleap --json patstat graph technology \
+  --cpc H01M10/0562 --cpc H01M10/052 \
+  --keywords '"solid electrolyte"' \
+  --keywords 'sulfide or sulphide or argyrodite' \
+  --exclude-cpc H01M8
+```
+
+- `--cpc <PREFIX>` (repeatable; the positional prefix counts as one): a
+  document must carry ONE of the prefixes. Take them from `graph cpc`.
+- `--keywords <TEXT>` (repeatable): each value is one entry in web-search
+  syntax. Words = all of them, `"quoted words"` = a phrase, `or` between
+  alternatives, `-word` = not. A document must match EVERY entry, so put the
+  synonyms of one concept in one entry with `or`, and each concept in its own
+  entry.
+- `--exclude-cpc <PREFIX>` (repeatable): a document must NOT carry the prefix.
+- Give one CPC prefix or one `--keywords` entry as a minimum. One prefix alone
+  is the CPC card; each other scope is a corpus.
+
+The corpus answer has `meta.mode: "corpus"` and these fields: `scope` (the
+`cpc`, `keywords` and `exclude_cpc` the engine used, `text_query`,
+`lower_bound`), `area` (`families`, `applications`, `matched_applications`),
+`top_applicants`, `filing_trend`, `grant_rate`, `new_entrants`, `offices`,
+`top_cpc` and `seminal_families`. It has no `top_inventors` and no
+`geography`. The corpus is a set of DOCDB families, and each section counts
+all applications of those families.
+
+Rules for the answer:
+
+- The keywords are matched in English titles and English abstracts only. When
+  `scope.lower_bound` is `true`, each count is a LOWER BOUND, not a census: a
+  family with no English text (many JP, CN and KR first filings) is not found.
+  Say so with each number.
+- State the scope with the numbers: the CPC prefixes, the keyword entries and
+  the excluded prefixes.
+- A 400 `patstat_invalid_request` with `details.reason` `keywords_too_broad`,
+  `cpc_too_broad` or `too_many_families` means the scope is too broad for one
+  call. Follow `details.hint`: add a more specific keyword entry or use a
+  deeper prefix. Do not go to SQL to get a larger corpus.
+- A 404 with `details.reason: "empty_corpus"` means no family matches. Use
+  fewer or more general entries, or a shorter prefix.
+- Open one symbol of `top_cpc` with `graph technology <symbol>` for its CPC
+  card.
 
 ## Reading output
 
@@ -113,7 +167,11 @@ the list. `Filings by Year` is uncapped; do not imply a cap there.
 then Top Applicants → Filing Trend → Grant Rate by Office → New Entrants →
 Seminal Families → Top Inventors → the three geography rankings → notes and
 data-quality flags → footer. Its notes say the most recent filing years are
-incomplete: never read that tail as a decline.
+incomplete: never read that tail as a decline. For a corpus, `technology`
+prints the scope (CPC prefixes, keywords, excluded prefixes) and the corpus
+size, then Top Applicants → Filing Trend → Grant Rate by Office → New
+Entrants → Top CPC Symbols → Seminal Families → Filing Offices → notes and
+data-quality flags → footer.
 
 **`--json`, every command** — the tool data verbatim, with no CLI envelope and
 no `success` flag. `neighborhood`, `path` and `explain` answer
@@ -172,7 +230,7 @@ relationship; carry it when the user needs to verify a claim.
 
 | Code | Meaning | What to do |
 |---|---|---|
-| `patstat_invalid_request` (400) | Bad node, ambiguous input, or out-of-range bound | Read the relayed message — it states the fix. Resolve first if ambiguous. |
+| `patstat_invalid_request` (400) | Bad node, ambiguous input, out-of-range bound, or a `technology` corpus that is too broad | Read the relayed message — it states the fix. Resolve first if ambiguous. |
 | `patstat_patent_ambiguous` (422) | `graph patent` only: a number matching several applications, with the candidates at `error.details.candidates` | Render the candidates and let the user pick. |
 | `patstat_patent_not_found` / `patstat_entity_not_found` (404) | Nothing matches in the loaded edition | Check the number, or the input may postdate the snapshot. |
 | `patstat_unavailable` (503) | No PATSTAT dataset configured on this deployment | Report plainly; do not retry-loop. |

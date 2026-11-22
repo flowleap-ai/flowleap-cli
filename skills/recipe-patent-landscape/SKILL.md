@@ -47,9 +47,25 @@ flowleap --json uspto search --query "<ODP Lucene from step 1>" --limit 50
 
 Start the candidate search in the publication index (the first command; see
 `flowleap-patent`): it covers every office in one search and uses no office
-quota. A landscape starts with this index search and with
-`flowleap patstat graph technology <CPC>` (see `flowleap-patstat-graph`), before
-guarded PATSTAT SQL. State the `asOf` date and the `attribution.text` of the
+quota. A landscape starts with this index search and with ONE
+`flowleap patstat graph technology` call (see `flowleap-patstat-graph`), before
+guarded PATSTAT SQL:
+
+```bash
+# One call: top applicants, filing trend, grant rate, new entrants, top CPC, offices
+flowleap --json patstat graph technology \
+  --cpc <prefix> --cpc <prefix> \
+  --keywords '"<phrase>"' --keywords '<synonym> or <synonym>'
+```
+
+Use the CPC prefixes of Step 1 for `--cpc` (a document must carry ONE of them)
+and the discriminating terms for `--keywords` (a document must match EVERY
+entry; put the synonyms of one concept in one entry with `or`). One prefix
+with no keywords gives the CPC card of that prefix. The keywords are matched
+in English titles and abstracts only, so the counts are a lower bound: say so
+in the deliverable, with the scope. When the answer is "too broad", make the
+scope narrower as the hint says. Write `patstat query` SQL only for a
+question this call does not answer. State the `asOf` date and the `attribution.text` of the
 index in the deliverable, and add the EPO search (the second command) for
 publications newer than `asOf` and for CQL field precision. When a live read answers
 "not now" (`liveUnavailableHint`: the daily live data budget is spent), continue
@@ -97,7 +113,8 @@ flowleap ops search --cql "ti=<technology> AND pd>=2024" --start 1 --end 50
 
 ### Step 6: Flag White Space
 
-Cross the analytics CPC breakdown against the filing-year trend to flag subclasses
+Cross the CPC breakdown (`top_cpc` of the Step 2 corpus call, or the analytics
+breakdown) against the filing-year trend to flag subclasses
 that are sparse or declining while neighbours grow. Done when at least one
 sparse/declining CPC subclass (or a confirmed absence) is identified.
 

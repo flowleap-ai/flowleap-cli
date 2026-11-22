@@ -1,0 +1,79 @@
+Technology corpus
+  CPC (one of): H01M10/0562, H01M10/052
+  Keywords (each entry must match): "solid electrolyte" · sulfide or sulphide or argyrodite
+  Excluded CPC: H01M8
+  Matched in: English title or English abstract
+Families: 1840 · Applications: 6211 · Applications that match the scope: 2977
+The counts are a LOWER BOUND: a family with no English title or abstract is not found.
+
+Top Applicants
++----------+--------------------------+----------+--------------+
+| PSN ID   | Name                     | Families | Active since |
++===============================================================+
+| 33067109 | TOYOTA MOTOR CORPORATION | 214      | 2016         |
+|----------+--------------------------+----------+--------------|
+| 12345678 | IDEMITSU KOSAN           | 131      | 2016         |
++----------+--------------------------+----------+--------------+
+  Showing 2 of 412 top applicants.
+
+Filing Trend
++------+----------+
+| Year | Families |
++=================+
+| 2019 | 148      |
+|------+----------|
+| 2020 | 173      |
++------+----------+
+
+Grant Rate by Office
++--------+--------------+---------+--------------+
+| Office | Applications | Granted | Grant rate % |
++================================================+
+| JP     | 512          | 401     | 78.3         |
++--------+--------------+---------+--------------+
+
+New Entrants
++-----------+------------------+----------+--------------+
+| PSN ID    | Name             | Families | Active since |
++========================================================+
+| 183880853 | KIA MOTORS CORP. | 22       | 2021         |
++-----------+------------------+----------+--------------+
+
+Top CPC Symbols
++-------------+-----------------+----------+
+| CPC Symbol  | Title           | Families |
++==========================================+
+| H01M10/0562 | Solid materials | 1711     |
+|-------------+-----------------+----------|
+| H01M10/0525 | -               | 1203     |
++-------------+-----------------+----------+
+  Showing 2 of 955 CPC symbols.
+
+Seminal Families
++-------------+----------------------------------------------------+-------+-----------------+
+| Publication | Title                                              | Filed | Citing families |
++============================================================================================+
+| US8697292B2 | SULFIDE SOLID ELECTROLYTE MATERIAL AND LITHIUM ... | 2010  | 310             |
++-------------+----------------------------------------------------+-------+-----------------+
+  Showing 1 of 1840 seminal families.
+
+Filing Offices (where protection is sought)
++--------+----------+
+| Office | Families |
++===================+
+| JP     | 1102     |
+|--------+----------|
+| US     | 987      |
++--------+----------+
+  Showing 2 of 31 filing offices.
+
+Notes:
+  - This is a corpus landscape (`scope`), not the card of one CPC prefix: the numbers are for the families that match the scope.
+  - Filing trend covers earliest filing years 2001–2026; the most recent ~24 months are incomplete (publication lag) — never read the tail as decline.
+
+Data quality flags:
+  - corpus: unknown_filing_date — 3 famil(ies) carry PATSTAT's 9999 unknown-date sentinel — excluded from filing_trend, the gap is real.
+
+Source: PATSTAT data edition PATSTAT 2026 Spring.
+This product contains data sourced from EPO databases, © European Patent Organisation
+This is PATSTAT snapshot data — for current legal status, use the live document tools (flowleap ops legal, flowleap uspto).
