@@ -1,6 +1,6 @@
 ---
 name: recipe-office-action-response
-description: Prosecution recipe for the office action analysis of one EP or US application — find the action type and posture, read the newest examiner action, list each objection with its legal basis, interpret the disputed claim terms, read each cited document at the passages the examiner relied on, run the novelty and inventive-step tests, and write an analysis with response options and deadlines for the attorney, with each statement about a cited document tied to its source passage. Trigger when the user asks to analyse or respond to an office action, an EPO communication, search opinion or search report, or a USPTO rejection, or when a routine instruction names an application and a new office action event.
+description: Prosecution recipe for the office action analysis of one EP or US application — find the action type and posture, read the newest examiner action, list each objection with its legal basis, interpret the disputed claim terms, read each cited document at the passages the examiner relied on, check what the other offices of the family cited and decided (with a dossier link to each office's file for the user to open), run the novelty and inventive-step tests, and write an analysis with response options and deadlines for the attorney, with each statement about a cited document tied to its source passage. Trigger when the user asks to analyse or respond to an office action, an EPO communication, search opinion or search report, or a USPTO rejection, or when a routine instruction names an application and a new office action event.
 metadata:
   requires:
     skills: ["flowleap-shared", "flowleap-ops", "flowleap-legal", "flowleap-citation", "flowleap-uspto", "recipe-claim-analysis"]
@@ -51,6 +51,7 @@ flowleap --json timeline <EP-publication>        # register events: the communic
 ```
 
 - When the user gave the communication or the search opinion as a file, read it (`flowleap ocr ./communication.pdf`; in the app, `read_pdf` on the workspace file). The objections then come from its text.
+- When the user did not give a file, ask for it one time, with the link to the file at the EPO: `flowleap --json ops family <EP-publication> --country EP` gives the `dossier` link of the EP member (the European Patent Register, tab "All documents"). The user opens the link and downloads the communication as a PDF. Do not fetch the link yourself: the Register refuses automated access. In a routine, where no person answers, do not wait: put the link in the report and continue with the next item.
 - When there is no file, you have only the search report. It is not an examination communication, and it does not raise objections: its categories are the searcher's view of the searched claims. Write at the top of the report: "SEARCH REPORT ONLY: no examination communication or search opinion text was read. The 'objections' below are inferred from search categories, not raised by the EPO." Read the categories with [legal tests](references/legal-tests.md), section "Search report categories". If a search opinion exists, a reply to it is due under Rule 70a: give that posture and the period as [action types and deadlines](references/action-types-and-deadlines.md) says, and ask the attorney for the opinion as a file.
 
 From the OA, record for each objection: the ground (35 U.S.C. 101, 102, 103, 112, double patenting; EPC Art. 52 to 57, 82, 83, 84, 123(2), Rule 43), the claims it hits, the documents it applies (D1, D2, …), the passages it cites, and the examiner's reasoning. Keep formal objections (claim clarity, drawings, unity) as separate objections.
@@ -86,7 +87,65 @@ flowleap --json ops description <cited>      # EP and WO only
 - **Last step:** fetch the public page of the document (for example `https://patents.google.com/patent/<number>/en`) with your web tool. Quote only text that the page returned, and give the URL as the source. The FlowLeap Patent AI app has no web tool: there, skip this step and write that the page was not read.
 - The comparison verb (`compare` / `compare_patents`) can show you where to look. It is not a source: quote the text of the document itself.
 - US: `flowleap --json citation search <application-number> --examiner-cited-only` gives the office's record of how the examiner applied each document.
-- **Family art.** Look at the other members of the family (`flowleap --json ops family <publication>`) for the same documents and the arguments made there. Record art from a counterpart that the attorney may need to cite (US duty of disclosure: check 37 CFR 1.56).
+- **Family art.** The other members of the family are Step 3b.
+
+## Step 3b: The family at the other offices (cross-office check)
+
+The same invention is examined at more than one office. What another office cited, and what the applicant argued there, is evidence for this response. Do this step when the family has members at other offices. Done when the cross-office table of the layout has one row for each member, and each row says what was read and what was not.
+
+**What FlowLeap serves, and what it does not.** FlowLeap serves the text of office actions for US files only (the USPTO file wrapper). It does NOT serve the office action text of the EPO, JPO, KIPO, CNIPA, the PCT authorities or other offices. For those offices it serves the status, the legal events and the cited documents, and it gives a **dossier link**: the page of the office that shows the file. The user opens that page and downloads the document. Say this plainly in the report. Do not write that you read a non-US office action unless the user gave you the file.
+
+1. **The members.** One call gives the members, the offices and the dossier links:
+
+   ```bash
+   flowleap --json ops family <publication>                # one page of members, countries, dossier links
+   flowleap --json ops family <publication> --country JP   # the members of one office
+   ```
+
+   Cite `representativePublication` for each member. A member with a direct link to its file has `dossier` (`office`, `url`). `dossiers.offices.<office>` says what that page shows (`label`, `content`) and gives the search page (`searchUrl`, `searchContent`) for a member that has no `dossier` (US, CN, and old number formats). `dossiers.global` is one USPTO Global Dossier link for the whole family: the files at the US, EP, JP, KR and CN offices with machine translation into English (a USPTO.gov sign-in is necessary). An office that is not in `dossiers.offices` has no link.
+
+2. **The status of each member.** Pending, granted, refused, withdrawn or lapsed, with the date:
+
+   ```bash
+   flowleap --json ops legal <member-publication>     # legal events, newest posture
+   flowleap --json timeline <EP-publication>          # EP: register events and their dates
+   ```
+
+   An event is a code and a date. It is not the text of a communication.
+
+3. **What each office cited.** The Examiner Baseline gives each cited document by office, with its category (X, Y, A) where the office gives one:
+
+   ```bash
+   flowleap --json patent examiner-baseline <publication>   # any family member
+   ```
+
+   Look for a document that another office cited as X or Y and that the examiner of this application did not cite, and for a document that both cited. Read `coverage` and the gap rows: a partial Baseline is not a complete one, and the report must say which offices were not read.
+
+4. **US members: read the file.** The text is served. Get the application number, list the actions and the replies, and read them as Step 1 says:
+
+   ```bash
+   flowleap --json uspto grant <US-patent-number>          # or: uspto application <number>; gives the application number
+   flowleap --json uspto documents <application-number> --code CTNF
+   flowleap uspto document-text <application-number> <documentIdentifier> > us-member-action.md
+   ```
+
+5. **EP, JP, KR, CN and PCT members: the user gets the document.** Give the user the dossier link of the member and ask for the office action as a PDF. Use this form:
+
+   > To read the EPO communication of EP2784162, open this page and download the communication (PDF): <dossier url>. Then give me the file. FlowLeap does not serve this document.
+
+   - Give the link as it is. Do NOT fetch it with a web tool, `curl` or a browser tool: the registers refuse automated access, and their terms forbid robots.
+   - When `dossiers.global` is present, give it too: for JP, KR and CN it shows an English machine translation.
+   - When the user gives the file, read it:
+
+     ```bash
+     flowleap ocr ./ep-communication.pdf > ep-communication.md
+     ```
+
+     In a chat client, call `ocr` with the file as base64 and its `filename`. In the app, use `read_pdf` on the workspace file. Do not pass a register URL to `ocr`.
+   - Quote the text only from the OCR result, with the file name and the page. A machine translation is a translation: say so, and mark each quote from it "machine translation".
+   - When the user does not give the file, write the row as "not read: no file" with the link. Do not infer the objections of that office from its citations.
+
+6. **Use it.** For each other office, record: the documents it applied, the claims it objected to, the amendment or the argument that overcame the objection (when you read it), and the result. Then say what it means for this response: an argument that succeeded elsewhere, an amendment with basis that another office accepted, or a statement the applicant made elsewhere that conflicts with the argument you propose. Record art from a counterpart that the attorney may need to cite (US duty of disclosure: check 37 CFR 1.56).
 
 ## Step 4: Compare, claim by claim
 
