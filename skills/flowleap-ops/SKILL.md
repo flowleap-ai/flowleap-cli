@@ -1,6 +1,6 @@
 ---
 name: flowleap-ops
-description: Direct EPO Open Patent Services access through the FlowLeap backend — CQL search, EP Register search by representative or opponent, plus per-document bibliography, family, legal status and abstract worldwide, and claims and description for EP and WO (US claims from BigQuery, English only). Trigger when an agent needs authoritative EPO document data for a known publication number, claims or description text for EP, WO or US, family members, legal-status events, a raw OPS CQL search, or how many EP filings a professional representative handles. For query-building or ranked discovery use flowleap-patent; use OPS for authoritative per-document data.
+description: Direct EPO Open Patent Services access through the FlowLeap backend — CQL search, EP Register search by representative or opponent, plus per-document bibliography, family, legal status and abstract worldwide, and claims and description for EP and WO (US claims from the publication index, English only). Trigger when an agent needs authoritative EPO document data for a known publication number, claims or description text for EP, WO or US, family members, legal-status events, a raw OPS CQL search, or how many EP filings a professional representative handles. For query-building or ranked discovery use flowleap-patent; use OPS for authoritative per-document data.
 ---
 
 # FlowLeap OPS
@@ -91,15 +91,29 @@ flowleap ops biblio <doc> --designated-states  # …plus the EPC states it desig
 flowleap ops biblio <doc> --resolve-npl    # …plus the OpenAlex record of each cited paper
 flowleap ops claims <doc> --lang en        # Claims text
 flowleap ops description <doc> --lang en   # Full description
-flowleap ops family <doc>                  # Patent family members
-flowleap ops legal <doc>                   # Legal status events + designated states
+flowleap ops family <doc>                  # Patent family: one page of members + counts per office
+flowleap ops family <doc> --country US     # …only the members of one office
+flowleap ops family <doc> --view full      # …every member and the `members` row list
+flowleap ops legal <doc>                   # Legal status events (one page) + designated states
+flowleap ops legal <doc> --limit 200       # …more events in one answer (max 1000)
 flowleap ops abstract <doc>                # Abstract text
 flowleap ops register-biblio <EP-doc>      # EP Register: representatives, opponents, status
 flowleap ops register-search --cql <query>  # EP Register search: re=<representative>, op=<opponent>, nm=<name in any role>
 ```
 
-`claims` serves EP and WO from EPO OPS and US from BigQuery (English only);
+`claims` serves EP and WO from EPO OPS and US from the publication index (English only);
 `description` serves EP and WO. For an office with no text source, use the family-member workaround in `flowleap-shared`.
+
+A US `claims` answer carries `source` (`publication_index`), `asOf` (the
+edition of the index) and `coveredThrough` (the publication date of the newest
+US claims the edition holds). The edition date is not the claims date: the
+claims stop months before it. A US publication the index does not hold answers
+`FULLTEXT_UNAVAILABLE` with `error.details.reason` `no_source` and
+`error.details.holding`: `newer_than_coverage` (published after
+`coveredThrough`; `publicationDate` gives its date and, for a grant,
+`preGrantPublication` names the earlier publication whose claims you can read
+as the application claims, not the granted claims) or `not_held` (a holding
+gap). Do not retry the two. Say which one it is.
 
 `biblio --resolve-npl` looks each `citedReferences[].npl` string up in
 OpenAlex and attaches `nplWork` (`status` `matched` | `candidates` |
@@ -151,6 +165,36 @@ see here: `INVALID_INPUT` (422, carries `issues[]`), `UNKNOWN_TOOL` (404),
 narrower simple-family tool — the same invention republished across offices,
 without the divisionals and continuations. They answer different questions; pick
 deliberately.
+
+The default family answer is the **summary view**, sized for a chat context:
+
+- `representatives.members`: one page of the family members (one entry per
+  application, with its `representativePublication`). `--limit` (default 100,
+  max 1000) and `--offset` page it.
+- `countries`: the number of members per office, for the whole family.
+- `representativesTotal` / `representativesReturned`: all members, and the
+  members in this answer. `recordsTotal` / `recordsReturned`: the same for the
+  publication, application and priority rows (0 returned in the summary view).
+- `next`: present when the answer is only a part of the family. It says how to
+  get the remaining members. Human and table output also print it on stderr.
+
+When `representativesReturned` is less than `representativesTotal`, the answer
+is not the whole family: page it, or use `--country <office>` (`country`) for
+the members of one office. `--view full` (`view: "full"`) returns every member
+and the `members` row list; use it only when you need the rows, because a large
+family is hundreds of kilobytes.
+
+### Legal status: one page of events, two dates
+
+`ops legal` returns one page of `events` (`--limit`, default 50, max 1000;
+`--offset` for the next page). `eventsTotal` is the number of all events and
+`eventsReturned` the number in this answer: when it is less, you do not have
+every event, so do not conclude "no lapse event" or "no opposition" from that
+page. Each event has two dates. `eventDate` is the date of the event itself
+(for example the date of a lapse or of a fee payment). `date` is the date the
+office recorded it, which can be years later. Use `eventDate` in a timeline and
+for a legal conclusion; use `date` only to say when the record changed.
+`--output table` prints both dates as columns.
 
 ### Designated-state coverage: designated states, not family members
 
@@ -205,11 +249,18 @@ flowleap ops biblio EP1234567
 # Bibliography plus the EPC states the filing designates (extra EPO read)
 flowleap ops biblio EP1234567 --designated-states
 
-# Get claims in German (EP and WO only; US claims are BigQuery, English)
+# Get claims in German (EP and WO only; US claims are from the publication index, English)
 flowleap ops claims EP1234567 --lang de
 
-# Get family members (JSON for agents)
+# Get family members (JSON for agents): the summary view, one page of members
 flowleap ops family EP1234567 --json
+
+# The US members only; then every member and every row
+flowleap --json ops family EP1234567 --country US
+flowleap --json ops family EP1234567 --view full
+
+# Legal status: the second page of events
+flowleap --json ops legal EP1234567 --limit 50 --offset 50
 
 # Search with pagination
 flowleap ops search --cql "ti=battery" --start 1 --end 50

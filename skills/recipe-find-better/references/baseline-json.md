@@ -16,6 +16,23 @@ rebuild it from other calls. Fields are only added, never renamed.
 | `documents[]` | One row per cited document. |
 | `gaps[]` | What could not be read. A gap is "no record", never "nothing cited". |
 
+## Size of the answer
+
+The answer holds a part of a large Baseline. Check the totals before you count
+rows or say that a document is not cited.
+
+- `documents[]`: the first 50 rows, examiner-cited first (`limit`, default 50,
+  max 1000). `documentsTotal` is the size of the whole matrix and
+  `documentsReturned` the rows in this answer.
+- `membersWalked[]`: the first 25 members, the requested member first
+  (`members_limit`). `membersWalkedTotal` is the number of members read.
+- `gaps[]`: the first 25 gap rows (`gaps_limit`). `gapsTotal` is the number of
+  gap rows, and `gapSummary` counts all of them by reason, source and office.
+
+When `documentsReturned` is less than `documentsTotal` and you need the
+remaining rows, call the tool with a higher limit:
+`flowleap --json tools run examiner_baseline publication=<publication> limit=<documentsTotal>`.
+
 ## `membersWalked[]`
 
 - `office`, `representativePublication`, `docdbApplication`.

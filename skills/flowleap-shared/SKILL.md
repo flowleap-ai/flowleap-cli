@@ -69,14 +69,14 @@ firm administrator or the desktop user sets up outside the chat.
 
 | Command family | Tool(s) | Notes |
 |---|---|---|
-| `ops biblio` / `claims` / `description` / `family` / `legal` / `abstract` | `get_bibliography`, `get_claims`, `get_description`, `get_family`, `get_legal_status`, `get_abstract` | `get_family` is the INPADOC extended family; `--resolve-npl` is `resolve_npl: true` |
+| `ops biblio` / `claims` / `description` / `family` / `legal` / `abstract` | `get_bibliography`, `get_claims`, `get_description`, `get_family`, `get_legal_status`, `get_abstract` | `get_family` is the INPADOC extended family: `--view` is `view` (`summary` default, `full`), `--country`/`--limit`/`--offset` are `country`/`limit`/`offset`; `ops legal --limit`/`--offset` are `limit`/`offset` of `get_legal_status`; `--resolve-npl` is `resolve_npl: true` |
 | `ops register-biblio` | `get_register_biblio` | EP only: representatives of record, opponents |
 | `ops register-search` | `search_register` | EP Register CQL (`query`, `range`); the one search with a representative index (`re=`), opponent (`op=`), name in any role (`nm=`, surname-first — use it when a role index returns 0); EP applications only |
 | `patent search`, `ops search` | `search_patents` | `provider: "epo_ops"`, CQL |
 | `uspto search` | `search_patents` | `provider: "uspto"`, Lucene |
-| `uspto application` / `grant` / `continuity` | `get_us_application`, `get_us_grant`, `get_continuity` | |
+| `uspto application` / `grant` / `continuity` | `get_us_application`, `get_us_grant`, `get_continuity` | `--full` is `view: "full"`; the default summary view names each cut list in `truncated[]` |
 | `uspto transactions` / `assignments` / `foreign-priority` / `adjustment` / `attorney` | `get_transactions`, `get_assignments`, `get_foreign_priority`, `get_patent_term_adjustment`, `get_attorney` | |
-| `uspto documents` / `document-text` | `get_application_documents`, `read_application_document` | |
+| `uspto documents` / `document-text` | `get_application_documents`, `read_application_document` | `--limit`/`--offset` are `limit`/`offset`; `--download-options` is `include_download_options: true` |
 | `citation search` / `forward` / `stats` | `search_office_action_citations`, `search_enriched_citations`, `get_citation_stats` | `citation novelty` is `search_office_action_citations` with `category: "X"`, `examiner_cited_only: true` |
 | EPO forward citations (no command) | `get_citations` | |
 | `patent examiner-baseline` | `examiner_baseline` | The tool returns the same JSON. |
@@ -303,13 +303,14 @@ flowleap upgrade
 
 **Office coverage** is a property of a tool: the offices it answers for, and
 from which source. The three text tools serve two offices from EPO OPS and US
-claims from BigQuery. The other document reads (`ops biblio`, `family`,
+claims from the publication index. The other document reads (`ops biblio`, `family`,
 `legal`, `abstract`) are worldwide bibliographic; `get_citations` is worldwide
 DOCDB citation data; `get_patent_image` serves EPO OPS images for the offices
 EPO OPS holds.
 
-- `ops claims` / `get_claims`: EP and WO from EPO OPS; US from BigQuery, in
-  English only.
+- `ops claims` / `get_claims`: EP and WO from EPO OPS; US from the publication
+  index, in English only. A US answer carries `source`, `asOf` (the edition)
+  and `coveredThrough` (the publication date of the newest US claims held).
 - `ops description` / `get_description`: EP and WO from EPO OPS. US description
   is not served.
 - `get_fulltext` (no command): probes the EPO OPS holdings only, so it answers
@@ -324,7 +325,10 @@ until a customer names an office, so never call one of them "pending".
 steps:
 
 1. `flowleap --json ops family <number>` / `get_family` (the extended INPADOC
-   family) to find the EP, WO or US member.
+   family) to find the EP, WO or US member. Read `countries` first: it counts
+   the members per office for the whole family. The member list is one page
+   (`representatives.members`); add `--country EP` (`country`) to get the
+   members of one office.
 2. `flowleap --json ops claims <member>` or `ops description <member>` /
    `get_claims` or `get_description` on that member.
 
@@ -356,9 +360,12 @@ bibliography and the citations first, and try the family after.
 `FULLTEXT_UNAVAILABLE` (HTTP 404, exit 5; a data verdict, never retry). Under
 `error.details`, `reason` is `no_source` and the `workaround` field beside it
 is `{ tool: "get_family", note }`: act on that field, not on the message text. A
-US publication the BigQuery table does not hold answers `no_source` with no
-workaround (a holding gap). Reason `not_configured` means the server has no
-BigQuery configured: a server configuration gap, no workaround, and
+US publication the publication index does not hold answers `no_source` with no
+workaround, and `error.details.holding` says why: `newer_than_coverage` (it was
+published after `coveredThrough`; `publicationDate` gives its date and, for a
+grant, `preGrantPublication` names the earlier publication whose claims are
+served) or `not_held` (a holding gap). Reason `not_configured` means the server
+has no US claims source configured: a server configuration gap, no workaround, and
 `server_info` shows it on the US `get_claims` row (`officeCoverage`).
 
 ## Safety

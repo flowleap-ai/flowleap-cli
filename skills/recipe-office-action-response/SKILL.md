@@ -41,6 +41,8 @@ flowleap uspto document-text <application-number> <documentIdentifier> > office-
 
 Take the newest action. Also list code `892` (references cited by the examiner) for the full numbers of the cited documents.
 
+Before you write "none found" for an action, a reply or a claims listing, read `matched` and `documentCodes` in the listing. `matched` 0 means no document has that code: `documentCodes` counts every code in the file wrapper, so look there for the code that is present (for example `CTNF` with no `CTFR`, or `CTRS` for a restriction). When `returned` is less than `matched`, the answer is one page of 100: get the next page with `--offset` before you select the newest action or decide that no later filing exists.
+
 **EP application.** No tool serves the text of an EPO communication or of a search opinion. Use what the tools serve, and say what they do not:
 
 ```bash

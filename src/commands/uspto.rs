@@ -45,14 +45,30 @@ enum UsptoCommand {
         count_only: bool,
     },
     /// Get a granted patent by patent number
+    ///
+    /// The default answer is the summary view: every field of the record,
+    /// with the long lists cut to their first rows. `truncated` names each
+    /// cut list, its total and the tool that returns all of it.
     Grant {
         /// Patent number (for example, 11800000)
         patent_number: String,
+
+        /// The whole file wrapper record, no list cut (can be more than 200 KB)
+        #[arg(long)]
+        full: bool,
     },
     /// Get a patent application by application number
+    ///
+    /// The default answer is the summary view: every field of the record,
+    /// with the long lists cut to their first rows. `truncated` names each
+    /// cut list, its total and the tool that returns all of it.
     Application {
         /// Application number
         app_number: String,
+
+        /// The whole file wrapper record, no list cut (can be more than 200 KB)
+        #[arg(long)]
+        full: bool,
     },
     /// Get application continuity data
     Continuity {
@@ -96,6 +112,19 @@ enum UsptoCommand {
         /// Filter by direction: INCOMING (applicant→office) or OUTGOING (office→applicant)
         #[arg(long, value_parser = ["incoming", "outgoing"])]
         direction: Option<String>,
+
+        /// Documents per answer (backend default 100, max 1000)
+        #[arg(long)]
+        limit: Option<u32>,
+
+        /// Documents to skip, for the next page
+        #[arg(long)]
+        offset: Option<u32>,
+
+        /// Also return each document's downloadOptionBag (the USPTO download
+        /// URLs per format; about twice the bytes)
+        #[arg(long)]
+        download_options: bool,
     },
     /// Fetch one IFW document as OCR-extracted markdown text
     ///
@@ -129,8 +158,11 @@ pub async fn run(ctx: &Context, args: UsptoArgs) -> Result<()> {
                 search(ctx, query.as_deref(), body.as_deref(), body_file, limit).await
             }
         }
-        UsptoCommand::Grant { patent_number } => grant(ctx, &patent_number).await,
-        UsptoCommand::Application { app_number } => application(ctx, &app_number).await,
+        UsptoCommand::Grant {
+            patent_number,
+            full,
+        } => grant(ctx, &patent_number, full).await,
+        UsptoCommand::Application { app_number, full } => application(ctx, &app_number, full).await,
         UsptoCommand::Continuity { app_number } => continuity(ctx, &app_number).await,
         UsptoCommand::Transactions { app_number } => {
             wrapper_bag(
@@ -179,7 +211,20 @@ pub async fn run(ctx: &Context, args: UsptoArgs) -> Result<()> {
             app_number,
             code,
             direction,
-        } => documents(ctx, &app_number, code.as_deref(), direction.as_deref()).await,
+            limit,
+            offset,
+            download_options,
+        } => {
+            let input = documents_input(
+                &app_number,
+                code.as_deref(),
+                direction.as_deref(),
+                limit,
+                offset,
+                download_options,
+            );
+            documents(ctx, &input).await
+        }
         UsptoCommand::DocumentText {
             app_number,
             document_id,
@@ -451,20 +496,56 @@ fn count_results(result: &Value) -> usize {
     result.as_array().map(|array| array.len()).unwrap_or(0)
 }
 
-async fn grant(ctx: &Context, patent_number: &str) -> Result<()> {
-    let input = json!({ "patent_number": patent_number });
+/// The input of `get_us_grant` / `get_us_application`: the number under
+/// `key`, plus `view: "full"` only for `--full`, so the summary default stays
+/// the backend's.
+fn record_input(key: &str, number: &str, full: bool) -> Value {
+    let mut input = json!({ key: number });
+    if full {
+        input["view"] = json!("full");
+    }
+    input
+}
+
+async fn grant(ctx: &Context, patent_number: &str, full: bool) -> Result<()> {
+    let input = record_input("patent_number", patent_number, full);
     if let Some(result) = tools::call_tool_data(ctx, "get_us_grant", &input).await? {
         print_uspto_record(ctx, &result);
     }
     Ok(())
 }
 
-async fn application(ctx: &Context, app_number: &str) -> Result<()> {
-    let input = json!({ "application_number": app_number });
+async fn application(ctx: &Context, app_number: &str, full: bool) -> Result<()> {
+    let input = record_input("application_number", app_number, full);
     if let Some(result) = tools::call_tool_data(ctx, "get_us_application", &input).await? {
         print_uspto_record(ctx, &result);
     }
     Ok(())
+}
+
+/// One stderr note per `truncated[]` entry of a summary-view record
+/// (`{ path, total, returned, tool }`): the list that was cut, how much of it
+/// the answer holds, and where all of it is. Empty for a full-view answer or
+/// an older backend (no `truncated`).
+fn truncated_notes(result: &Value) -> Vec<String> {
+    let Some(entries) = result.get("truncated").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let path = entry.get("path").and_then(Value::as_str)?;
+            let total = entry.get("total").and_then(Value::as_u64)?;
+            let returned = entry.get("returned").and_then(Value::as_u64)?;
+            let all = match entry.get("tool").and_then(Value::as_str) {
+                Some(tool) => format!("--full, or the tool {tool}, returns all of it"),
+                None => "--full returns all of it".to_string(),
+            };
+            Some(format!(
+                "note: {path} holds {returned} of {total} row(s) in the summary view; {all}."
+            ))
+        })
+        .collect()
 }
 
 /// Render one ODP file-wrapper record. JSON output keeps the verbatim backend
@@ -475,6 +556,9 @@ fn print_uspto_record(ctx: &Context, result: &Value) {
     if ctx.output_format == "json" {
         output::print_json(result);
         return;
+    }
+    for note in truncated_notes(result) {
+        eprintln!("{note}");
     }
     let record = result
         .get("patentFileWrapperDataBag")
@@ -521,16 +605,17 @@ async fn wrapper_bag(
     Ok(())
 }
 
-/// List IFW documents. Filtering happens server-side — the tool takes the
-/// document code and direction and returns the compacted listing
-/// (`{ applicationNumber, total, returned, documents }`), each record keeping
-/// its `downloadOptionBag` alongside the derived `pageCount`.
-async fn documents(
-    ctx: &Context,
+/// The `get_application_documents` input. The page and the download options
+/// are sent only when the caller gave them, so the backend defaults (100
+/// documents, no `downloadOptionBag`) stay the backend's.
+fn documents_input(
     app_number: &str,
     code: Option<&str>,
     direction: Option<&str>,
-) -> Result<()> {
+    limit: Option<u32>,
+    offset: Option<u32>,
+    download_options: bool,
+) -> Value {
     let mut input = json!({ "application_number": app_number });
     if let Some(code) = code {
         input["document_code"] = json!(code.to_uppercase());
@@ -538,9 +623,90 @@ async fn documents(
     if let Some(direction) = direction {
         input["direction"] = json!(direction.to_uppercase());
     }
+    if let Some(limit) = limit {
+        input["limit"] = json!(limit);
+    }
+    if let Some(offset) = offset {
+        input["offset"] = json!(offset);
+    }
+    if download_options {
+        input["include_download_options"] = json!(true);
+    }
+    input
+}
 
-    let Some(result) = tools::call_tool_data(ctx, "get_application_documents", &input).await?
-    else {
+/// `documentCodes` (code to count, for the whole file wrapper) as one line:
+/// "CTNF (1), NOA (2)". None when the field is absent or empty.
+fn document_codes_line(result: &Value) -> Option<String> {
+    let codes = result.get("documentCodes").and_then(Value::as_object)?;
+    if codes.is_empty() {
+        return None;
+    }
+    let parts: Vec<String> = codes
+        .iter()
+        .map(|(code, count)| format!("{code} ({count})"))
+        .collect();
+    Some(parts.join(", "))
+}
+
+/// The stderr note for a document listing, or None when the answer holds
+/// every matching document. Three cases, told apart by `matched` (the number
+/// of documents that pass the filters), never by an empty page alone:
+/// no document passes the filter (the note lists the codes the file wrapper
+/// does hold); the page starts after the last match; the page is one part of
+/// the matches. An older backend sends no `matched`: an empty answer on a
+/// non-empty file wrapper is then the filter note, as before.
+fn documents_note(result: &Value) -> Option<String> {
+    let total = result.get("total").and_then(Value::as_u64).unwrap_or(0);
+    let returned = result
+        .get("documents")
+        .and_then(Value::as_array)
+        .map(|documents| documents.len() as u64)
+        .unwrap_or(0);
+    let offset = result.get("offset").and_then(Value::as_u64).unwrap_or(0);
+    let codes = document_codes_line(result)
+        .map(|line| format!(" Document codes in this file wrapper: {line}."))
+        .unwrap_or_default();
+
+    let Some(matched) = result.get("matched").and_then(Value::as_u64) else {
+        return (returned == 0 && total > 0).then(|| {
+            format!(
+                "note: {total} document(s) exist but none match the filter. \
+                 Drop --code/--direction to list them all."
+            )
+        });
+    };
+
+    if matched == 0 {
+        return (total > 0).then(|| {
+            format!(
+                "note: {total} document(s) exist but none match the filter. \
+                 Drop --code/--direction to list them all.{codes}"
+            )
+        });
+    }
+    if returned == 0 {
+        return Some(format!(
+            "note: --offset {offset} is after the last document: {matched} document(s) match. \
+             Use an --offset below {matched}."
+        ));
+    }
+    let next = offset + returned;
+    (next < matched).then(|| {
+        format!(
+            "note: this answer holds {returned} of {matched} matching document(s) (offset {offset}). \
+             Next page: --offset {next}."
+        )
+    })
+}
+
+/// List IFW documents. Filtering and paging happen server-side — the tool
+/// takes the document code, the direction and the page and returns the
+/// compacted listing (`{ applicationNumber, total, matched, returned, offset,
+/// documentCodes, documents }`), each record with the derived `pageCount`,
+/// and with its `downloadOptionBag` only with `--download-options`.
+async fn documents(ctx: &Context, input: &Value) -> Result<()> {
+    let Some(result) = tools::call_tool_data(ctx, "get_application_documents", input).await? else {
         return Ok(());
     };
     if ctx.output_format == "json" {
@@ -548,17 +714,12 @@ async fn documents(
         return Ok(());
     }
 
-    let total = result.get("total").and_then(Value::as_u64).unwrap_or(0);
     let documents = result
         .get("documents")
         .cloned()
         .unwrap_or_else(|| json!([]));
-    let returned = documents.as_array().map(Vec::len).unwrap_or(0);
-    if returned == 0 && total > 0 {
-        eprintln!(
-            "note: {total} document(s) exist but none match the filter. \
-             Drop --code/--direction to list them all."
-        );
+    if let Some(note) = documents_note(&result) {
+        eprintln!("{note}");
     }
     output::print_value(&ctx.output_format, &documents, document_columns());
     Ok(())
@@ -873,5 +1034,104 @@ mod tests {
         assert_eq!(count_results(&json!({ "results": [] })), 0);
         assert_eq!(count_results(&json!([1, 2])), 2);
         assert_eq!(count_results(&json!({ "other": true })), 0);
+    }
+
+    #[test]
+    fn record_input_sends_view_full_only_for_the_full_flag() {
+        assert_eq!(
+            record_input("patent_number", "11800000", false),
+            json!({ "patent_number": "11800000" })
+        );
+        assert_eq!(
+            record_input("application_number", "16123456", true),
+            json!({ "application_number": "16123456", "view": "full" })
+        );
+    }
+
+    #[test]
+    fn each_truncated_entry_becomes_one_note() {
+        let result = json!({
+            "truncated": [
+                { "path": "eventDataBag", "total": 58, "returned": 10, "tool": "get_transactions" },
+                { "path": "recordAttorney.attorneyBag", "total": 40, "returned": 3 }
+            ]
+        });
+        assert_eq!(
+            truncated_notes(&result),
+            vec![
+                "note: eventDataBag holds 10 of 58 row(s) in the summary view; --full, or the tool get_transactions, returns all of it.",
+                "note: recordAttorney.attorneyBag holds 3 of 40 row(s) in the summary view; --full returns all of it.",
+            ]
+        );
+        assert!(truncated_notes(&json!({ "view": "full" })).is_empty());
+    }
+
+    #[test]
+    fn documents_input_sends_the_page_and_the_download_options_only_when_given() {
+        assert_eq!(
+            documents_input("16123456", None, None, None, None, false),
+            json!({ "application_number": "16123456" })
+        );
+        assert_eq!(
+            documents_input(
+                "16123456",
+                Some("ctnf"),
+                Some("outgoing"),
+                Some(20),
+                Some(40),
+                true
+            ),
+            json!({
+                "application_number": "16123456",
+                "document_code": "CTNF",
+                "direction": "OUTGOING",
+                "limit": 20,
+                "offset": 40,
+                "include_download_options": true
+            })
+        );
+    }
+
+    #[test]
+    fn the_documents_note_tells_no_match_from_a_page_after_the_end() {
+        // No document passes the filter: the note lists the codes that exist.
+        let no_match = json!({
+            "total": 52, "matched": 0, "offset": 0, "documents": [],
+            "documentCodes": { "CTNF": 1, "NOA": 2 }
+        });
+        let note = documents_note(&no_match).expect("no match has a note");
+        assert!(note.contains("none match the filter"), "{note}");
+        assert!(note.contains("CTNF (1), NOA (2)"), "{note}");
+
+        // A page after the last match is not "no match".
+        let past_end = json!({ "total": 52, "matched": 52, "offset": 500, "documents": [] });
+        let note = documents_note(&past_end).expect("a page after the end has a note");
+        assert!(!note.contains("none match"), "{note}");
+        assert!(note.contains("52 document(s) match"), "{note}");
+
+        // One part of the matches: the note names the next page.
+        let page = json!({ "total": 52, "matched": 52, "offset": 0, "documents": [1, 2] });
+        let note = documents_note(&page).expect("a partial page has a note");
+        assert!(note.contains("2 of 52"), "{note}");
+        assert!(note.contains("--offset 2"), "{note}");
+
+        // Every match is in the answer: no note.
+        let whole = json!({ "total": 52, "matched": 2, "offset": 0, "documents": [1, 2] });
+        assert_eq!(documents_note(&whole), None);
+        // An empty file wrapper: no note.
+        let empty = json!({ "total": 0, "matched": 0, "offset": 0, "documents": [] });
+        assert_eq!(documents_note(&empty), None);
+    }
+
+    #[test]
+    fn the_documents_note_keeps_the_old_rule_for_a_backend_without_matched() {
+        let old = json!({ "total": 12, "returned": 0, "documents": [] });
+        assert!(documents_note(&old)
+            .expect("an old empty answer has a note")
+            .contains("none match the filter"));
+        assert_eq!(
+            documents_note(&json!({ "total": 12, "documents": [1] })),
+            None
+        );
     }
 }
