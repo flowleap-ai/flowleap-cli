@@ -283,7 +283,13 @@ async fn run(cli: Cli) -> Result<()> {
         // task always resolves (answer or timeout) instead of being cancelled
         // mid-flight. Only the one fetch run per day can wait here at all;
         // cached runs resolve instantly.
-        if let Ok(Ok(Some(notice))) = tokio::time::timeout(update::CHECK_GRACE, handle).await {
+        let update_notice = match tokio::time::timeout(update::CHECK_GRACE, handle).await {
+            Ok(Ok(notice)) => notice,
+            _ => None,
+        };
+        // The stale-skills line is read here, after the command: a
+        // `skills update` that refreshed the targets must not get it.
+        if let Some(notice) = update::closing_notice(update_notice) {
             eprintln!("{}", notice);
         }
     }

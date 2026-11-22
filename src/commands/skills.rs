@@ -697,6 +697,8 @@ fn apply_updates(installs: &mut [SkillInstall], version: &str, force: bool) -> R
 
 /// Line for the daily update notice (hooked from src/update.rs): mentions
 /// recorded skill installs whose stamp is older than the running binary.
+/// Reads the config at the time of the call, so the caller runs it AFTER the
+/// command (`update::closing_notice`).
 pub fn stale_skills_notice(current_version: &str) -> Option<String> {
     let cfg = Config::load().ok()?;
     stale_notice_for(&cfg.skill_installs, current_version)
@@ -1166,6 +1168,34 @@ mod tests {
             SkillsManifest::load(&tmp.path().join("skills")).cli_version,
             "9.9.9"
         );
+    }
+
+    #[test]
+    fn stale_notice_is_gone_after_an_update_that_refreshed_the_targets() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mut installs = vec![
+            SkillInstall {
+                target: "codex".to_string(),
+                path: tmp.path().join("AGENTS.md"),
+                version: "0.0.1".to_string(),
+                skills: Vec::new(),
+            },
+            SkillInstall {
+                target: "dir".to_string(),
+                path: tmp.path().join("skills"),
+                version: "0.0.1".to_string(),
+                skills: Vec::new(),
+            },
+        ];
+        // Before the update: the two targets are stale. This is the value the
+        // notice had when it was read before the command.
+        let before = stale_notice_for(&installs, "9.9.9").expect("stale before the update");
+        assert!(before.contains("2 installed skill target(s)"), "{before}");
+
+        apply_updates(&mut installs, "9.9.9", true).expect("update");
+
+        // After the update, the records the notice reads have the new stamp.
+        assert_eq!(stale_notice_for(&installs, "9.9.9"), None);
     }
 
     #[test]
