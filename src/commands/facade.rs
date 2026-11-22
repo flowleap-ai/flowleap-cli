@@ -565,10 +565,16 @@ fn render_summary(data: &Value) -> String {
                 .max_by_key(|e| e.get("date").and_then(|d| d.as_str()).unwrap_or(""));
             match latest {
                 Some(event) => {
+                    // The backend sends only the newest events (#643) with the
+                    // true count in `eventsTotal`; an older backend sends all.
+                    let total = legal
+                        .get("eventsTotal")
+                        .and_then(|t| t.as_u64())
+                        .unwrap_or(events.len() as u64);
                     let _ = writeln!(
                         out,
                         "Legal:  {} events (latest: {} {} {})",
-                        events.len(),
+                        total,
                         text(event.get("date")),
                         text(event.get("code")),
                         output::truncate(&text(event.get("text")), 60)
@@ -601,10 +607,16 @@ fn render_summary(data: &Value) -> String {
                 .take(8)
                 .map(|m| text(m.get("docId")))
                 .collect();
-            if members.len() > 8 {
+            // The backend sends the first rows only (#646) with the true count
+            // in `familyMembersTotal`; an older backend sends all.
+            let total = family
+                .get("familyMembersTotal")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(members.len() as u64);
+            if total as usize > ids.len() {
                 ids.push("…".to_string());
             }
-            let _ = writeln!(out, "Family: {} members: {}", members.len(), ids.join(", "));
+            let _ = writeln!(out, "Family: {} members: {}", total, ids.join(", "));
         }
         None => {
             let _ = writeln!(out, "Family: unavailable");
@@ -822,6 +834,35 @@ mod tests {
              Legal:  2 events (latest: 2010-01-03 PGFP Annual fee paid)\n\
              Family: 2 members: EP1000000, NL1010536\n\
              Partial: legalStatus unavailable — partial"
+        );
+    }
+
+    /// The backend caps the legal events and the family rows of the summary
+    /// (#643, #646): the counts come from the totals, not the list lengths.
+    #[test]
+    fn summary_counts_come_from_the_totals() {
+        let data = json!({
+            "patentNumber": "EP3766408B1",
+            "bibliography": { "docId": "EP3766408B1", "title": "Inserter" },
+            "legalStatus": {
+                "docId": "EP3766408B1",
+                "events": [{ "code": "PG25", "date": "2026-09-15", "text": "Lapsed" }],
+                "eventsTotal": 95,
+                "eventsReturned": 1,
+            },
+            "family": {
+                "familyMembers": [{ "docId": "EP3766408B1" }, { "docId": "US1A1" }],
+                "familyMembersTotal": 78,
+            },
+        });
+        let text = render_summary(&data);
+        assert!(
+            text.contains("Legal:  95 events (latest: 2026-09-15 PG25 Lapsed)"),
+            "{text}"
+        );
+        assert!(
+            text.contains("Family: 78 members: EP3766408B1, US1A1, …"),
+            "{text}"
         );
     }
 
