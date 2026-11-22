@@ -30,7 +30,7 @@ flowleap --json tools run get_patent_term patent_number=<asserted-patent>  # exp
 flowleap --json ops family <asserted-patent>                             # where it is in force
 ```
 
-Only chart in jurisdictions with a live family member.
+Only chart in jurisdictions with a live family member. In the legal status, `eventDate` is the date of an event and `date` is the date the office recorded it; when `eventsReturned` is less than `eventsTotal`, get the remaining events (`--limit`, `--offset`) before you call the patent live.
 
 ## Step 3: Decompose the Asserted Claims
 

@@ -187,7 +187,7 @@ record designates no states, and every non-EP publication designates none.
 **Office coverage** vs **office depth**:
 **Office coverage** is a property of a *tool*: the set of patent offices it
 answers for, and at what depth. `ops claims` / `get_claims` has office coverage
-"EP and WO from EPO OPS; US from BigQuery"; `ops register-biblio` /
+"EP and WO from EPO OPS; US from the publication index"; `ops register-biblio` /
 `get_register_biblio` has office coverage "EP". **Office depth** is a property
 of an *office*: which tiers of its data FlowLeap can serve — bibliographic
 record, legal events, claims and description text, register record, file

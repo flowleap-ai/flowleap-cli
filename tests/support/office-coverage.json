@@ -9,9 +9,11 @@
       "source": "epo_ops"
     },
     {
+      "asOf": "2026-09-23",
+      "configured": true,
+      "coveredThrough": "2026-04-21",
       "office": "US",
-      "source": "bigquery",
-      "configured": true
+      "source": "publication_index"
     }
   ],
   "get_description": [
@@ -35,17 +37,17 @@
     "GB"
   ],
   "workaround": {
-    "tool": "get_family",
+    "dataEdition": "PATSTAT 2026 Spring",
     "shares": {
-      "CA": 95,
       "AU": 88,
-      "FR": 60,
+      "CA": 95,
+      "CN": 13,
       "DE": 55,
+      "FR": 60,
       "GB": 54,
       "JP": 48,
-      "KR": 38,
-      "CN": 13
+      "KR": 38
     },
-    "dataEdition": "PATSTAT 2026 Spring"
+    "tool": "get_family"
   }
 }

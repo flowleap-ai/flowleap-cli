@@ -96,8 +96,9 @@ opponents), `get_citations`, `get_patent_image`
 content block you can see, with the page metadata in the text block),
 `convert_patent_number`.
 
-Text, by office: `get_claims` (EP and WO from EPO OPS; US from BigQuery, in
-English only), `get_description` (EP and WO from EPO OPS), `get_fulltext` (EP
+Text, by office: `get_claims` (EP and WO from EPO OPS; US from the publication
+index, in English only, with `source`, `asOf` and `coveredThrough` on the
+answer), `get_description` (EP and WO from EPO OPS), `get_fulltext` (EP
 and WO). Every other office answers `FULLTEXT_UNAVAILABLE`. For an office
 with no text source, use the family-member workaround in `flowleap-shared`.
 
@@ -105,6 +106,23 @@ US lookups and prosecution: `get_us_grant`, `get_us_application`,
 `get_continuity`, `get_transactions`, `get_assignments`, `get_foreign_priority`,
 `get_patent_term_adjustment`, `get_attorney`, `get_application_documents`,
 `read_application_document`.
+
+**Default answers are sized for a chat context.** Five tools return a summary
+or one page by default, and each answer says what it left out. Read those
+fields before you count rows or conclude that something is absent:
+
+| Tool | Default | What says the answer is partial | For the remaining data |
+|---|---|---|---|
+| `get_family` | `view: "summary"`: one page of `representatives.members` (`limit` 100), `countries`, no row list | `representativesReturned` < `representativesTotal`; `next` | `offset`, `country`, or `view: "full"` (every member and the `members` rows) |
+| `get_us_grant`, `get_us_application` | `view: "summary"`: long lists cut to their first rows | `truncated[]` = `{ path, total, returned, tool }` | the `tool` of the entry, or `view: "full"` |
+| `get_application_documents` | `limit` 100, no `downloadOptionBag` | `returned` < `matched`; `documentCodes` counts every code | `offset`; `include_download_options: true` |
+| `get_legal_status` | `limit` 50 | `eventsReturned` < `eventsTotal` | `offset`, or a higher `limit` (max 1000) |
+| `examiner_baseline` | `limit` 50 matrix rows, examiner-cited first; `members_limit` 25; `gaps_limit` 25 | `documentsReturned` < `documentsTotal`; `membersWalkedTotal`; `gapsTotal` | a higher `limit`, `members_limit` or `gaps_limit` (max 1000 each) |
+
+In `get_legal_status`, `eventDate` is the date of the event and `date` is the
+date the office recorded it. In `get_application_documents`, `matched` 0 means
+no document passes the filter; an empty page with `matched` above 0 means the
+`offset` is after the last document.
 
 Citations: `search_office_action_citations` (by application),
 `search_enriched_citations` (forward, by cited document), `get_citation_stats`.

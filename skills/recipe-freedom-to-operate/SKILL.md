@@ -76,6 +76,17 @@ lapsed per the `PG25`/`PGFP` events, which each carry their own `state`: a paten
 designating DE and still paying fees there blocks you in Germany, one lapsed
 there does not.
 
+Read the events with the right date and the right count. Each event has
+`eventDate`, the date of the event itself, and `date`, the date the office
+recorded it, which can be years later: use `eventDate` for when a lapse, a fee
+payment or a grant occurred. `ops legal` returns one page of 50 events. When
+`eventsReturned` is less than `eventsTotal`, get the remaining events
+(`--limit <eventsTotal>`, max 1000, or `--offset`) before you conclude that no
+`PG25` lapse exists for a state. `ops family` returns one page of members: read
+`countries` for the offices of the whole family, and check
+`representativesTotal` against `representativesReturned` before you list where
+it is filed.
+
 The designation is rolled up from the AK event with the latest date. If that
 event carried no readable list an older one answers, so the set can be a
 superseded, **wider** one — it can name a state the applicant has since dropped.

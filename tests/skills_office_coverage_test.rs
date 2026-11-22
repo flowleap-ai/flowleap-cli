@@ -1,6 +1,6 @@
 //! Office coverage of the text tools in the skills (#151, #152; backend ADR
-//! 0024). The backend serves claims for EP and WO (EPO OPS) and US
-//! (BigQuery), description for EP and WO, and no text for every other
+//! 0024, ADR 0026). The backend serves claims for EP and WO (EPO OPS) and US
+//! (the publication index), description for EP and WO, and no text for every other
 //! office. The `flowleap-shared` skill carries that fact ONCE, with the
 //! family-member workaround (`get_family`, then the member's text), its two
 //! limits and the measured share per office. These tests read what an agent
@@ -10,10 +10,10 @@
 //!
 //!   flowleap --json tools run server_info | jq .officeCoverage > tests/support/office-coverage.json
 //!
-//! The US `get_claims` row carries a per-server `configured` flag (the
-//! BigQuery full-text flag of the server that answered); the tests ignore
-//! it. Fetched 2026-10-15 from backend main `officeCoverageBlock({
-//! bigqueryConfigured: true })`.
+//! The US `get_claims` row carries a per-server `configured` flag and the
+//! edition dates `asOf` and `coveredThrough` of the server that answered; the
+//! tests ignore them. Fetched 2026-11-22 from production (`source:
+//! "publication_index"` since backend ADR 0026).
 
 mod support;
 
@@ -476,7 +476,7 @@ fn example_text_reads() -> Vec<TextRead> {
 /// source is EPO OPS.
 ///
 /// The "English only" rule is not in the vendored block. Language is a fact
-/// of the BigQuery US source, documented in the backend
+/// of the publication index US source, documented in the backend
 /// (`src/lib/office-coverage.ts`), and `officeCoverage` does not carry it.
 /// The test holds it as an assumption: every source other than `epo_ops` is
 /// English only. Revisit it when a source that serves another language is
@@ -515,10 +515,11 @@ fn example_text_reads_use_offices_the_backend_serves() {
                         lang.unwrap()
                     ));
                 }
-                if source == "bigquery" && !(line.contains("BigQuery") && line.contains("English"))
+                if source == "publication_index"
+                    && !(line.contains("publication index") && line.contains("English"))
                 {
                     wrong.push(format!(
-                        "{skill}:{line_no}: a {office} {command} example must say BigQuery, English"
+                        "{skill}:{line_no}: a {office} {command} example must say publication index, English"
                     ));
                 }
             }
