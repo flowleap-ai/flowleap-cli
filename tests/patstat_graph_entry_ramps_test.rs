@@ -2,7 +2,8 @@
 //! (issue #96): the two native entry ramps onto the technology landscape.
 //! `cpc` turns a keyword into ranked CPC symbols (`patstat_cpc`);
 //! `technology` takes one CPC prefix and answers the area card
-//! (`patstat_technology`). Both run on the shared tool seam: `--json` is the
+//! (`patstat_technology`); with more prefixes or with `--keywords` it answers
+//! a corpus landscape (flowleap-backend#642). Both run on the shared tool seam: `--json` is the
 //! tool data verbatim, human mode renders it. The human output of each is
 //! locked by a golden in tests/golden — run with `UPDATE_GOLDEN=1` to
 //! regenerate after a deliberate rendering change.
@@ -129,6 +130,76 @@ fn technology_data() -> Value {
                 "offices": { "shown": 1, "total": 56, "truncated": true },
             },
         },
+    })
+}
+
+/// Shaped like the live `patstat_technology` data for a corpus (trimmed
+/// lists; TechnologyCorpusView in flowleap-backend
+/// src/lib/patstat-graph/types.ts, built in technology-corpus-view.ts).
+fn technology_corpus_data() -> Value {
+    json!({
+        "meta": {
+            "composite": "technology_view",
+            "mode": "corpus",
+            "data_edition": "PATSTAT 2026 Spring",
+            "attribution": ATTRIBUTION,
+            "caps": { "top_applicants": 15, "new_entrants": 10, "offices": 10, "top_cpc": 10,
+                      "seminal_families": 10, "corpus_families": 20000 },
+            "truncation": {
+                "top_applicants": { "shown": 2, "total": 412, "truncated": true },
+                "new_entrants": { "shown": 1, "total": 1, "truncated": false },
+                "offices": { "shown": 2, "total": 31, "truncated": true },
+                "top_cpc": { "shown": 2, "total": 955, "truncated": true },
+                "seminal_families": { "shown": 1, "total": 1840, "truncated": true },
+            },
+            "notes": [
+                "This is a corpus landscape (`scope`), not the card of one CPC prefix: the numbers are for the families that match the scope.",
+                "Filing trend covers earliest filing years 2001–2026; the most recent ~24 months are incomplete (publication lag) — never read the tail as decline.",
+            ],
+            "applicant_merge": null,
+            "sources": { "corpus": "tls202 / tls203 (English full text) × tls224 × tls201" },
+            "data_quality": [
+                { "node": "corpus", "issue": "unknown_filing_date",
+                  "detail": "3 famil(ies) carry PATSTAT's 9999 unknown-date sentinel — excluded from filing_trend, the gap is real." },
+            ],
+        },
+        "scope": {
+            "keywords": ["\"solid electrolyte\"", "sulfide or sulphide or argyrodite"],
+            "text_query": "('solid' <-> 'electrolyt') & ('sulfid' | 'sulphid' | 'argyrodit')",
+            "text": "English title or English abstract",
+            "cpc": ["H01M10/0562", "H01M10/052"],
+            "exclude_cpc": ["H01M8"],
+            "counting": "DOCDB simple families. A family is in the corpus when one of its applications matches the scope; each section counts all applications of the corpus families.",
+            "lower_bound": true,
+        },
+        "area": { "families": 1840, "applications": 6211, "matched_applications": 2977 },
+        "top_applicants": [
+            { "psn_id": 33067109, "name": "TOYOTA MOTOR CORPORATION", "families": 214, "active_since": 2016 },
+            { "psn_id": 12345678, "name": "IDEMITSU KOSAN", "families": 131, "active_since": 2016 },
+        ],
+        "filing_trend": [
+            { "year": 2019, "families": 148 },
+            { "year": 2020, "families": 173 },
+        ],
+        "grant_rate": [
+            { "office": "JP", "applications": 512, "granted": 401, "grant_rate_pct": 78.3 },
+        ],
+        "new_entrants": [
+            { "psn_id": 183880853, "name": "KIA MOTORS CORP.", "families": 22, "active_since": 2021 },
+        ],
+        "offices": [
+            { "office": "JP", "families": 1102 },
+            { "office": "US", "families": 987 },
+        ],
+        "top_cpc": [
+            { "symbol": "H01M10/0562", "title": "Solid materials", "families": 1711 },
+            { "symbol": "H01M10/0525", "title": null, "families": 1203 },
+        ],
+        "seminal_families": [
+            { "family_id": 44115555, "citing_families": 310, "filing_year": 2010,
+              "publication": "US8697292B2",
+              "title": "SULFIDE SOLID ELECTROLYTE MATERIAL AND LITHIUM SOLID STATE BATTERY" },
+        ],
     })
 }
 
@@ -330,4 +401,146 @@ async fn technology_invalid_prefix_relays_the_backend_message() {
     let stdout = stdout(&output);
     assert!(stdout.contains("Invalid graph request."));
     assert!(stdout.contains(message));
+}
+
+/*
+ * ── graph technology, corpus ────────────────────────────────────────────────
+ */
+
+/// The request of the corpus tests: two prefixes, two keyword entries and
+/// one excluded prefix.
+const CORPUS_ARGS: [&str; 10] = [
+    "technology",
+    "H01M10/0562",
+    "--cpc",
+    "H01M10/052",
+    "--keywords",
+    "\"solid electrolyte\"",
+    "--keywords",
+    "sulfide or sulphide or argyrodite",
+    "--exclude-cpc",
+    "H01M8",
+];
+
+fn corpus_input() -> Value {
+    json!({
+        "cpc": ["H01M10/0562", "H01M10/052"],
+        "keywords": ["\"solid electrolyte\"", "sulfide or sulphide or argyrodite"],
+        "exclude_cpc": "H01M8",
+    })
+}
+
+#[tokio::test]
+async fn technology_corpus_renders_scope_size_and_sections() {
+    let server = MockServer::start().await;
+    mount(
+        &server,
+        "patstat_technology",
+        corpus_input(),
+        ResponseTemplate::new(200)
+            .set_body_json(tool_ok("patstat_technology", technology_corpus_data())),
+    )
+    .await;
+
+    let mut args = vec!["patstat", "graph"];
+    args.extend_from_slice(&CORPUS_ARGS);
+    let output = run_cli(&server.uri(), &[API_KEY_ENV], &args).await;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = stdout(&output);
+
+    // The scope first, then the size, then the sections.
+    let scope = stdout.find("Technology corpus").expect("scope");
+    let size = stdout.find("Families: 1840").expect("size");
+    let applicants = stdout.find("Top Applicants").expect("applicants");
+    let trend = stdout.find("Filing Trend").expect("trend");
+    let top_cpc = stdout.find("Top CPC Symbols").expect("top cpc");
+    let offices = stdout.find("Filing Offices").expect("offices");
+    assert!(scope < size && size < applicants && applicants < trend);
+    assert!(trend < top_cpc && top_cpc < offices);
+
+    assert!(stdout.contains("CPC (one of): H01M10/0562, H01M10/052"));
+    assert!(stdout.contains(
+        "Keywords (each entry must match): \"solid electrolyte\" · sulfide or sulphide or argyrodite"
+    ));
+    assert!(stdout.contains("Excluded CPC: H01M8"));
+    assert!(stdout.contains("Applications that match the scope: 2977"));
+    assert!(stdout.contains("LOWER BOUND"));
+    assert!(stdout.contains("Showing 2 of 412 top applicants."));
+    assert!(stdout.contains("Showing 2 of 955 CPC symbols."));
+    assert!(stdout.contains("Showing 2 of 31 filing offices."));
+    // The families without a filing date are shown, not dropped.
+    assert!(stdout.contains("3 famil(ies) carry PATSTAT's 9999 unknown-date sentinel"));
+    // A corpus has no inventor ranking and no CPC-card headline.
+    assert!(!stdout.contains("Top Inventors"));
+    assert!(!stdout.contains("Technology area:"));
+    assert!(stdout.contains("Source: PATSTAT data edition PATSTAT 2026 Spring."));
+    assert!(stdout.contains(ATTRIBUTION));
+    assert_golden(&stdout, "patstat-graph-technology-corpus.txt");
+}
+
+#[tokio::test]
+async fn technology_corpus_json_mode_prints_the_tool_data_verbatim() {
+    let server = MockServer::start().await;
+    mount(
+        &server,
+        "patstat_technology",
+        corpus_input(),
+        ResponseTemplate::new(200)
+            .set_body_json(tool_ok("patstat_technology", technology_corpus_data())),
+    )
+    .await;
+
+    let mut args = vec!["--json", "patstat", "graph"];
+    args.extend_from_slice(&CORPUS_ARGS);
+    let output = run_cli(&server.uri(), &[API_KEY_ENV], &args).await;
+
+    assert!(output.status.success());
+    assert_eq!(stdout_json(&output), technology_corpus_data());
+}
+
+/// A corpus with no family is the engine's 404 `patstat_entity_not_found`
+/// with `details.reason: "empty_corpus"`. The headline names the scope, not
+/// an applicant entity, and the backend hint is relayed.
+#[tokio::test]
+async fn technology_empty_corpus_names_the_scope_and_relays_the_hint() {
+    let server = MockServer::start().await;
+    let message = "No family in the loaded PATSTAT edition matches this scope. Use fewer or more general entries.";
+    mount(
+        &server,
+        "patstat_technology",
+        json!({ "keywords": "argyrodite zebra" }),
+        ResponseTemplate::new(404).set_body_json(json!({
+            "success": false,
+            "error": {
+                "code": "patstat_entity_not_found",
+                "message": message,
+                "details": { "reason": "empty_corpus", "hint": "Use fewer or more general entries." },
+            },
+            "status": 404,
+        })),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &[
+            "patstat",
+            "graph",
+            "technology",
+            "--keywords",
+            "argyrodite zebra",
+        ],
+    )
+    .await;
+
+    assert!(!output.status.success());
+    let stdout = stdout(&output);
+    assert!(stdout.contains(message));
+    assert!(!stdout.contains("applicant entity"));
 }

@@ -52,7 +52,9 @@ of the three engines: use `flowleap-patent`, `flowleap-uspto` or `flowleap-ops`.
 
 A CPC/IPC-class landscape is Portfolio Analytics.
 `flowleap patstat graph technology <cpc>` is its fast path: find the code with
-`graph cpc` first. Use `patstat query` when the composite does not answer.
+`graph cpc` first. A topic that has no CPC code of its own is one call too:
+`graph technology --cpc <prefix> --keywords '<words>'` answers the landscape
+of that corpus. Use `patstat query` only when the composite does not answer.
 
 The served statement of the rule is step 1 of every served workflow
 (`flowleap patstat docs --workflow <portfolio-analysis|guarded-sql|graph>`).

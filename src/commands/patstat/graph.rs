@@ -25,7 +25,7 @@
 //! backend body either way — see `citable()` below.
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{ArgGroup, Parser, Subcommand};
 use serde_json::{json, Value};
 
 use crate::client::Context;
@@ -45,6 +45,7 @@ use crate::output;
   flowleap patstat graph applicant 98765
   flowleap patstat graph cpc \"solid electrolyte\"
   flowleap patstat graph technology H01M10/0562
+  flowleap patstat graph technology --cpc H01M10 --keywords '\"solid electrolyte\"' --keywords 'sulfide or sulphide or argyrodite'
 
 Criteria shape picks the engine: a named node and its relationships (citations,
 family, co-applicants) is a graph question; aggregate counts by structured
@@ -172,13 +173,53 @@ enum GraphCommand {
         psn_id: u64,
     },
 
-    /// One technology area's landscape: area card, top applicants, filing
-    /// trend, grant rate by office, new entrants, seminal families, top
-    /// inventors, and innovation geography. Takes a CPC symbol prefix (from
-    /// `graph cpc <keyword>`). Every capped section states its TRUE total.
+    /// The technology landscape of one CPC area, or of a corpus. One CPC
+    /// symbol prefix alone (from `graph cpc <keyword>`) gives the CPC card:
+    /// top applicants, filing trend, grant rate by office, new entrants,
+    /// seminal families, top inventors and innovation geography. Two or more
+    /// prefixes, or a prefix with `--keywords`, give a corpus landscape: the
+    /// families that match the scope, with top applicants, filing trend,
+    /// grant rate, new entrants, top CPC symbols, seminal families and
+    /// filing offices. Every capped section states its TRUE total.
+    #[command(
+        group(
+            ArgGroup::new("scope")
+                .required(true)
+                .multiple(true)
+                .args(["prefix", "cpc", "keywords"])
+        ),
+        after_help = "Examples:
+  flowleap patstat graph technology H01M10/0562
+  flowleap patstat graph technology --cpc H01M10/0562 --cpc H01M10/052
+  flowleap patstat graph technology --cpc H01M10 --keywords '\"solid electrolyte\"' --keywords 'sulfide or sulphide or argyrodite'
+  flowleap patstat graph technology --keywords '\"solid electrolyte\" argyrodite' --exclude-cpc H01M8
+
+Give one CPC prefix or one `--keywords` entry as a minimum. The keywords are
+matched in English titles and abstracts only, so the counts of a corpus with
+keywords are a lower bound."
+    )]
     Technology {
-        /// CPC symbol prefix, e.g. H01M10/0562, G06F, Y02E
-        cpc: String,
+        /// CPC symbol prefix, e.g. H01M10/0562, G06F, Y02E. Counts as one
+        /// `--cpc` value
+        #[arg(value_name = "CPC")]
+        prefix: Option<String>,
+
+        /// CPC symbol prefix. Repeat the flag for more prefixes: a document
+        /// must carry ONE of them
+        #[arg(long, value_name = "PREFIX")]
+        cpc: Vec<String>,
+
+        /// Words to find in the English title or abstract, in web-search
+        /// syntax: words = all of them, "quoted words" = a phrase, `or`
+        /// between alternatives, `-word` = not. Repeat the flag for more
+        /// entries: a document must match EVERY entry
+        #[arg(long, value_name = "TEXT")]
+        keywords: Vec<String>,
+
+        /// CPC symbol prefix a document must NOT carry. Repeat the flag for
+        /// more prefixes
+        #[arg(long, value_name = "PREFIX")]
+        exclude_cpc: Vec<String>,
     },
 }
 
@@ -218,7 +259,15 @@ pub async fn run(ctx: &Context, args: GraphArgs) -> Result<()> {
         }
         GraphCommand::Patent { publication } => patent(ctx, &publication).await,
         GraphCommand::Applicant { psn_id } => applicant(ctx, psn_id).await,
-        GraphCommand::Technology { cpc } => technology(ctx, &cpc).await,
+        GraphCommand::Technology {
+            prefix,
+            cpc,
+            keywords,
+            exclude_cpc,
+        } => {
+            let prefixes: Vec<String> = prefix.into_iter().chain(cpc).collect();
+            technology(ctx, &technology_input(&prefixes, &keywords, &exclude_cpc)).await
+        }
     }
 }
 
@@ -379,16 +428,48 @@ async fn applicant(ctx: &Context, psn_id: u64) -> Result<()> {
     Ok(())
 }
 
-/// One technology area's landscape: `patstat_technology`. The CPC prefix is
-/// the engine's to validate — a malformed one answers its typed 400
-/// `patstat_invalid_request`, relayed like every other graph error.
-async fn technology(ctx: &Context, cpc: &str) -> Result<()> {
-    let Some(data) = call_graph(ctx, "patstat_technology", &json!({ "cpc": cpc })).await? else {
+/// One value as a string, several values as a list: the two forms the
+/// `patstat_technology` input accepts for `cpc`, `keywords` and `exclude_cpc`.
+/// `None` when there is no value, so the key is not sent.
+fn one_or_many(values: &[String]) -> Option<Value> {
+    match values {
+        [] => None,
+        [one] => Some(json!(one)),
+        many => Some(json!(many)),
+    }
+}
+
+/// The `patstat_technology` input. One CPC prefix alone is the request this
+/// command always sent (`{"cpc": "<prefix>"}`, the CPC card). Each other
+/// scope is a corpus.
+fn technology_input(cpc: &[String], keywords: &[String], exclude_cpc: &[String]) -> Value {
+    let mut input = json!({});
+    for (key, values) in [
+        ("cpc", cpc),
+        ("keywords", keywords),
+        ("exclude_cpc", exclude_cpc),
+    ] {
+        if let Some(value) = one_or_many(values) {
+            input[key] = value;
+        }
+    }
+    input
+}
+
+/// A technology landscape: `patstat_technology`. The scope is the engine's
+/// to validate: a malformed CPC prefix or a scope that is too broad answers
+/// its typed 400 `patstat_invalid_request`, relayed like every other graph
+/// error. The answer is the CPC card or, with `meta.mode: "corpus"`, the
+/// corpus landscape.
+async fn technology(ctx: &Context, input: &Value) -> Result<()> {
+    let Some(data) = call_graph(ctx, "patstat_technology", input).await? else {
         return Ok(());
     };
 
     if ctx.output_format == "json" {
         output::print_json(&data);
+    } else if is_corpus_view(&data) {
+        print_technology_corpus_view(&data);
     } else {
         print_technology_view(&data);
     }
@@ -462,6 +543,12 @@ fn print_typed_error(ctx: &Context, body: &Value, code: &str) {
         ),
         "patstat_patent_not_found" => {
             println!("No such publication in the loaded PATSTAT edition.\n{message}")
+        }
+        "patstat_entity_not_found"
+            if super::error_field(body, "reason").and_then(Value::as_str)
+                == Some("empty_corpus") =>
+        {
+            println!("No family in the loaded PATSTAT edition matches this scope.\n{message}")
         }
         "patstat_entity_not_found" => {
             println!("No such applicant entity in the loaded PATSTAT edition.\n{message}")
@@ -1040,6 +1127,127 @@ fn print_technology_view(body: &Value) {
         print_section_table(&array_at(&geography, &format!("/{key}")), country_columns);
         print_truncation_notice(&geography, key, label);
     }
+
+    super::print_notes(&meta, "notes", "Notes");
+    print_data_quality(&meta);
+    print_provenance_footer(&meta);
+}
+
+/// A corpus answer of `patstat_technology` says so in `meta.mode`; the CPC
+/// card has no `mode`.
+fn is_corpus_view(body: &Value) -> bool {
+    body.pointer("/meta/mode").and_then(Value::as_str) == Some("corpus")
+}
+
+/// The strings of a scope list, joined for one line.
+fn scope_list(scope: &Value, key: &str, separator: &str) -> Option<String> {
+    let values: Vec<&str> = scope
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| values.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if values.is_empty() {
+        None
+    } else {
+        Some(values.join(separator))
+    }
+}
+
+/// The corpus landscape: the scope first (CPC prefixes, keywords, excluded
+/// prefixes), then the size of the corpus, then the sections in the order of
+/// the CPC card. A corpus has no inventor and no country rankings; it has
+/// the top CPC symbols and the filing offices.
+fn print_technology_corpus_view(body: &Value) {
+    let meta = body.get("meta").cloned().unwrap_or(Value::Null);
+    let scope = body.get("scope").unwrap_or(&Value::Null);
+    let area = body.get("area").unwrap_or(&Value::Null);
+
+    println!("Technology corpus");
+    if let Some(cpc) = scope_list(scope, "cpc", ", ") {
+        println!("  CPC (one of): {cpc}");
+    }
+    if let Some(keywords) = scope_list(scope, "keywords", " · ") {
+        println!("  Keywords (each entry must match): {keywords}");
+    }
+    if let Some(excluded) = scope_list(scope, "exclude_cpc", ", ") {
+        println!("  Excluded CPC: {excluded}");
+    }
+    if let Some(matched_in) = scope.get("text").and_then(Value::as_str) {
+        println!("  Matched in: {matched_in}");
+    }
+    println!(
+        "Families: {} · Applications: {} · Applications that match the scope: {}",
+        text(area, "families"),
+        text(area, "applications"),
+        text(area, "matched_applications"),
+    );
+    if scope.get("lower_bound").and_then(Value::as_bool) == Some(true) {
+        println!(
+            "The counts are a LOWER BOUND: a family with no English title or abstract is not found."
+        );
+    }
+
+    let applicant_columns: &[(&str, &str)] = &[
+        ("psn_id", "PSN ID"),
+        ("name", "Name"),
+        ("families", "Families"),
+        ("active_since", "Active since"),
+    ];
+
+    println!("\nTop Applicants");
+    print_section_table(&array_at(body, "/top_applicants"), applicant_columns);
+    print_truncation_notice(&meta, "top_applicants", "top applicants");
+
+    println!("\nFiling Trend");
+    print_section_table(
+        &array_at(body, "/filing_trend"),
+        &[("year", "Year"), ("families", "Families")],
+    );
+
+    println!("\nGrant Rate by Office");
+    print_section_table(
+        &array_at(body, "/grant_rate"),
+        &[
+            ("office", "Office"),
+            ("applications", "Applications"),
+            ("granted", "Granted"),
+            ("grant_rate_pct", "Grant rate %"),
+        ],
+    );
+
+    println!("\nNew Entrants");
+    print_section_table(&array_at(body, "/new_entrants"), applicant_columns);
+    print_truncation_notice(&meta, "new_entrants", "new entrants");
+
+    println!("\nTop CPC Symbols");
+    print_section_table(
+        &array_at(body, "/top_cpc"),
+        &[
+            ("symbol", "CPC Symbol"),
+            ("title", "Title"),
+            ("families", "Families"),
+        ],
+    );
+    print_truncation_notice(&meta, "top_cpc", "CPC symbols");
+
+    println!("\nSeminal Families");
+    print_section_table(
+        &array_at(body, "/seminal_families"),
+        &[
+            ("publication", "Publication"),
+            ("title", "Title"),
+            ("filing_year", "Filed"),
+            ("citing_families", "Citing families"),
+        ],
+    );
+    print_truncation_notice(&meta, "seminal_families", "seminal families");
+
+    println!("\nFiling Offices (where protection is sought)");
+    print_section_table(
+        &array_at(body, "/offices"),
+        &[("office", "Office"), ("families", "Families")],
+    );
+    print_truncation_notice(&meta, "offices", "filing offices");
 
     super::print_notes(&meta, "notes", "Notes");
     print_data_quality(&meta);
