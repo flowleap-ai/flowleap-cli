@@ -29,6 +29,10 @@ async fn setup_without_tty_refuses_with_alternatives() {
         "expected the non-interactive `keys set` alternatives, got: {stderr}"
     );
     assert!(
+        stderr.contains("Optional: add your own Patent-Data Keys"),
+        "the key step is optional, got: {stderr}"
+    );
+    assert!(
         stderr.contains("FLOWLEAP_EPO_KEY")
             && stderr.contains("FLOWLEAP_EPO_SECRET")
             && stderr.contains("FLOWLEAP_USPTO_KEY"),

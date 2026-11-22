@@ -85,8 +85,8 @@ firm administrator or the desktop user sets up outside the chat.
 | `ops biblio` / `claims` / `description` / `family` / `legal` / `abstract` | `get_bibliography`, `get_claims`, `get_description`, `get_family`, `get_legal_status`, `get_abstract` | `get_family` is the INPADOC extended family: `--view` is `view` (`summary` default, `full`), `--country`/`--limit`/`--offset` are `country`/`limit`/`offset`; `ops legal --limit`/`--offset` are `limit`/`offset` of `get_legal_status`; `--resolve-npl` is `resolve_npl: true` |
 | `ops register-biblio` | `get_register_biblio` | EP only: representatives of record, opponents |
 | `ops register-search` | `search_register` | EP Register CQL (`query`, `range`); the one search with a representative index (`re=`), opponent (`op=`), name in any role (`nm=`, surname-first — use it when a role index returns 0); EP applications only |
-| `patent search`, `ops search` | `search_patents` | `provider: "epo_ops"`, CQL |
-| `patent search --provider index` | `search_patents` | `provider: "index"`, plain words; `--cpc`/`--applicant`/`--inventor`/`--office`/`--kind`/`--from`/`--to`/`--sort` are the parameters of the same name, `--limit`/`--offset` are `range: "start-end"`. Chat clients only, and only when the schema lists the provider; the app's native tool has no index |
+| `patent search --provider epo`, `ops search` | `search_patents` | `provider: "epo_ops"`, CQL |
+| `patent search` (the default, also `--provider index`) | `search_patents` | `provider: "index"`, plain words: start discovery here. The tool's own default provider is `epo_ops`, so always send `provider: "index"`; `--cpc`/`--applicant`/`--inventor`/`--office`/`--kind`/`--from`/`--to`/`--sort` are the parameters of the same name, `--limit`/`--offset` are `range: "start-end"`. Chat clients only, and only when the schema lists the provider; the app's native tool has no index |
 | `uspto search` | `search_patents` | `provider: "uspto"`, Lucene |
 | `uspto application` / `grant` / `continuity` | `get_us_application`, `get_us_grant`, `get_continuity` | `--full` is `view: "full"`; the default summary view names each cut list in `truncated[]` |
 | `uspto transactions` / `assignments` / `foreign-priority` / `adjustment` / `attorney` | `get_transactions`, `get_assignments`, `get_foreign_priority`, `get_patent_term_adjustment`, `get_attorney` | |
@@ -178,7 +178,8 @@ human stop: wait, and continue with work that needs no live call), and
 `endpointGoneHint` (410, `{ requiresUpgrade: true, successor?, reason?, message }`).
 `patent search --provider index` on a server without the publication index
 adds `indexUnavailableHint` (`publication_index_not_enabled`): use the EPO
-search.
+search. Without `--provider` and without an index filter, the CLI runs the EPO
+search itself and prints one note on stderr.
 
 **No user needs a Patent-Data Key** (backend ADR 0026). A live office read uses
 FlowLeap's House keys inside the daily live data budget: 300 live calls for

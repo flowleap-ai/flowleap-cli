@@ -84,7 +84,7 @@ For US prior art the USPTO leg must go through USPTO ODP; do **not** substitute
 **EPO:** the CQL from step 1 is a query string:
 
 ```bash
-flowleap --json patent search --query "<CQL from step 1>" --limit 20
+flowleap --json patent search --provider epo --query "<CQL from step 1>" --limit 20
 ```
 
 **USPTO:** the Lucene query from step 1 goes in `--query` (or wrap it in a
@@ -110,7 +110,7 @@ flowleap ops abstract <application-or-publication-number>
 ```
 
 **Start in the publication index.** For each element row, run the plain words
-with `flowleap --json patent search --provider index … --to <day before the
+with `flowleap --json patent search --query '<plain words>' … --to <day before the
 priority date>` (see `flowleap-patent`). The index covers every office and uses
 no office quota. It is one edition: read `asOf`, and run the EPO and USPTO
 searches of this step for the publications after `asOf`, for the CQL and

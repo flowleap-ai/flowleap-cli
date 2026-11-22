@@ -39,7 +39,7 @@ Write a query per element combination yourself, tuned broad. Invalidity is a rec
 ```bash
 # Patent art, both databases — element pairs carry the discrimination
 flowleap --json tools run search_patents query='<CQL for the element combination>' range=1-1 details=false
-flowleap --json patent search --query "<CQL for the element combination>" --limit 30
+flowleap --json patent search --provider epo --query "<CQL for the element combination>" --limit 30
 flowleap --json uspto search --query "<self-written ODP Lucene>" --limit 30   # title + metadata only
 
 # Non-patent art — bound by the critical date. OpenAlex first, then
@@ -50,7 +50,7 @@ flowleap --json academic search "<element keywords>" --to-year <priority-year> -
 
 NPL hits hard here: printed publications are fully usable in IPR, and examiners rarely searched them. Resolve papers already of record before the sweep: run `flowleap --json ops biblio <target-patent> --resolve-npl` (for an EP family, on the A3 search-report publication) or `flowleap --json npl-work "<cited string or DOI>"` for one paper. The sweep then logs them as art of record and aims past them. Only a `matched` record is the cited paper.
 
-Search both offices first. Ask about scope in the Round Report (Step 8), never before the first search. For candidate discovery, start with the publication index (`flowleap --json patent search --provider index … --to <day before the critical date>`), then add the EPO search for what the index does not hold (publications newer than its `asOf`). A `liveUnavailableHint` is a "not now" answer: wait its `retryAfterSeconds`, and record a read that did not run as an open step. An answer with `live: false` is a dated answer: give its `asOf`, and never use a dated legal status as proof that the target patent is in force. A `provider_keys_required` on either office (an older server) is a missing patent-data key, not an exhausted search: hunt the live office and the non-patent art in full, record the gated office as an open missing-key gap in the chart, and ask for the free key at the end. See `flowleap-keys`.
+Search both offices first. Ask about scope in the Round Report (Step 8), never before the first search. For candidate discovery, start with the publication index (`flowleap --json patent search --query '<plain words>' … --to <day before the critical date>`), then add the EPO search for what the index does not hold (publications newer than its `asOf`). A `liveUnavailableHint` is a "not now" answer: wait its `retryAfterSeconds`, and record a read that did not run as an open step. An answer with `live: false` is a dated answer: give its `asOf`, and never use a dated legal status as proof that the target patent is in force. A `provider_keys_required` on either office (an older server) is a missing patent-data key, not an exhausted search: hunt the live office and the non-patent art in full, record the gated office as an open missing-key gap in the chart, and ask for the free key at the end. See `flowleap-keys`.
 
 Log every query with its count, empty results too. The round log of Step 7 is built from this log.
 

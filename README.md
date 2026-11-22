@@ -23,7 +23,7 @@ Verify your setup any time:
 flowleap doctor
 ```
 
-`doctor` checks config, credentials, and backend reachability, and tells you what to fix.
+`doctor` checks config, credentials, and backend reachability, shows the publication index edition and the key state for each office, and tells you what to fix.
 
 ## Access & Pricing
 
@@ -33,9 +33,19 @@ The CLI itself is open source (MIT) and free to install. The patent-data command
 - Without an active plan, data commands return HTTP 402 and exit with code 4. In `--json` mode the error envelope carries a structured `subscriptionHint` — `{ requiresHumanIntervention: true, upgradeUrl, message }` — with the upgrade URL. **This is expected behavior, not a bug**: agents should surface the URL to a human rather than retry.
 - All `/v1` data routes share a rate limit of 60 requests/minute/user. Exceeding it returns HTTP 429 (exit code 6) with a `rateLimitHint` carrying `retryAfterSeconds`.
 
-Some data sources additionally need your own **patent-data keys** — free signups at each office: EPO OPS (key + secret) and USPTO ODP (API key). Run `flowleap setup` for the guided wizard, or see `flowleap keys --help`. `provider_keys_required` / `provider_keys_invalid` / `trial_budget_exhausted` are the wire codes that name them in error envelopes (the last one meaning today's shared trial data budget is spent — it resets daily, and your own free keys lift it permanently).
+### Patent-data keys are optional
 
-**Agent behavior when a key is missing** (the key-gate doctrine, shipped in full in the `flowleap-keys` skill): a `provider_keys_required` error is a **user-action stop for that office, never an exhausted route**. An agent must not substitute web-scraped patent data for the gated office — searches and single-document reads alike — and must not frame the free key as a paywall. With the other office live it delivers those results in full, names the gap as a *missing-key gap* rather than a coverage finding, and asks once at the end of the turn; it never silently narrows a prior-art or FTO scope to the office whose key happens to be set. Keyless commands (`patstat`, `academic`, `npl`) stay available meanwhile, offered as *different* data rather than a replacement for live patent search. A gate is read, never inferred: only that explicit code means gated, so an empty result, a truncated payload, or a 5xx keeps the normal retry paths. Once the key is added, only the previously gated office is re-run — no restart, no new session.
+You need no key from a patent office. A trial and a License give the same access:
+
+- **Search without a key.** `flowleap patent search` reads FlowLeap's publication index: every publication of every office, with its English title and abstract. It uses no office quota and no daily budget. The index is one dated edition: each answer gives the edition date (`asOf`). For publications newer than that date, or for a CQL search, add `--provider epo`.
+- **Live office reads without a key.** The EPO and USPTO commands (`ops`, `uspto`, `citation`, `patent search --provider epo`) use FlowLeap's House keys. Each user has a daily live data budget on them: 300 live calls for each office and 50 drawing pages in one UTC day. The budget resets at the next UTC midnight.
+- **Your own key lifts the daily limits.** A free key from an office (EPO OPS: key + secret; USPTO ODP: API key) is optional. With it, the calls for that office do not count against the live data budget, and you have your own office quota. Add it with `flowleap setup` (guided) or `flowleap keys set <provider>`, and check it with `flowleap keys test`.
+
+`flowleap doctor` shows the state of the server that you use: the publication index edition, and for each office whether the House keys serve your calls. When the daily budget is spent or the shared office quota is busy, a command gives a "not now" answer with the wait time (`liveUnavailableHint`), or a dated answer from FlowLeap's hosted data (`live: false`, with `source` and `asOf`).
+
+**An older server, or a server with keyless access off**, can still answer with a key gate. `provider_keys_required` / `provider_keys_invalid` / `trial_budget_exhausted` are the wire codes that name it in error envelopes (the last one means that today's trial data budget is spent: it resets daily, and your own free keys lift it). On such a server, `flowleap patent search` runs the EPO search and prints one note.
+
+**Agent behavior at a key gate** (the key-gate doctrine, shipped in full in the `flowleap-keys` skill): a `provider_keys_required` error is a **user-action stop for that office, never an exhausted route**. An agent must not substitute web-scraped patent data for the gated office — searches and single-document reads alike — and must not frame the free key as a paywall. With the other office live it delivers those results in full, names the gap as a *missing-key gap* rather than a coverage finding, and asks once at the end of the turn; it never silently narrows a prior-art or FTO scope to the office whose key happens to be set. Keyless commands (`patstat`, `academic`, `npl`) stay available meanwhile, offered as *different* data rather than a replacement for live patent search. A gate is read, never inferred: only that explicit code means gated, so an empty result, a truncated payload, or a 5xx keeps the normal retry paths. Once the key is added, only the previously gated office is re-run — no restart, no new session.
 
 `doctor`, `health`, `auth`, and `keys test` work without a subscription, so you can always diagnose your setup.
 
@@ -138,8 +148,8 @@ To stay current:
 | Command | Description |
 |---------|-------------|
 | `doctor` | Check CLI config, auth, and backend reachability |
-| `setup` | Interactive onboarding: backend check, auth, patent-data keys (human-only) |
-| `keys` | Manage patent-data keys (EPO OPS, USPTO ODP): set, list, test, rm |
+| `setup` | Interactive onboarding: backend check, auth, optional patent-data keys (human-only) |
+| `keys` | Manage your optional patent-data keys (EPO OPS, USPTO ODP): set, list, test, rm |
 | `init` | Store initial CLI configuration (base URL) |
 | `auth` | Login (OAuth device flow), logout, status, personal API tokens |
 | `api` | Profile, usage, and the raw authenticated API escape hatch |
@@ -327,7 +337,7 @@ Every run exits with a documented code, so scripts can branch on `$?` without pa
 | 6 | Rate limited (HTTP 429) — back off, see `rateLimitHint` |
 | 7 | Network failure reaching the backend |
 | 8 | Endpoint gone (HTTP 410) — this build calls a retired endpoint; run `flowleap upgrade`, see `endpointGoneHint` |
-| 9 | Patent-data keys required/rejected, or the trial data budget exhausted — a human must add EPO/USPTO keys; see `providerKeysHint`, do not retry (the budget variant alone also lifts at its `resetsAt`) |
+| 9 | Patent-data keys required/rejected (an older server, a server with keyless access off, or a rejected key), or the trial data budget exhausted — a human must add or replace EPO/USPTO keys; see `providerKeysHint`, do not retry (the budget variant alone also lifts at its `resetsAt`) |
 
 Two details worth knowing:
 
@@ -394,8 +404,8 @@ skills/                            # 33 skills, embedded in the binary
   flowleap/SKILL.md                # Start here: umbrella + skill map
   flowleap-shared/SKILL.md         # Auth, global flags, config reference
   flowleap-auth/SKILL.md           # OAuth device flow + fl_pat_ tokens
-  flowleap-keys/SKILL.md           # BYOK provider keys (EPO OPS, USPTO ODP)
-  flowleap-patent/SKILL.md         # EPO patent search + CQL query builder
+  flowleap-keys/SKILL.md           # Patent-Data Key doctrine: no key necessary, optional own keys
+  flowleap-patent/SKILL.md         # Publication-index search + EPO CQL search
   flowleap-uspto/SKILL.md          # USPTO ODP search, grants, continuity
   flowleap-ops/SKILL.md            # Direct EPO OPS document data
   flowleap-academic/SKILL.md       # Academic literature search

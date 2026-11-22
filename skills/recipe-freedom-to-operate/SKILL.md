@@ -35,13 +35,13 @@ Done when every key feature has a probed EPO CQL query and a USPTO ODP query.
 ### Step 2: Search for Potentially Blocking Patents
 
 ```bash
-flowleap --json patent search --query "<CQL for feature 1>" --limit 20
+flowleap --json patent search --provider epo --query "<CQL for feature 1>" --limit 20
 flowleap --json uspto search --query "<recommended_query for feature 1>" --limit 20
 # Repeat for each feature
 ```
 
 **Find candidates in the publication index first.** Run each feature as plain
-words with `flowleap --json patent search --provider index …` (see
+words with `flowleap --json patent search --query '<plain words>' …` (see
 `flowleap-patent`); it uses no office quota. The index is one edition: add the
 EPO and USPTO searches below for publications newer than its `asOf` date, and
 for the full search when the server has no index.

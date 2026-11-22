@@ -83,7 +83,8 @@ fn require_tty() -> Result<()> {
              1. Authenticate:\n     \
                 env: FLOWLEAP_API_KEY=<fl_pat_… token>  (mint one with 'flowleap auth create-token --name <n>')\n     \
                 or run 'flowleap auth login' in a terminal\n  \
-             2. Add patent-data keys:\n     \
+             2. Optional: add your own Patent-Data Keys (FlowLeap's House keys serve the\n     \
+                calls without them; a key lifts the daily live limit of its office):\n     \
                 flowleap keys set epo --key <consumer-key> --secret <consumer-secret>\n     \
                 flowleap keys set uspto --key <api-key>\n     \
                 env: FLOWLEAP_EPO_KEY, FLOWLEAP_EPO_SECRET, FLOWLEAP_USPTO_KEY"
@@ -484,7 +485,7 @@ fn skip_warning(provider: &str, coverage: Option<Coverage>, commands: &str) {
             "•".yellow(),
         ),
         Some(Coverage::Server) => println!(
-            "  {} Skipped — the server has its own {office} keys, so commands still work.",
+            "  {} Skipped — FlowLeap's House keys serve {office} calls. Add a key later only to lift the daily live limit.",
             "•".yellow(),
         ),
         Some(Coverage::Local) => println!(
@@ -534,7 +535,7 @@ fn skip_verdict(
 ) -> StepVerdict {
     let reason = match coverage {
         Some(Coverage::Stored) => "stored key on FlowLeap is used".to_string(),
-        Some(Coverage::Server) => "covered by server".to_string(),
+        Some(Coverage::Server) => "FlowLeap's House keys serve the calls".to_string(),
         _ if kept_existing => "kept existing keys".to_string(),
         _ => format!("{commands} will fail until keys are added"),
     };
@@ -670,7 +671,15 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
     let uspto_covered = remote_coverage(&baseline["uspto"]);
 
     println!();
-    println!("{}", "Patent data providers — bring your own keys".bold());
+    let keyless = epo_covered == Some(Coverage::Server) || uspto_covered == Some(Coverage::Server);
+    if keyless {
+        println!("{}", "Patent-Data Keys — optional".bold());
+        println!("You need no key: FlowLeap's House keys serve the live office calls, and");
+        println!("`flowleap patent search` reads the publication index. Your own free key only");
+        println!("lifts the daily live limit of its office. You can skip the two steps below.");
+    } else {
+        println!("{}", "Patent data providers — bring your own keys".bold());
+    }
     println!("Keys are stored only on this machine (~/.config/flowleap/credentials.toml, 0600)");
     println!("and forwarded per-request. Each step is skippable.");
     println!();
@@ -682,13 +691,16 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
     let epo_existing = creds.epo_pair().is_some();
     let epo_prompt = match creds.epo_pair() {
         Some((key, _)) => format!("EPO OPS keys (currently {}) — replace?", mask(key)),
+        None if epo_covered == Some(Coverage::Server) => {
+            "Add your own EPO OPS keys? (optional: lifts the daily live limit)".to_string()
+        }
         None => "Add EPO OPS keys? (worldwide bibliographic patent data)".to_string(),
     };
     println!("{}", step(3, "EPO keys"));
     println!("  Get free EPO keys: {} → My apps", EPO_SIGNUP.underline());
     if Confirm::with_theme(&theme)
         .with_prompt(epo_prompt)
-        .default(creds.epo_pair().is_none())
+        .default(creds.epo_pair().is_none() && epo_covered != Some(Coverage::Server))
         .interact()?
     {
         loop {
@@ -753,11 +765,14 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
     println!("  Get a free USPTO ODP key: {}", USPTO_SIGNUP.underline());
     let uspto_prompt = match &creds.uspto_key {
         Some(key) => format!("USPTO ODP key (currently {}) — replace?", mask(key)),
+        None if uspto_covered == Some(Coverage::Server) => {
+            "Add your own USPTO ODP API key? (optional: lifts the daily live limit)".to_string()
+        }
         None => "Add a USPTO ODP API key? (US prosecution data)".to_string(),
     };
     if Confirm::with_theme(&theme)
         .with_prompt(uspto_prompt)
-        .default(creds.uspto_key.is_none())
+        .default(creds.uspto_key.is_none() && uspto_covered != Some(Coverage::Server))
         .interact()?
     {
         loop {
@@ -851,7 +866,7 @@ pub async fn setup_wizard(ctx: &Context) -> Result<()> {
     println!("You're ready. Try:");
     println!(
         "  {}",
-        r#"flowleap patent search --query 'ti="battery"' --limit 3"#.cyan()
+        r#"flowleap patent search --query '"solid state" battery' --limit 3"#.cyan()
     );
     println!("  {}", "flowleap keys test".cyan());
     Ok(())

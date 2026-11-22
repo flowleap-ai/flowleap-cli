@@ -24,16 +24,16 @@ in `flowleap-patent`.
 
 ```bash
 # One query per sub-technology, so counts stay separable
-flowleap --json patent search --query "ti=autonomous AND ti=vehicle AND ti=lidar" --limit 30
-flowleap --json patent search --query "ti=autonomous AND ti=vehicle AND ti=radar" --limit 30
-flowleap --json patent search --query "ti=autonomous AND ti=vehicle AND ti=camera" --limit 30
+flowleap --json patent search --provider epo --query "ti=autonomous AND ti=vehicle AND ti=lidar" --limit 30
+flowleap --json patent search --provider epo --query "ti=autonomous AND ti=vehicle AND ti=radar" --limit 30
+flowleap --json patent search --provider epo --query "ti=autonomous AND ti=vehicle AND ti=camera" --limit 30
 ```
 
 ### Company Portfolio Analysis
 
 ```bash
-flowleap --json patent search --query "pa=Waymo" --limit 50
-flowleap --json patent search --query "pa=Cruise" --limit 50
+flowleap --json patent search --provider epo --query "pa=Waymo" --limit 50
+flowleap --json patent search --provider epo --query "pa=Cruise" --limit 50
 ```
 
 ### White-Space Identification

@@ -88,7 +88,7 @@ mappings:
 
 - **Field names**: `cql-reference.md` is the app's file. On the CLI the field reference is
   "Step 2 — write the query" in the `flowleap-patent` skill.
-- **Probe**: `flowleap --json patent search --query '<statement>' --count-only` runs the
+- **Probe**: `flowleap --json patent search --provider epo --query '<statement>' --count-only` runs the
   statement once and returns `{ query, total }`. Use `total` as the hit count. For a USPTO
   statement, `flowleap --json uspto search --query '<statement>' --count-only` returns
   `{ query, count }`.

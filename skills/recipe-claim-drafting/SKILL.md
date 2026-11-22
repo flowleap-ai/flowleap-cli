@@ -22,7 +22,7 @@ the count down toward tens, not thousands (method in `flowleap-patent`):
 
 ```bash
 flowleap --json tools run search_patents query='<self-written CQL>' range=1-1 details=false
-flowleap --json patent search --query "<self-written CQL>" --limit 20
+flowleap --json patent search --provider epo --query "<self-written CQL>" --limit 20
 flowleap --json uspto search --query "<self-written ODP Lucene>" --limit 20   # title + metadata only
 ```
 
@@ -68,7 +68,7 @@ For each draft independent claim, write a search from its novel element the
 same way as Step 1 — the novel element's phrase is the discriminating term:
 
 ```bash
-flowleap --json patent search --query "<CQL written from the novel element>" --limit 10
+flowleap --json patent search --provider epo --query "<CQL written from the novel element>" --limit 10
 ```
 
 If the searches surface art reading on the draft, narrow the novel

@@ -110,7 +110,7 @@ Claim <n>: <k> of <m> elements disclosed; fallbacks: <k> of <j> covered (<p> par
 
 | Round | Answered | Query | Count | Found |
 |---|---|---|---|---|
-| 0 | first search | flowleap --json patent search --query "<CQL>" --limit 30 | <n> | <ref or none> |
+| 0 | first search | flowleap --json patent search --provider epo --query "<CQL>" --limit 30 | <n> | <ref or none> |
 | 1 | rung-3, rung-4 | flowleap --json npl "<terms>" --to-year <year> --limit 20 | <n> | <ref or none> |
 
 ## Open points after the last round
@@ -218,7 +218,7 @@ resilient tab at the side opening." New Discriminating Terms: "side entry",
 "lateral insertion", "retaining tab", "side-loading cage". Round 1 queries:
 
 ```bash
-flowleap --json patent search --query "ta=(\"side entry\" OR \"lateral insertion\") AND ta=cage AND ta=bottle" --limit 30
+flowleap --json patent search --provider epo --query "ta=(\"side entry\" OR \"lateral insertion\") AND ta=cage AND ta=bottle" --limit 30
 flowleap --json uspto search --query "\"side loading\" AND bottle AND cage" --limit 30
 flowleap --json npl "side-loading bottle cage retaining tab" --to-year 2009 --limit 20
 ```

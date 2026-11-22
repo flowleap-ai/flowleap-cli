@@ -1,5 +1,5 @@
 //! Keyless access (backend ADR 0026): the publication-index search of
-//! `patent search --provider index`, the dated answers of the four tools with
+//! `patent search` (the default, and `--provider index`), the dated answers of the four tools with
 //! a hosted copy, and the "not now" refusals.
 //!
 //! The backend has all of this behind one flag. These tests pin the CLI
@@ -250,7 +250,10 @@ async fn a_server_without_the_index_gets_one_clear_line_and_no_dump() {
         err.contains("The publication index is not enabled on this server"),
         "{err}"
     );
-    assert!(err.contains("flowleap patent search --query"), "{err}");
+    assert!(
+        err.contains("flowleap patent search --provider epo --query"),
+        "{err}"
+    );
     // No raw envelope anywhere.
     assert_eq!(stdout(&output), "");
     assert!(!err.contains("INVALID_INPUT"), "{err}");
@@ -323,8 +326,228 @@ async fn an_index_not_configured_answer_is_the_same_clear_line() {
     );
 }
 
+// ----------------------------------------------------------------------------
+// patent search without --provider: the index is the default
+// ----------------------------------------------------------------------------
+
 #[tokio::test]
-async fn an_index_flag_without_the_index_provider_is_refused_before_any_call() {
+async fn the_default_search_is_the_index_search() {
+    let server = MockServer::start().await;
+    mount_tool_for(
+        &server,
+        "search_patents",
+        json!({ "query": "\"solid state\" battery", "provider": "index", "range": "1-10" }),
+        index_answer(),
+    )
+    .await;
+
+    let output = run(
+        &server,
+        &[
+            "--json",
+            "patent",
+            "search",
+            "--query",
+            "\"solid state\" battery",
+        ],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(stdout_json(&output), index_answer());
+    assert_eq!(stderr(&output), "");
+}
+
+#[tokio::test]
+async fn the_default_search_takes_the_index_filters_without_the_provider_flag() {
+    let server = MockServer::start().await;
+    mount_tool_for(
+        &server,
+        "search_patents",
+        json!({ "query": "*", "provider": "index", "range": "1-10", "cpc": "H01M", "kind": "B" }),
+        index_answer(),
+    )
+    .await;
+
+    let output = run(
+        &server,
+        &[
+            "--output", "table", "patent", "search", "--query", "*", "--cpc", "H01M", "--kind", "B",
+        ],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let out = stdout(&output);
+    // The table says that the edition is dated and where newer publications are.
+    assert!(out.contains("As of: 2026-09-23"), "{out}");
+    assert!(out.contains("--provider epo"), "{out}");
+}
+
+/// The EPO answer of a fallback: `ta=` CQL made from the plain words.
+async fn mount_epo_fallback(server: &MockServer, cql: &str, range: &str) {
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/search_patents"))
+        .and(wiremock::matchers::body_partial_json(json!({
+            "query": cql, "provider": "epo_ops", "range": range
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tool_ok(
+            "search_patents",
+            json!({ "total": 7, "docs": [{ "docId": "EP1000000A1", "title": "Battery" }] }),
+        )))
+        .expect(1)
+        .mount(server)
+        .await;
+}
+
+/// The index refusal, for a request that asks for provider `index` only.
+async fn mount_index_refusal(server: &MockServer, response: ResponseTemplate) {
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/search_patents"))
+        .and(wiremock::matchers::body_partial_json(
+            json!({ "provider": "index" }),
+        ))
+        .respond_with(response)
+        // A 503 is sent again by the retry policy; a 422 is sent one time.
+        .expect(1..)
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn the_default_search_falls_back_to_epo_when_the_schema_refuses_the_index() {
+    let server = MockServer::start().await;
+    mount_index_refusal(&server, provider_refusal()).await;
+    mount_epo_fallback(&server, "ta=\"solid state\" and ta=battery", "1-5").await;
+
+    let output = run(
+        &server,
+        &[
+            "--json",
+            "patent",
+            "search",
+            "--query",
+            "\"solid state\" battery",
+            "--limit",
+            "5",
+        ],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    // stdout is the EPO payload; the refusal is not printed.
+    assert_eq!(stdout_json(&output)["total"], 7);
+    let err = stderr(&output);
+    assert_eq!(err.lines().count(), 1, "one note: {err}");
+    assert!(
+        err.contains("the publication index is not enabled on this server"),
+        "{err}"
+    );
+    assert!(
+        err.contains("ta=\"solid state\" and ta=battery"),
+        "the note names the CQL: {err}"
+    );
+}
+
+#[tokio::test]
+async fn the_default_search_falls_back_to_epo_when_the_index_is_not_configured() {
+    let server = MockServer::start().await;
+    mount_index_refusal(
+        &server,
+        ResponseTemplate::new(503).set_body_json(json!({
+            "success": false,
+            "error": { "code": "publication_index_not_configured", "message": "The publication index is not configured." },
+            "status": 503
+        })),
+    )
+    .await;
+    mount_epo_fallback(&server, "ta=battery", "1-10").await;
+
+    let output = run(
+        &server,
+        &[
+            "--output", "table", "patent", "search", "--query", "battery",
+        ],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(stdout(&output).contains("EP1000000A1"));
+    assert!(
+        stderr(&output).contains("ran on EPO OPS (--provider epo)"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[tokio::test]
+async fn the_default_count_probe_falls_back_to_the_epo_count_probe() {
+    let server = MockServer::start().await;
+    mount_index_refusal(&server, provider_refusal()).await;
+    mount_epo_fallback(&server, "ta=battery", "1-1").await;
+
+    let output = run(
+        &server,
+        &[
+            "--json",
+            "patent",
+            "search",
+            "--query",
+            "battery",
+            "--count-only",
+        ],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(stdout_json(&output)["total"], 7);
+}
+
+#[tokio::test]
+async fn a_default_search_with_an_index_filter_has_no_fallback() {
+    let server = MockServer::start().await;
+    mount_failure(&server, "search_patents", provider_refusal()).await;
+
+    let output = run(
+        &server,
+        &[
+            "--output", "table", "patent", "search", "--query", "battery", "--cpc", "H01M",
+        ],
+    )
+    .await;
+
+    assert_ne!(output.status.code(), Some(0));
+    assert!(
+        stderr(&output).contains("The publication index is not enabled on this server"),
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn another_index_failure_is_not_a_reason_to_fall_back() {
+    let server = MockServer::start().await;
+    mount_failure(
+        &server,
+        "search_patents",
+        ResponseTemplate::new(422).set_body_json(json!({
+            "success": false,
+            "error": { "code": "INVALID_INPUT", "message": "Invalid input",
+                "issues": [{ "path": "query", "message": "too short" }] },
+            "status": 422
+        })),
+    )
+    .await;
+
+    let output = run(&server, &["--json", "patent", "search", "--query", "b"]).await;
+
+    assert_ne!(output.status.code(), Some(0));
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_cql_query_with_an_index_filter_and_no_provider_is_refused_before_any_call() {
     let server = MockServer::start().await;
 
     let output = run(
@@ -334,8 +557,35 @@ async fn an_index_flag_without_the_index_provider_is_refused_before_any_call() {
     .await;
 
     assert_ne!(output.status.code(), Some(0));
+    let err = stderr(&output);
+    assert!(err.contains("looks like CQL"), "{err}");
+    assert!(err.contains("--provider index"), "{err}");
+    assert!(err.contains("--provider epo"), "{err}");
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_index_filter_with_the_epo_provider_is_refused_before_any_call() {
+    let server = MockServer::start().await;
+
+    let output = run(
+        &server,
+        &[
+            "patent",
+            "search",
+            "--provider",
+            "epo",
+            "--query",
+            "ti=battery",
+            "--cpc",
+            "H01M",
+        ],
+    )
+    .await;
+
+    assert_ne!(output.status.code(), Some(0));
     assert!(
-        stderr(&output).contains("--provider index"),
+        stderr(&output).contains("--provider index only"),
         "{}",
         stderr(&output)
     );
@@ -343,7 +593,7 @@ async fn an_index_flag_without_the_index_provider_is_refused_before_any_call() {
 }
 
 #[tokio::test]
-async fn the_default_search_is_still_the_epo_search() {
+async fn a_cql_query_without_the_provider_flag_runs_on_epo_with_one_note() {
     let server = MockServer::start().await;
     mount_tool_for(
         &server,
@@ -360,6 +610,72 @@ async fn the_default_search_is_still_the_epo_search() {
     .await;
 
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let err = stderr(&output);
+    assert_eq!(err.lines().count(), 1, "{err}");
+    assert!(err.contains("the query is CQL"), "{err}");
+    assert!(err.contains("--provider epo"), "{err}");
+}
+
+#[tokio::test]
+async fn the_countries_flag_without_the_provider_flag_runs_on_epo() {
+    let server = MockServer::start().await;
+    mount_tool_for(
+        &server,
+        "search_patents",
+        json!({ "query": "battery", "provider": "epo_ops", "range": "1-10", "countries": ["EP", "WO"] }),
+        json!({ "total": 1, "docs": [{ "docId": "EP1000000A1" }] }),
+    )
+    .await;
+
+    let output = run(
+        &server,
+        &[
+            "--json",
+            "patent",
+            "search",
+            "--query",
+            "battery",
+            "--countries",
+            "EP,WO",
+        ],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("--countries works with the EPO search only"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[tokio::test]
+async fn an_explicit_epo_search_prints_no_note() {
+    let server = MockServer::start().await;
+    mount_tool_for(
+        &server,
+        "search_patents",
+        json!({ "query": "ti=battery", "provider": "epo_ops", "range": "1-10" }),
+        json!({ "total": 1, "docs": [{ "docId": "EP1000000A1" }] }),
+    )
+    .await;
+
+    let output = run(
+        &server,
+        &[
+            "--json",
+            "patent",
+            "search",
+            "--provider",
+            "epo",
+            "--query",
+            "ti=battery",
+        ],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(stderr(&output), "");
 }
 
 // ----------------------------------------------------------------------------

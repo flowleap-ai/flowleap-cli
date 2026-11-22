@@ -23,12 +23,14 @@ search is not a gate — reformulate and persist as normal. See `flowleap-keys`.
 ## Discovery first: the publication index
 
 ```bash
-flowleap --json patent search --provider index --query '"solid state" battery -sulfide' --cpc H01M --applicant toyota --kind B --sort date
-flowleap --json patent search --provider index --query 'lidar point cloud segmentation' --office EP,US --to 2018-02-28
-flowleap --json patent search --provider index --query '*' --cpc H01M10/0525 --count-only
+flowleap --json patent search --query '"solid state" battery -sulfide' --cpc H01M --applicant toyota --kind B --sort date
+flowleap --json patent search --query 'lidar point cloud segmentation' --office EP,US --to 2018-02-28
+flowleap --json patent search --query '*' --cpc H01M10/0525 --count-only
 ```
 
-Start a search here. The publication index is FlowLeap's hosted edition of
+Start a search here. `flowleap patent search` without `--provider` is the index
+search (`--provider index` is the same search, written in full). The
+publication index is FlowLeap's hosted edition of
 every publication of every office: number, dates, kind, English title and
 abstract (CN through its English machine-translated abstract), CPC and IPC,
 applicants, inventors and simple family. It runs the `search_patents` tool with
@@ -57,7 +59,7 @@ Rules:
 
 1. **Read `asOf`.** It is the edition date. A publication newer than `asOf` is
    not in the index. Add an EPO search for those:
-   `flowleap --json patent search --query '<CQL> and pd>=<asOf as YYYYMMDD>'`.
+   `flowleap --json patent search --provider epo --query '<CQL> and pd>=<asOf as YYYYMMDD>'`.
 2. **Give the credit.** When you show index results, give `attribution.text`
    (CC BY 4.0).
 3. **The index does not give legal status, claims or citations.** Read a
@@ -67,16 +69,37 @@ Rules:
 5. The count probe and the discriminating-term rule below apply to the EPO CQL
    search. In the index, use `--count-only` and the filters to control the size
    of a result.
-6. **A server without the index.** The CLI prints "The publication index is not
-   enabled on this server" (in `--json`, an `indexUnavailableHint`). Use the EPO
-   search below for the full search, and tell the user.
-7. `--provider index` flags and `--countries` do not mix: `--countries` is for
-   the EPO search, `--office` is for the index.
+6. **A server without the index.** A search without `--provider` and without
+   an index filter then runs on EPO OPS: the CLI makes title/abstract CQL from
+   the plain words and prints one note on stderr with that CQL. Tell the user
+   that the index is not available on this server. With an index filter, or
+   with an explicit `--provider index`, the CLI prints "The publication index
+   is not enabled on this server" (in `--json`, an `indexUnavailableHint`): use
+   the EPO search below.
+7. The index filters and `--countries` do not mix: `--countries` is for the
+   EPO search, `--office` is for the index.
+
+### When to add `--provider epo`
+
+- **Publications newer than `asOf`.** The index is one dated edition (rule 1).
+- **CQL field precision.** A term in the title only, an exact applicant or
+  inventor name, a classification with a date range in one statement, the
+  count probe on a search statement.
+- **An exact check.** One applicant's exact filing list or one family: the live
+  EPO data is the authority.
+
+Family, legal status, claims and citations are not a search: read them with
+`flowleap ops …` (see `flowleap-ops`).
+
+Write `--provider epo` on every CQL search. Without `--provider`, the CLI reads
+a CQL query (a relation such as `ti=battery`) or `--countries` as an EPO search
+and prints one note on stderr; a CQL query together with an index filter is
+refused, because the two searches read the query differently.
 
 ## Search Patents (EPO OPS, CQL)
 
 ```bash
-flowleap patent search --query <query> [flags]
+flowleap patent search --provider epo --query <CQL> [flags]
 ```
 
 Runs the `search_patents` tool (`provider: epo_ops`) on the Tools facade — the
@@ -91,7 +114,8 @@ a retired endpoint. You never name the surface yourself: the command carries it.
 | `--countries` | Country filter, comma-separated (e.g. `EP,WO`) | none |
 | `--count-only` | Only report the result total (cheap probe, no documents) | `false` |
 
-Jurisdiction is set with `--countries` — `patent search` has no `--source` flag
+Jurisdiction is set with `--countries` in the EPO search (`--office` in the
+index search) — `patent search` has no `--source` flag
 (that flag belongs to `academic search`, for `scholar` vs `arxiv`).
 
 For US-specific searches use `flowleap uspto search` (ODP Lucene syntax).
@@ -146,7 +170,7 @@ patent analysis", the discriminating term is `ta="patent analysis"` — never ju
 machine-learning patent ever filed.
 
 ```bash
-flowleap patent search --query 'pa=GOOGLE* AND ta="machine learning" AND ic=G06N' --limit 20
+flowleap patent search --provider epo --query 'pa=GOOGLE* AND ta="machine learning" AND ic=G06N' --limit 20
 ```
 
 **Fields** — do not guess field names; every field in your query must be here:
@@ -195,7 +219,7 @@ per-document bibliography fan-out), so a probe is cheap — a count is all you
 want here:
 
 ```bash
-flowleap --json patent search --query 'ta="foreign object" AND ta=charging' --count-only
+flowleap --json patent search --provider epo --query 'ta="foreign object" AND ta=charging' --count-only
 ```
 
 The JSON payload is `{ query, total }`. (Equivalent raw-tool probe:
@@ -254,7 +278,7 @@ Match keywords against group titles, then search with the 4-char class
 2. Write the CQL (Step 2) and probe the count (Step 3); refine until workable.
    Show the statement to the user as a Search Statement block — see
    [references/search-statement.md](references/search-statement.md).
-3. Run the search: `flowleap --json patent search --query "<CQL>" --limit 20`.
+3. Run the search: `flowleap --json patent search --provider epo --query "<CQL>" --limit 20`.
    The JSON payload is `{ total, docs }`. Results arrive in EPO OPS default
    order (no relevance ranking — recent publications tend to come first), so
    read the whole page, not just the top hits; the CQL itself is the only

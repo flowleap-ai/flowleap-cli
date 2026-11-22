@@ -40,15 +40,18 @@ Done when you have a probed EPO CQL query and a USPTO ODP query for the area.
 ### Step 2: Broad Patent Search
 
 ```bash
-flowleap --json patent search --query "<CQL from step 1>" --limit 50
+flowleap --json patent search --query '<plain words>' --cpc <class> --limit 50
+flowleap --json patent search --provider epo --query "<CQL from step 1>" --limit 50
 flowleap --json uspto search --query "<ODP Lucene from step 1>" --limit 50
 ```
 
-Start the candidate search in the publication index
-(`flowleap --json patent search --provider index --query '<plain words>' --cpc <class>`,
-see `flowleap-patent`): it covers every office in one search and uses no office
-quota. State its `asOf` date and its `attribution.text` in the deliverable, and
-add an EPO search for publications newer than `asOf`. When a live read answers
+Start the candidate search in the publication index (the first command; see
+`flowleap-patent`): it covers every office in one search and uses no office
+quota. A landscape starts with this index search and with
+`flowleap patstat graph technology <CPC>` (see `flowleap-patstat-graph`), before
+guarded PATSTAT SQL. State the `asOf` date and the `attribution.text` of the
+index in the deliverable, and add the EPO search (the second command) for
+publications newer than `asOf` and for CQL field precision. When a live read answers
 "not now" (`liveUnavailableHint`: the daily live data budget is spent), continue
 with the index and `flowleap patstat`, and name the live reads that did not run.
 
@@ -79,7 +82,7 @@ subsidiaries file separately (Google also files as Alphabet, DeepMind,
 Waymo):
 
 ```bash
-flowleap --json patent search --query 'pa=<ASSIGNEE>* AND <discriminating terms from step 1>' --limit 30
+flowleap --json patent search --provider epo --query 'pa=<ASSIGNEE>* AND <discriminating terms from step 1>' --limit 30
 ```
 
 ### Step 5: Check Recent Activity

@@ -545,11 +545,11 @@ async fn json_next_steps_keep_actors_and_json_commands() {
     assert_eq!(login["run"], "flowleap --json auth login");
 }
 
-/// A provider the server covers renders as an informational • line and gets
-/// no next step, while the genuinely blocking provider renders ✗ ("not
+/// An office that FlowLeap's House keys serve renders as a ✓ line that says a
+/// key is not necessary, and gets no next step, while the genuinely blocking provider renders ✗ ("not
 /// covered" — the server verdict proved it) with its steps listed.
 #[tokio::test]
-async fn human_server_covered_provider_renders_dot_and_no_step() {
+async fn human_house_keys_office_renders_a_check_and_no_step() {
     let server = MockServer::start().await;
     mount_health_ok(&server).await;
     mount_validate(
@@ -571,8 +571,8 @@ async fn human_server_covered_provider_renders_dot_and_no_step() {
     assert_eq!(output.status.code(), Some(1));
     let stdout = stdout_human(&output);
     assert!(
-        stdout.contains("• EPO keys: none locally — covered by server"),
-        "covered provider is informational: {stdout}"
+        stdout.contains("✓ EPO keys: not necessary — FlowLeap's House keys serve the calls"),
+        "the House keys serve the office, so no key is necessary: {stdout}"
     );
     assert!(
         stdout.contains("✗ USPTO key: not set, not covered"),
@@ -653,7 +653,7 @@ async fn human_doctor_names_a_stored_key() {
         "{stdout}"
     );
     assert!(
-        stdout.contains("• USPTO key: none locally — covered by server"),
+        stdout.contains("✓ USPTO key: not necessary — FlowLeap's House keys serve the calls"),
         "{stdout}"
     );
 }
@@ -726,5 +726,165 @@ async fn a_rejected_stored_key_is_blocking() {
     assert!(
         store["title"].as_str().unwrap().starts_with("Replace"),
         "{store}"
+    );
+}
+
+/// Mount a readiness probe that carries the publication index block.
+async fn mount_health_with_index(server: &MockServer, block: Value) {
+    Mock::given(method("GET"))
+        .and(path("/v1/health"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status": "ok", "apiVersion": MOCK_API_VERSION, "publicationIndex": block
+        })))
+        .mount(server)
+        .await;
+}
+
+fn house_keys() -> Value {
+    json!({
+        "epo": { "source": "server", "valid": true },
+        "uspto": { "source": "server", "valid": true },
+    })
+}
+
+/// Keyless access (backend ADR 0026): the House keys serve the two offices and
+/// the publication index is served. The machine is ready with no key, the
+/// report carries both facts, and no step tells the user to add a key.
+#[tokio::test]
+async fn a_keyless_server_is_ready_and_reports_the_index_and_the_house_keys() {
+    let server = MockServer::start().await;
+    let block =
+        json!({ "configured": true, "edition": "2026-09-23", "loadedAt": "2026-11-21T10:00:00Z" });
+    mount_health_with_index(&server, block.clone()).await;
+    mount_validate(&server, house_keys()).await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0));
+    let report = stdout_json(&output);
+    assert_eq!(report["ready"], true);
+    assert_eq!(report["nextSteps"], json!([]));
+    assert_eq!(report["publicationIndex"], block);
+    assert_eq!(report["keyless"], true);
+    assert_eq!(report["keyValidation"]["providers"]["epo"], "server");
+    assert_existing_fields(&report);
+}
+
+#[tokio::test]
+async fn human_keyless_doctor_says_that_no_key_is_necessary() {
+    let server = MockServer::start().await;
+    mount_health_with_index(
+        &server,
+        json!({ "configured": true, "edition": "2026-09-23", "loadedAt": null }),
+    )
+    .await;
+    mount_validate(&server, house_keys()).await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = stdout_human(&output);
+    assert!(
+        stdout.contains("✓ EPO keys: not necessary — FlowLeap's House keys serve the calls"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("✓ USPTO key: not necessary"), "{stdout}");
+    assert!(
+        stdout.contains("your own key is optional: it lifts the daily live limit"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("✓ Publication index: edition 2026-09-23"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Next steps:"), "{stdout}");
+    assert!(!stdout.contains("✗"), "{stdout}");
+    assert!(!stdout.contains("•"), "{stdout}");
+}
+
+/// A server that says it has no publication index: one informational line.
+/// An older server sends no block, and doctor then prints no index line.
+#[tokio::test]
+async fn doctor_names_a_server_without_the_index_and_is_silent_for_an_older_server() {
+    let server = MockServer::start().await;
+    mount_health_with_index(&server, json!({ "configured": false })).await;
+    mount_validate(&server, house_keys()).await;
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["doctor"],
+    )
+    .await;
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = stdout_human(&output);
+    assert!(
+        stdout.contains("• Publication index: not on this server"),
+        "{stdout}"
+    );
+
+    let older = MockServer::start().await;
+    mount_health_ok(&older).await;
+    mount_validate(&older, house_keys()).await;
+    let output = run_cli(
+        &older.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+    let report = stdout_json(&output);
+    assert_eq!(report["publicationIndex"], Value::Null);
+    let output = run_cli(
+        &older.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["doctor"],
+    )
+    .await;
+    assert!(!stdout_human(&output).contains("Publication index"));
+}
+
+/// An older server (or keyless access off) with no key for an office: the key
+/// steps of before stay, and `keyless` is false.
+#[tokio::test]
+async fn a_server_without_house_keys_keeps_the_key_steps() {
+    let server = MockServer::start().await;
+    mount_health_ok(&server).await;
+    mount_validate(
+        &server,
+        json!({
+            "epo": { "source": "none", "valid": null },
+            "uspto": { "source": "none", "valid": null },
+        }),
+    )
+    .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[("FLOWLEAP_API_KEY", "fl_pat_test")],
+        &["--json", "doctor"],
+    )
+    .await;
+
+    assert_eq!(output.status.code(), Some(1));
+    let report = stdout_json(&output);
+    assert_eq!(report["keyless"], false);
+    assert_eq!(
+        step_ids(&report),
+        [
+            "obtain-epo-keys",
+            "store-epo-keys",
+            "obtain-uspto-key",
+            "store-uspto-key",
+            "verify-keys"
+        ]
     );
 }

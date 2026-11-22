@@ -37,7 +37,7 @@ query):
 
 ```bash
 flowleap --json tools run search_patents query='<self-written CQL>' range=1-1 details=false
-flowleap --json patent search --query "<self-written CQL>" --limit 20
+flowleap --json patent search --provider epo --query "<self-written CQL>" --limit 20
 flowleap --json uspto search --query "<self-written ODP Lucene>" --limit 20   # title + metadata only
 
 # Literature — inventors' own field publishes here first
