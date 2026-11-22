@@ -14,7 +14,7 @@ mobile, Cowork, ChatGPT) **or in the FlowLeap Patent AI app** (firm OS and
 desktop), never run a `flowleap` command: skip the install, doctor, and command
 steps below, and call the tool of the same name. In a chat client sign-in is
 the connector's OAuth and keys are the stored keys from the Patent-data keys
-page. In the app the office tools are native on the firm's or the desktop's
+page (a key is optional there too: see `flowleap-keys`). In the app the office tools are native on the firm's or the desktop's
 own keys, and paid tools carry the `mcp__flowleap__` prefix. The
 command-to-tool table and the rules for both hosts are in `flowleap-shared`
 ("Chat clients and the FlowLeap Patent AI app"). The one-call
@@ -83,17 +83,30 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
 
 - **Auth, global flags, config, output formats** → `flowleap-shared`; login,
   token minting, and 401 self-heal → `flowleap-auth`.
-- **Patent-data keys (EPO OPS / USPTO ODP BYOK)** → `flowleap-keys`. A
-  `provider_keys_required` / `provider_keys_invalid` /
-  `trial_budget_exhausted` hint — raised from the backend codes
-  `data_keys_required`, `patent_provider_key_invalid`, `odp_api_key_missing`
-  and `trial_data_budget_exhausted`, never from message text — means a human
-  must sign up in a browser (free at both offices; the budget variant also
-  lifts on its own at the hint's `resetsAt`). That is a **user-action stop for that
-  office, never an exhausted route**: do not substitute web-scraped data for it,
-  for searches or single-document reads. Finish the live office, name the gap as
-  a missing-key gap, ask at the end; PATSTAT, legal, and academic/NPL stay live
-  keyless as *different* data. Full doctrine: `flowleap-keys`.
+- **Patent-data keys, the publication index and the live data budget** →
+  `flowleap-keys`. The rules in short:
+  - **No user needs a Patent-Data Key.** A live office read uses FlowLeap's
+    House keys inside a daily live data budget (300 live calls for each office,
+    50 drawing pages). The user's own free key for an office is optional and
+    lifts the limits for that office. Never ask for a key value in the chat.
+  - **Discovery first.** Start a search with
+    `flowleap patent search --provider index` (the publication index: no key,
+    no office quota). Then add an EPO search for publications newer than the
+    `asOf` date of the answer. If the server refuses `--provider index`, use
+    the EPO search.
+  - **A dated answer is not a live answer.** An answer with `live: false` comes
+    from FlowLeap's hosted data: tell the user its `source` and `asOf`. A dated
+    legal status is never proof that a right is in force.
+  - **"Not now" is a wait.** A `liveUnavailableHint` or a `sharedQuotaHint`
+    gives `retryAfterSeconds`. Do not send the call again sooner; continue with
+    the work that needs no live call.
+  - **The key gate is the fallback.** A `provider_keys_required` /
+    `provider_keys_invalid` hint (from the backend codes `data_keys_required`,
+    `patent_provider_key_invalid`, `odp_api_key_missing`, never from message
+    text) still comes from an older server or a server with keyless access
+    off. It is a **user-action stop for that office, never an exhausted
+    route**: do not substitute web-scraped data for it. Finish the live office,
+    name the gap as a missing-key gap, and ask at the end.
 - **Patent search & CQL** → `flowleap-patent`; **USPTO ODP** → `flowleap-uspto`.
 - **EPO document data** (biblio, claims, description, family, legal, EP
   Register representatives and opponents) → `flowleap-ops`. "How many EP

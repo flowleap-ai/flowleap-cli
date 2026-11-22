@@ -1,5 +1,5 @@
-use anyhow::Result;
-use clap::{Parser, Subcommand};
+use anyhow::{bail, Result};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::{json, Value};
 
 use crate::client::Context;
@@ -12,20 +12,98 @@ pub struct PatentArgs {
     command: PatentCommand,
 }
 
+/// Where `patent search` searches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum SearchProvider {
+    /// EPO OPS, live, with a CQL query
+    #[value(alias = "epo_ops", alias = "epo-ops")]
+    Epo,
+    /// FlowLeap's publication index, with plain words and filters
+    Index,
+}
+
+/// The sort of an index search.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum IndexSort {
+    Relevance,
+    Date,
+}
+
+/// The flags that only the publication index takes.
+#[derive(Default)]
+pub(crate) struct IndexFilters {
+    pub cpc: Option<String>,
+    pub applicant: Option<String>,
+    pub inventor: Option<String>,
+    pub office: Option<String>,
+    pub kind: Option<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub sort: Option<&'static str>,
+    pub offset: Option<u32>,
+}
+
+impl IndexFilters {
+    /// The names of the index-only flags that are set, for the usage error.
+    fn set_flags(&self) -> Vec<&'static str> {
+        [
+            ("--cpc", self.cpc.is_some()),
+            ("--applicant", self.applicant.is_some()),
+            ("--inventor", self.inventor.is_some()),
+            ("--office", self.office.is_some()),
+            ("--kind", self.kind.is_some()),
+            ("--from", self.from.is_some()),
+            ("--to", self.to.is_some()),
+            ("--sort", self.sort.is_some()),
+            ("--offset", self.offset.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(name, set)| set.then_some(name))
+        .collect()
+    }
+}
+
+// Parsed once per run; the size of the `Search` flags is not a cost.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 enum PatentCommand {
-    /// Search patents via EPO OPS (worldwide bibliographic coverage)
+    /// Search patents via EPO OPS (worldwide bibliographic coverage), or in
+    /// FlowLeap's publication index (--provider index)
+    #[command(
+        long_about = "Search patents.\n\n\
+--provider epo (the default) searches EPO OPS live with a CQL query that you \
+write (worldwide bibliographic coverage).\n\n\
+--provider index searches FlowLeap's publication index: every publication of \
+every office with its English title and abstract, one quarterly edition. Write \
+plain words (\"quoted phrase\", OR, -exclusion; no CQL), or \"*\" with a filter. \
+The filters --cpc, --applicant, --inventor, --office, --kind, --from and --to, \
+and --sort and --offset, work with the index only. The index uses no office \
+quota and no Patent-Data Key. The answer gives the total, the edition date \
+(asOf) and the CC BY attribution: publications newer than asOf are not in the \
+index, so add an epo search for them. A server without the index refuses \
+--provider index; use the epo search there.",
+        after_help = "Examples:\n  flowleap patent search --query 'ti=\"battery separator\" and pa=lg'\n  \
+flowleap patent search --provider index --query '\"solid state\" battery -sulfide' --cpc H01M --applicant toyota --kind B --sort date\n  \
+flowleap patent search --provider index --query 'lidar point cloud segmentation' --office EP,US --to 2018-02-28"
+    )]
     Search {
-        /// EPO CQL query (e.g. 'ti="battery separator" and pa=lg'). Write the
-        /// CQL yourself — the flowleap-patent skill carries the method.
+        /// The query. epo: EPO CQL (e.g. 'ti="battery separator" and pa=lg'),
+        /// which you write yourself (the flowleap-patent skill has the method).
+        /// index: plain words ("quoted phrase", OR, -exclusion), or "*" with
+        /// --cpc, --applicant or --inventor
         #[arg(long, short)]
         query: String,
+
+        /// Where to search: epo (EPO OPS, live) or index (the publication
+        /// index, one dated edition)
+        #[arg(long, value_enum, default_value = "epo")]
+        provider: SearchProvider,
 
         /// Maximum results to return (1-100)
         #[arg(long, default_value = "10")]
         limit: u32,
 
-        /// Country filter, comma-separated (e.g. "EP,WO"); "all" disables
+        /// epo only: country filter, comma-separated (e.g. "EP,WO"); "all" disables
         #[arg(long)]
         countries: Option<String>,
 
@@ -33,6 +111,46 @@ enum PatentCommand {
         /// no per-document bibliography fan-out)
         #[arg(long)]
         count_only: bool,
+
+        /// index only: CPC subclass (H01M), main group (H01M10) or full symbol
+        /// (H01M10/0525); comma-separated for a list (any of them)
+        #[arg(long)]
+        cpc: Option<String>,
+
+        /// index only: words of the applicant name, any case (e.g. "toyota motor")
+        #[arg(long)]
+        applicant: Option<String>,
+
+        /// index only: words of an inventor name, any case
+        #[arg(long)]
+        inventor: Option<String>,
+
+        /// index only: publication office (country code), comma-separated
+        /// for a list (e.g. "EP,US,CN")
+        #[arg(long)]
+        office: Option<String>,
+
+        /// index only: kind-code prefix, comma-separated for a list: B grants,
+        /// A applications, or an exact kind such as A1
+        #[arg(long)]
+        kind: Option<String>,
+
+        /// index only: publication date from, inclusive (YYYY-MM-DD)
+        #[arg(long)]
+        from: Option<String>,
+
+        /// index only: publication date to, inclusive (YYYY-MM-DD)
+        #[arg(long)]
+        to: Option<String>,
+
+        /// index only: relevance (the default) or date (newest first)
+        #[arg(long, value_enum)]
+        sort: Option<IndexSort>,
+
+        /// index only: number of results to skip (the next page starts at
+        /// offset + limit)
+        #[arg(long)]
+        offset: Option<u32>,
     },
     /// The Examiner Baseline: every document cited across a publication's
     /// family, by office and by who cited it, from the offices' own records
@@ -65,14 +183,55 @@ pub async fn run(ctx: &Context, args: PatentArgs) -> Result<()> {
     match args.command {
         PatentCommand::Search {
             query,
+            provider,
             limit,
             countries,
             count_only,
+            cpc,
+            applicant,
+            inventor,
+            office,
+            kind,
+            from,
+            to,
+            sort,
+            offset,
         } => {
-            if count_only {
-                count_probe(ctx, &query, countries.as_deref()).await
-            } else {
-                search(ctx, &query, limit, countries.as_deref()).await
+            let filters = IndexFilters {
+                cpc,
+                applicant,
+                inventor,
+                office,
+                kind,
+                from,
+                to,
+                sort: sort.map(|sort| match sort {
+                    IndexSort::Relevance => "relevance",
+                    IndexSort::Date => "date",
+                }),
+                offset,
+            };
+            match provider {
+                SearchProvider::Index => {
+                    if countries.is_some() {
+                        bail!("--countries works with --provider epo only. For the index, use --office (e.g. --office EP,US).");
+                    }
+                    index_search(ctx, &query, limit, &filters, count_only).await
+                }
+                SearchProvider::Epo => {
+                    let set = filters.set_flags();
+                    if !set.is_empty() {
+                        bail!(
+                            "{} work(s) with --provider index only. Add --provider index, or put the filter in the CQL query.",
+                            set.join(", ")
+                        );
+                    }
+                    if count_only {
+                        count_probe(ctx, &query, countries.as_deref()).await
+                    } else {
+                        search(ctx, &query, limit, countries.as_deref()).await
+                    }
+                }
             }
         }
         PatentCommand::ExaminerBaseline { publication } => {
@@ -192,10 +351,253 @@ async fn count_probe(ctx: &Context, query: &str, countries: Option<&str>) -> Res
     Ok(())
 }
 
+/// A comma-separated flag value as the tool input: one value as a string, more
+/// as a list. `upper` is for codes (CPC, office, kind).
+fn one_or_many(value: &str, upper: bool) -> Option<Value> {
+    let mut items: Vec<String> = value
+        .split(',')
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+        .map(|item| {
+            if upper {
+                item.to_uppercase()
+            } else {
+                item.to_string()
+            }
+        })
+        .collect();
+    match items.len() {
+        0 => None,
+        1 => Some(Value::String(items.remove(0))),
+        _ => Some(json!(items)),
+    }
+}
+
+/// Build the `search_patents` input for a publication-index search (backend
+/// ADR 0026): plain words, the page as `range`, and only the filters that are
+/// set.
+pub(crate) fn index_search_input(query: &str, limit: u32, filters: &IndexFilters) -> Value {
+    let limit = limit.clamp(1, 100);
+    let start = filters.offset.unwrap_or(0) + 1;
+    let mut input = json!({
+        "query": query,
+        "provider": "index",
+        "range": format!("{start}-{}", start + limit - 1),
+    });
+    let lists = [
+        ("cpc", &filters.cpc),
+        ("office", &filters.office),
+        ("kind", &filters.kind),
+    ];
+    for (name, value) in lists {
+        if let Some(value) = value.as_deref().and_then(|value| one_or_many(value, true)) {
+            input[name] = value;
+        }
+    }
+    let texts = [
+        ("applicant", &filters.applicant),
+        ("inventor", &filters.inventor),
+        ("from", &filters.from),
+        ("to", &filters.to),
+    ];
+    for (name, value) in texts {
+        if let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            input[name] = json!(value);
+        }
+    }
+    if let Some(sort) = filters.sort {
+        input["sort"] = json!(sort);
+    }
+    input
+}
+
+/// Does this failed envelope say that the server has no publication index?
+///
+/// Two served shapes, both read from structured fields only:
+/// - keyless access is off (or an older backend): the `search_patents` schema
+///   has no provider `index`, so the input validation fails and one of its
+///   `issues` has the path `provider`;
+/// - keyless access is on but the index database is not configured:
+///   `503 publication_index_not_configured`.
+pub(crate) fn index_not_enabled(envelope: &Value) -> bool {
+    let body = &envelope["body"];
+    let code = body
+        .pointer("/error/code")
+        .or_else(|| body.get("code"))
+        .and_then(Value::as_str);
+    if code == Some("publication_index_not_configured") {
+        return true;
+    }
+    let status = envelope.get("status").and_then(Value::as_u64);
+    if !matches!(status, Some(400 | 422)) {
+        return false;
+    }
+    body.pointer("/error/issues")
+        .or_else(|| body.pointer("/error/details/issues"))
+        .and_then(Value::as_array)
+        .is_some_and(|issues| {
+            issues.iter().any(|issue| match issue.get("path") {
+                Some(Value::String(path)) => path == "provider",
+                Some(Value::Array(path)) => path.first() == Some(&json!("provider")),
+                _ => false,
+            })
+        })
+}
+
+/// The one line a user reads when the server has no publication index.
+pub(crate) const INDEX_NOT_ENABLED: &str =
+    "The publication index is not enabled on this server. Use the EPO search: \
+     flowleap patent search --query '<CQL>' (without --provider index).";
+
+/// The lines after the rows of an index search: the total, the edition date
+/// and the CC BY attribution (the license asks for the credit wherever the
+/// results are shown).
+pub(crate) fn index_footer(result: &Value) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(total) = result.get("total").and_then(Value::as_u64) {
+        let lower_bound = result.get("totalIsLowerBound").and_then(Value::as_bool) == Some(true);
+        lines.push(if lower_bound {
+            format!("Total: at least {total} (the count stopped at its cap)")
+        } else {
+            format!("Total: {total}")
+        });
+    }
+    if let Some(as_of) = result.get("asOf").and_then(Value::as_str) {
+        lines.push(format!(
+            "As of: {as_of} (publication index edition; for newer publications add an epo search)"
+        ));
+    }
+    if let Some(text) = result.pointer("/attribution/text").and_then(Value::as_str) {
+        lines.push(format!("Source: {text}"));
+    }
+    lines
+}
+
+/// Run a publication-index search. The call reads the raw envelope so that a
+/// server without the index gets one clear line, not an error dump; every
+/// other failure renders as on every other data command.
+async fn index_search(
+    ctx: &Context,
+    query: &str,
+    limit: u32,
+    filters: &IndexFilters,
+    count_only: bool,
+) -> Result<()> {
+    let limit = if count_only { 1 } else { limit };
+    let input = index_search_input(query, limit, filters);
+    let mut envelope = tools::call_tool_envelope(ctx, "search_patents", &input).await?;
+    let dry_run = envelope.get("dryRun").and_then(Value::as_bool) == Some(true);
+    if !dry_run && envelope.get("ok").and_then(Value::as_bool) != Some(true) {
+        if !index_not_enabled(&envelope) {
+            return Err(ctx.fail_with_envelope(&envelope));
+        }
+        let error = crate::client::printed_error_for(&envelope);
+        if ctx.output_format == "json" {
+            // JSON keeps the backend envelope; the hint is an additive field.
+            envelope["indexUnavailableHint"] = json!({
+                "code": "publication_index_not_enabled",
+                "requiresHumanIntervention": false,
+                "message": INDEX_NOT_ENABLED,
+                "fallback": "flowleap patent search --query '<CQL>'",
+            });
+            output::print_json(&envelope);
+        } else {
+            eprintln!("{INDEX_NOT_ENABLED}");
+        }
+        return Err(error.into());
+    }
+    let result = if dry_run {
+        envelope
+    } else {
+        ctx.print_trial_budget_low_warning(&envelope);
+        envelope.get("body").cloned().unwrap_or(Value::Null)
+    };
+    let Some(result) = tools::unwrap_tool_result(ctx, result) else {
+        return Ok(());
+    };
+    if ctx.output_format == "json" {
+        output::print_json(&result);
+        return Ok(());
+    }
+    if !count_only {
+        match result.get("docs") {
+            Some(docs) => output::print_value(&ctx.output_format, docs, SEARCH_COLUMNS),
+            None => output::print_value(&ctx.output_format, &result, SEARCH_COLUMNS),
+        }
+    }
+    for line in index_footer(&result) {
+        println!("{line}");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{epo_search_input, partial_page_note};
+    use super::{
+        epo_search_input, index_footer, index_not_enabled, index_search_input, partial_page_note,
+        IndexFilters,
+    };
     use serde_json::json;
+
+    #[test]
+    fn the_index_input_carries_the_page_and_only_the_set_filters() {
+        let plain = index_search_input("lidar", 10, &IndexFilters::default());
+        assert_eq!(
+            plain,
+            json!({ "query": "lidar", "provider": "index", "range": "1-10" })
+        );
+
+        let filters = IndexFilters {
+            cpc: Some("h01m, G06N3".into()),
+            office: Some("ep".into()),
+            kind: Some("B".into()),
+            applicant: Some("toyota motor".into()),
+            sort: Some("date"),
+            offset: Some(25),
+            ..IndexFilters::default()
+        };
+        let input = index_search_input("*", 25, &filters);
+        assert_eq!(input["range"], "26-50");
+        assert_eq!(input["cpc"], json!(["H01M", "G06N3"]));
+        assert_eq!(input["office"], "EP");
+        assert_eq!(input["kind"], "B");
+        assert_eq!(input["applicant"], "toyota motor");
+        assert_eq!(input["sort"], "date");
+        assert!(input.get("inventor").is_none());
+        assert!(input.get("countries").is_none());
+    }
+
+    #[test]
+    fn only_a_provider_issue_or_the_not_configured_code_means_no_index() {
+        let off = json!({ "status": 422, "body": { "success": false, "error": {
+            "code": "INVALID_INPUT", "message": "Invalid input for tool search_patents",
+            "issues": [{ "path": "provider", "message": "Invalid option" }] } } });
+        assert!(index_not_enabled(&off));
+        let not_configured = json!({ "status": 503, "body": { "error": {
+            "code": "publication_index_not_configured", "message": "x" } } });
+        assert!(index_not_enabled(&not_configured));
+        // A bad date is the caller's error, not a missing index.
+        let bad_date = json!({ "status": 422, "body": { "error": {
+            "code": "INVALID_INPUT", "issues": [{ "path": "from", "message": "a date" }] } } });
+        assert!(!index_not_enabled(&bad_date));
+        // The message is never read.
+        let wording = json!({ "status": 500, "body": { "error": {
+            "code": "INTERNAL_ERROR", "message": "provider index failed" } } });
+        assert!(!index_not_enabled(&wording));
+    }
+
+    #[test]
+    fn the_index_footer_names_the_total_the_edition_and_the_credit() {
+        let lines = index_footer(&json!({
+            "total": 1000, "totalIsLowerBound": true, "asOf": "2026-09-23",
+            "attribution": { "text": "Contains data from Google Patents Public Datasets, licensed under CC BY 4.0." }
+        }));
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].contains("at least 1000"));
+        assert!(lines[1].contains("2026-09-23"));
+        assert!(lines[2].contains("CC BY 4.0"));
+        assert!(index_footer(&json!({ "docs": [] })).is_empty());
+    }
 
     #[test]
     fn a_partial_page_says_how_many_rows_were_not_read() {

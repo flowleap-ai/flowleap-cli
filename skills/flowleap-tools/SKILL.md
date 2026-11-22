@@ -63,7 +63,10 @@ backend policy, so text matching is not a contract.
 | `RATE_LIMITED` / `rate_limit_exceeded` | 429 | Back off; carries `retryAfterSeconds` |
 | `INTERNAL_ERROR` | 500 | Unexpected tool failure |
 | `subscription_required` | 402 | A human must subscribe; carries `upgradeUrl` |
-| `data_keys_required` / `patent_provider_key_invalid` | 400 | Key gate, each carrying `provider`. While stored keys are enabled, `data_keys_required` (and `patent_provider_key_invalid` when the rejected key is the stored key) also carries `keysPageUrl` and a human `nextStep` (`store-epo-keys` / `store-uspto-key`): give the human that FlowLeap "Patent-data keys" page link, and never ask for the key value in the chat — see `flowleap-keys` |
+| `live_data_budget_exhausted` / `trial_data_budget_exhausted` | 429 | Today's live data budget on FlowLeap's House keys is spent for that office (`provider`, `resets_at`, `retry_after`). With keyless access on, `error.liveUnavailable { reason, retryAfterSeconds }` is there too. A wait, not a missing key: an own free key is optional — see `flowleap-keys` |
+| `upstream_unavailable` | 503 | With `details.shared_quota`: the shared quota of the House keys is busy. Wait `Retry-After` |
+| `publication_index_not_configured` | 503 | `search_patents` `provider: "index"` on a server without the publication index: use `provider: "epo_ops"` |
+| `data_keys_required` / `patent_provider_key_invalid` | 400 | Key gate, each carrying `provider`. No user needs a key on a server with keyless access; `data_keys_required` comes from an older server, a server with keyless access off, or an office without a House key. While stored keys are enabled, `data_keys_required` (and `patent_provider_key_invalid` when the rejected key is the stored key) also carries `keysPageUrl` and a human `nextStep` (`store-epo-keys` / `store-uspto-key`): give the human that FlowLeap "Patent-data keys" page link, and never ask for the key value in the chat — see `flowleap-keys` |
 | `odp_api_key_missing` | 503 | USPTO ODP key gate |
 | `endpoint_gone` | 410 | Retired endpoint; the build is stale — see below |
 
@@ -80,7 +83,7 @@ request.
 `flowleap --json tools list` is authoritative and discoverable at runtime —
 read it rather than trusting this snapshot when the two disagree.
 
-Search: `search_patents` (`provider=epo_ops` CQL | `uspto` Lucene),
+Search: `search_patents` (`provider=index` plain words with the filters `cpc`, `applicant`, `inventor`, `office`, `kind`, `from`, `to` and `sort=relevance|date`, when the schema lists it — the publication index, the place to start a search | `provider=epo_ops` CQL | `uspto` Lucene),
 `search_register` (EP Register CQL, EP applications only — the one search
 with a representative index: `re=` representative, `op=` opponent, `nm=`
 name in any role, surname-first, for when a role index returns 0;

@@ -44,7 +44,16 @@ flowleap --json patent search --query "<CQL from step 1>" --limit 50
 flowleap --json uspto search --query "<ODP Lucene from step 1>" --limit 50
 ```
 
-If one office answers `provider_keys_required`, its patent-data key is missing:
+Start the candidate search in the publication index
+(`flowleap --json patent search --provider index --query '<plain words>' --cpc <class>`,
+see `flowleap-patent`): it covers every office in one search and uses no office
+quota. State its `asOf` date and its `attribution.text` in the deliverable, and
+add an EPO search for publications newer than `asOf`. When a live read answers
+"not now" (`liveUnavailableHint`: the daily live data budget is spent), continue
+with the index and `flowleap patstat`, and name the live reads that did not run.
+
+If one office answers `provider_keys_required` (an older server; no user needs
+a key on a current one), its patent-data key is missing:
 map the live office in full, label the landscape as covering that office only
 because of a missing key — never as the shape of the field — and ask for the
 free key at the end. `flowleap patstat` aggregates stay available keyless, but

@@ -33,7 +33,7 @@ before trusting `skills install` output or regenerating goldens.
 | `src/commands/tools.rs` | Agent-first tool facade: list/describe/run `/v1/tools/*`, plus `call_tool_data` — the shared seam every data command runs on (unwraps the tool envelope to its `data` payload). The exception: the `patstat` commands call `call_tool_envelope` so their typed errors come back unprinted and render their own way; both paths share `unwrap_tool_result` and `retry_policy_for` |
 | `src/commands/mcp.rs` | `flowleap mcp` stdio bridge: `tools/list` mirrors the `/v1/tools` registry verbatim and `tools/call` runs a tool (one compact-JSON text block; for `get_patent_image` with `include_images` each PNG/JPEG page leaves the JSON and arrives as a `Page N of <docId>` text block plus an MCP `image` block, the same shape the hosted MCP server emits — `mcp_content`); it also serves the PATSTAT doctrine read at startup through the `patstat_docs` tool as six resources (`flowleap://patstat/semantic-model`, its index `…/semantic-model/index`, `…/examples`, `…/workflow/{portfolio-analysis,guarded-sql,graph}`) and three prompts (`patstat-<workflow>`, a plain text rendering of the served workflow), plus one resource template, `flowleap://patstat/semantic-model/view/{name}`, read on demand through the same tool and cached per process (an unknown view is -32602 listing the available views). It authors no tool and no doctrine; a document that fails to load is logged to stderr and skipped. `--check` reports tool, resource, template and prompt counts |
 | `src/commands/skills.rs` | Embedded agent-skill installer (`skills/` baked into binary): multi-harness targets (claude/claude-project/codex/cursor/gemini/--dir), version stamps, `skills update` |
-| `src/commands/patent.rs` | EPO patent search (caller-written CQL) |
+| `src/commands/patent.rs` | `patent search`: the EPO search (caller-written CQL, the default) and the publication-index search (`--provider index`, plain words and filters, backend ADR 0026) |
 | `src/commands/examiner_baseline.rs` | `patent examiner-baseline`: the Examiner Baseline (agent-v2 ADR 0010). Calls the backend `examiner_baseline` tool when the registry lists it; otherwise walks the family itself (reads every member publication's `citedReferences` and a US grant's enriched office-action citations). Either way it prints one cited-document × office matrix with gap rows; `--verbose` names the path. No model call; `--json` prints the `Baseline` shape the human table is derived from, and a cell names each category's own claims when the search report pairs them (`categoryClaims`) |
 | `src/commands/uspto.rs` | USPTO ODP search, grants, applications, continuity, file wrapper (transactions/assignments/foreign-priority/adjustment/attorney/documents + OCR document text) |
 | `src/commands/ops.rs` | EPO OPS document reads (biblio, claims, description, family, legal, abstract), EP Register reads and the EP Register search (`register-search`, the one search with a representative index) |
@@ -101,9 +101,53 @@ token with a credential dead before the next command runs. The refusal exits
 login`. Tokens that aren't a decodable JWT (an `fl_pat_…` token, for example)
 are stored as before — the guard only fires on a positively short `exp`.
 
-## Patent-Data Keys (BYOK)
+## Keyless access: the publication index, the live data budget, dated answers
 
-Patent data may require the user's own provider credentials — EPO OPS
+Backend ADR 0026. The backend has all of it behind `KEYLESS_ACCESS_ENABLED`;
+the CLI works against both states and never assumes one.
+
+- **No user needs a Patent-Data Key.** A live office read uses the House keys
+  inside the live data budget (300 live calls for each office and 50 drawing
+  pages in one UTC day). An own key is optional and lifts the limits for that
+  office. Terms: `CONTEXT.md`. Doctrine text: the `flowleap-keys` skill.
+- **`patent search --provider index`** sends `search_patents` with
+  `provider: "index"`: `--query` (plain words), `--limit`/`--offset` →
+  `range: "start-end"`, `--cpc`/`--office`/`--kind` (comma-separated → one
+  string or a list, upper case), `--applicant`, `--inventor`, `--from`, `--to`,
+  `--sort relevance|date`. An index-only flag without `--provider index`, and
+  `--countries` with it, are refused before any call. Table and human output
+  print the rows, then `Total:` (`at least` when `totalIsLowerBound`),
+  `As of:` and the `Source:` attribution line; `--json` is the tool data
+  verbatim. The default provider stays `epo`.
+- **A server without the index** refuses the provider: a validation failure
+  (`INVALID_INPUT`, 422 or 400) with an issue whose `path` is `provider` (flag
+  off: the base schema has no `index`), or `503
+  publication_index_not_configured`. `patent::index_not_enabled` reads those
+  structured fields only. Table and human output print one line on stderr and
+  no envelope; `--json` prints the envelope plus `indexUnavailableHint`
+  (`publication_index_not_enabled`). The exit code is the status's.
+- **Dated answers.** `tools::call_tool_data` prints `note:` lines on stderr
+  (not in `--json`) when the tool data has `live: false`: the source, `asOf`,
+  the `liveUnavailable` reason and wait, the attribution text when present,
+  and for `get_legal_status` the line that a dated legal status is not proof
+  that a right is in force (`tools::dated_answer_note`). An answer without
+  `live` prints nothing new.
+- **"Not now".** `client::live_unavailable_hint` adds `liveUnavailableHint`
+  (`{ code: "live_unavailable", reason, retryAfterSeconds?, provider?,
+  resetsAt?, allowance?, keysPageUrl?, requiresHumanIntervention: false,
+  message }`) to a failed envelope whose body has `error.liveUnavailable`, or
+  whose code is `live_data_budget_exhausted`. That code (429) exits 6 and gets
+  no `rateLimitHint` (it is not the per-user request limit) and no
+  `providerKeysHint`. `trial_data_budget_exhausted` keeps its
+  `providerKeysHint` and exit 9. In table and human output the "Live data: not
+  now" box replaces the trial budget box and the rate-limit box; when a
+  `sharedQuotaHint` is present its box names the wait and no second box is
+  printed.
+
+## Patent-Data Keys (optional)
+
+No user needs a key (see above). A user can add the user's own provider
+credentials — EPO OPS
 (consumer key + secret, a pair) and USPTO ODP (API key). The domain term is
 **patent-data keys**; `provider_keys_required` / `provider_keys_invalid` /
 `trial_budget_exhausted` are the wire codes. The CLI stores them in
@@ -151,7 +195,9 @@ invent or erase a key gate. An error that merely mentions `EPO_CLIENT_ID` in its
 message is not a gate.
 
 **Key-gate doctrine** — authored in the `flowleap-keys` skill, mirrored from the
-app's shipped prompt so both harnesses have one personality. A
+app's shipped prompt so both harnesses have one personality. With keyless
+access the gate is the fallback case (an older server, the flag off, an office
+without a House key), and the skill puts it after the keyless rules. A
 `provider_keys_required` gate is a user-action stop for that office, never an
 exhausted route: no web-scraped substitute for it (searches or single-document
 reads), and the free key is never framed as a paywall. A gate is read, never
@@ -177,7 +223,7 @@ parsing JSON:
 | 3 | Auth required | HTTP 401, or the local `require_auth` guard finding no credential at all (typed `AuthRequiredError`; the `--json` envelope carries `error.code: "unauthenticated"`) |
 | 4 | Subscription required | HTTP 402 — a human must subscribe; see `subscriptionHint` |
 | 5 | Not found | HTTP 404 |
-| 6 | Rate limited | HTTP 429 — back off, then retry; see `rateLimitHint` |
+| 6 | Rate limited | HTTP 429 — back off, then retry; see `rateLimitHint`. Also a License holder's spent live data budget (`live_data_budget_exhausted`): see `liveUnavailableHint` |
 | 7 | Network failure | Connection failure or request timeout reaching the backend |
 | 8 | Endpoint gone | HTTP 410 `endpoint_gone` — this CLI build calls a retired endpoint. Run `flowleap upgrade`; see `endpointGoneHint` for the successor |
 | 9 | Patent-data keys | `provider_keys_required` / `provider_keys_invalid` / `trial_budget_exhausted`. Raised wherever a `providerKeysHint` lands on the envelope (the backend answers 400 — or 429 for the trial budget — which would otherwise map elsewhere), and by `keys test` / `keys set` on a rejected or missing key. A human must add keys; never retry (the budget variant alone also lifts at its `resetsAt`) |
@@ -203,6 +249,12 @@ renders each hint as an info box on stderr:
   out is the user's own free EPO key (own quota). Built from the backend's
   structured `shared_quota` field only. Not a human stop: the exit code is the
   503's. A 5xx with a `Retry-After` over 5 seconds is not retried in-band.
+- `liveUnavailableHint` (429 or 503) — the live office call cannot run now
+  (backend ADR 0026): the live data budget is spent, or the shared quota is
+  busy. Wait `retryAfterSeconds`; an own key is optional. See "Keyless access"
+  above.
+- `indexUnavailableHint` — `patent search --provider index` on a server
+  without the publication index (`--json` only; one stderr line otherwise).
 - `endpointGoneHint` (410) — `{ code: "endpoint_gone", requiresUpgrade: true,
   successor?, reason?, serverMessage?, message }`. The build is stale: the
   endpoint is retired for good. Upgrade the CLI; never retry the same call.
@@ -244,6 +296,7 @@ longer calls them.
 | Command | Tool |
 |---------|------|
 | `patent search`, `ops search` | `search_patents` (`provider: epo_ops`) |
+| `patent search --provider index` | `search_patents` (`provider: index`, the publication index; see "Keyless access") |
 | `uspto search` | `search_patents` (`provider: uspto`) |
 | `ops biblio` / `abstract` / `claims` / `description` / `legal` | `get_bibliography` / `get_abstract` / `get_claims` / `get_description` / `get_legal_status` (`biblio --designated-states` → `include_designated_states`, `--resolve-npl` → `resolve_npl`; both opt-in, each costs extra reads; `legal --limit`/`--offset` → `limit`/`offset`, one page of 50 events by default, a stderr note when `eventsReturned` < `eventsTotal`, and `--output table` prints the events with `eventDate` and the record `date`) |
 | `ops register-biblio` | `get_register_biblio` (EP Register: representatives of record, opponents) |
@@ -318,7 +371,9 @@ backend policy. Facade codes: `INVALID_INPUT` (422, carries `issues`),
 `RATE_LIMITED` (429), `INTERNAL_ERROR` (500). Access codes:
 `subscription_required` (402), `data_keys_required` / `patent_provider_key_invalid`
 (400, each carrying `provider`), `trial_data_budget_exhausted` (429, carries
-`provider`, `remaining: 0`, `resets_at` — backend ADR 0017),
+`provider`, `remaining: 0`, `resets_at` — backend ADR 0017; a License holder
+gets `live_data_budget_exhausted` with the same fields, backend ADR 0026),
+`publication_index_not_configured` (503),
 `rate_limit_exceeded` (429), `endpoint_gone` (410, carrying `successor` and
 `reason`). Success envelopes may carry `warnings[]` — `trial_data_budget_low`
 (with `remaining`, `resets_at`) means today's shared trial budget is ≥80% spent.

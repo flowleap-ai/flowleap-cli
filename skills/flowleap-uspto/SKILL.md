@@ -41,6 +41,12 @@ constraint it strips that filter and retries once (a mis-guessed CPC class is a
 common cause of zero recall), then, if still empty, prints guidance to broaden
 to a title search. Watch stderr for these notes.
 
+**No user needs a USPTO key.** A USPTO read uses FlowLeap's House key inside
+the daily live data budget (300 live USPTO calls in one UTC day); an own free
+ODP key is optional and lifts that limit. A `liveUnavailableHint` is a wait
+("not now"): do not send the call again before its `retryAfterSeconds`, and
+continue with the work that needs no live USPTO call. See `flowleap-keys`.
+
 **Zero recall is not a key gate.** An empty result set, a truncated payload, or
 a 5xx keeps the normal recovery path above. The US office is gated only when a
 command you actually ran returned an explicit gate **code** — the CLI's

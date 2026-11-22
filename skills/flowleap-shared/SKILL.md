@@ -19,9 +19,9 @@ names for the command.
 `auth`, `doctor`, `setup`, `init`, `keys`, `config`, `skills`, `upgrade`,
 `api`, `health`, and `mcp` have no tool in either host. Global flags
 (`--json`, `--dry-run`, `--output`) do not apply: a tool call always returns
-the JSON envelope. **Never ask for a key value in the chat.** The key-gate
-doctrine in `flowleap-keys` (a gated office is a user-action stop) applies in
-both hosts; only where the user adds a key differs.
+the JSON envelope. **Never ask for a key value in the chat.** The key doctrine
+in `flowleap-keys` applies in both hosts; only where the user adds a key
+differs.
 
 ### Chat clients with the FlowLeap connector
 
@@ -34,11 +34,21 @@ connector to the **hosted MCP server**. These clients have no shell.
 - **Sign-in is the connector's OAuth.** The user connects FlowLeap in the
   client's connector settings. In place of `health`, call `server_info`: it
   reports the backend's configured providers and available tools.
-- **Patent-data keys are stored keys.** The CLI forwards the keys kept on the
-  user's machine; a chat client has no keys to forward, so the backend uses the
-  stored key the user added on the FlowLeap Patent-data keys page
-  (https://www.flowleap.co/en/dashboard/keys). When a tool answers a key gate,
-  relay that page (the error's `keysPageUrl` and `nextStep`, when present).
+- **No user needs a Patent-Data Key; an own key is a stored key.** A live
+  office read uses FlowLeap's House keys inside the daily live data budget. A
+  key is optional and lifts the limits for that office. A chat client has no
+  keys to forward, so the user's own key is the stored key that the user adds
+  on the FlowLeap Patent-data keys page
+  (https://www.flowleap.co/en/dashboard/keys). When a tool answers a key gate
+  (an older server, or keyless access off) or a spent budget, relay that page
+  (the error's `keysPageUrl` and `nextStep`, when present) one time.
+- **Search the publication index first.** Call `search_patents` with
+  `provider: "index"` when the tool schema lists that provider; if the schema
+  does not list it, the server has no index and you use `provider: "epo_ops"`.
+- **Read `live` on every answer.** `live: false` is a dated answer from
+  FlowLeap's hosted data: tell the user its `source` and `asOf`. A failure with
+  `error.liveUnavailable` is a "not now" answer: wait its `retryAfterSeconds`.
+  The rules are in `flowleap-keys`.
 
 ### The FlowLeap Patent AI app (firm OS and desktop)
 
@@ -56,7 +66,10 @@ firm administrator or the desktop user sets up outside the chat.
   `mcp__flowleap__get_claims`: the native `get_claims` has no US source, and its
   answer names that tool. When a paid tool is not in your tool list, tell the
   user that the step needs FlowLeap Data, and continue with the native tools.
-- **Data keys are the firm's or the desktop user's.** The app's data keys are
+- **Data keys are the firm's or the desktop user's.** The app calls no House
+  keys and has no publication index, so the keyless rules of `flowleap-keys`
+  ("no user needs a key", the live data budget, dated answers) do not apply to
+  the app's native office tools. The app's data keys are
   the Patent-Data Keys (EPO OPS, USPTO ODP) and the Semantic Scholar and
   Mistral OCR keys. When a tool answers that its key is missing, relay its
   message, which names the connector, and add: on the desktop the user adds the
@@ -73,6 +86,7 @@ firm administrator or the desktop user sets up outside the chat.
 | `ops register-biblio` | `get_register_biblio` | EP only: representatives of record, opponents |
 | `ops register-search` | `search_register` | EP Register CQL (`query`, `range`); the one search with a representative index (`re=`), opponent (`op=`), name in any role (`nm=`, surname-first — use it when a role index returns 0); EP applications only |
 | `patent search`, `ops search` | `search_patents` | `provider: "epo_ops"`, CQL |
+| `patent search --provider index` | `search_patents` | `provider: "index"`, plain words; `--cpc`/`--applicant`/`--inventor`/`--office`/`--kind`/`--from`/`--to`/`--sort` are the parameters of the same name, `--limit`/`--offset` are `range: "start-end"`. Chat clients only, and only when the schema lists the provider; the app's native tool has no index |
 | `uspto search` | `search_patents` | `provider: "uspto"`, Lucene |
 | `uspto application` / `grant` / `continuity` | `get_us_application`, `get_us_grant`, `get_continuity` | `--full` is `view: "full"`; the default summary view names each cut list in `truncated[]` |
 | `uspto transactions` / `assignments` / `foreign-priority` / `adjustment` / `attorney` | `get_transactions`, `get_assignments`, `get_foreign_priority`, `get_patent_term_adjustment`, `get_attorney` | |
@@ -103,8 +117,8 @@ Environment variable overrides (highest priority):
 - `FLOWLEAP_BASE_URL` — API base URL
 
 The login, token minting/listing/revocation, and 401 self-heal commands live in
-`flowleap-auth`. Patent-data keys (EPO OPS / USPTO ODP BYOK) live in
-`flowleap-keys`.
+`flowleap-auth`. Patent-data keys (EPO OPS / USPTO ODP; optional, no user
+needs one) live in `flowleap-keys`.
 
 ## Global Flags
 
@@ -153,11 +167,28 @@ work without a subscription, so setup can always be diagnosed.
 
 Error envelopes carry additive hints — `subscriptionHint` (402, has
 `upgradeUrl`, needs a human), `providerKeysHint` (missing/rejected EPO/USPTO
-patent-data keys, or the trial's shared data budget spent for today — needs a
+patent-data keys, or the trial's data budget spent for today — needs a
 human), `rateLimitHint` (429, has `retryAfterSeconds`), `sharedQuotaHint` (503:
 the shared EPO quota of FlowLeap's House keys is busy — wait `retryAfterSeconds`,
-never resend in a loop; the user's own free EPO key has its own quota), and
+never resend in a loop; the user's own free EPO key has its own quota),
+`liveUnavailableHint` (a "not now" answer: the live office call cannot run
+because the live data budget is spent or the shared quota is busy —
+`{ reason, retryAfterSeconds, provider?, resetsAt?, keysPageUrl? }`, not a
+human stop: wait, and continue with work that needs no live call), and
 `endpointGoneHint` (410, `{ requiresUpgrade: true, successor?, reason?, message }`).
+`patent search --provider index` on a server without the publication index
+adds `indexUnavailableHint` (`publication_index_not_enabled`): use the EPO
+search.
+
+**No user needs a Patent-Data Key** (backend ADR 0026). A live office read uses
+FlowLeap's House keys inside the daily live data budget: 300 live calls for
+each office and 50 drawing pages in one UTC day. An own free key for an office
+is optional and lifts the limits for that office. A successful answer of
+`ops legal`, `ops biblio`, `ops abstract` or `ops family` with `live: false` is
+a **dated answer** from FlowLeap's hosted data (`source`, `asOf`,
+`liveUnavailable`); table and human output print that as `note:` lines on
+stderr. A dated legal status is never proof that a right is in force. Full
+rules: `flowleap-keys`.
 
 **Branch on codes, never on message text.** Backend codes come from a closed
 registry and never change once shipped; wording is freely editable by policy, so
@@ -168,7 +199,9 @@ web-scraped patent data for the gated office — searches and single-document
 reads alike. The keys are free from each office. Read the gate, never infer it:
 only the explicit gate codes mean gated, so an empty result, a truncated
 payload, or a 5xx stays an ordinary dead route with the normal fallbacks. Full
-doctrine (proceed-then-ask, keyless pivot, resume): `flowleap-keys`.
+doctrine (proceed-then-ask, the pivot to data that needs no key, resume):
+`flowleap-keys`. This gate comes only from an older server, a server with
+keyless access off, or an office for which FlowLeap has no House key.
 
 | Exit code | Meaning |
 |-----------|---------|
@@ -178,7 +211,7 @@ doctrine (proceed-then-ask, keyless pivot, resume): `flowleap-keys`.
 | 3 | Auth required (HTTP 401, or no credential configured at all) — log in or set `FLOWLEAP_API_KEY` |
 | 4 | Subscription required (HTTP 402) — surface `subscriptionHint.upgradeUrl` to a human |
 | 5 | Not found (HTTP 404) |
-| 6 | Rate limited (HTTP 429) — back off per `rateLimitHint.retryAfterSeconds` |
+| 6 | Rate limited (HTTP 429) — back off per `rateLimitHint.retryAfterSeconds`. Also a License holder's spent live data budget (`live_data_budget_exhausted`): wait per `liveUnavailableHint.retryAfterSeconds` |
 | 7 | Network failure reaching the backend |
 | 8 | Endpoint gone (HTTP 410 `endpoint_gone`) — this build calls a retired endpoint |
 | 9 | Patent-data keys required/rejected, or the trial data budget exhausted — see `providerKeysHint`; a human must add keys, never retry |
@@ -189,9 +222,9 @@ doctrine (proceed-then-ask, keyless pivot, resume): `flowleap-keys`.
 alike, so a first-run key problem is distinguishable from a bad query without
 parsing the envelope. Treat it exactly as the `providerKeysHint` doctrine below
 says: a user-action stop for that office. The `trial_budget_exhausted` variant
-(backend ADR 0017) is the soft one — its hint carries `resetsAt` (next UTC
-day), so with the user's blessing an agent may also wait it out; the user's own
-free keys lift it permanently. Success envelopes warn before the wall: a
+is the soft one — its hint carries `resetsAt` (next UTC day): it is a wait,
+and an own free key is optional. With keyless access on, the envelope also
+carries a `liveUnavailableHint`. Success envelopes warn before the wall: a
 `trial_data_budget_low` entry in `body.warnings` means finish the current work,
 then surface the key ask.
 

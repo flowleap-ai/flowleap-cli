@@ -1,6 +1,6 @@
 ---
 name: flowleap-patent
-description: Search EPO patents with CQL you write yourself — field reference, the discriminating-term rule, and the mandatory count probe. Trigger when an agent needs European or worldwide patent search results, needs to turn an invention description into a CQL query, or wants to tune a query for recall versus precision. For US-specific ODP searches see flowleap-uspto.
+description: Search patents — the publication index with plain words and filters (discovery, no key, no office quota), and EPO OPS with CQL you write yourself — field reference, the discriminating-term rule, and the mandatory count probe. Trigger when an agent needs European or worldwide patent search results, needs to turn an invention description into a CQL query, or wants to tune a query for recall versus precision. For US-specific ODP searches see flowleap-uspto.
 ---
 
 # FlowLeap Patent
@@ -9,14 +9,71 @@ Auth and global flags: see `flowleap-shared`.
 
 In a chat client with the FlowLeap connector or in the FlowLeap Patent AI app, call the tools named in the `flowleap-shared` tool table instead of these commands, and never run a `flowleap` command there.
 
-EP/WO search runs on the user's own EPO patent-data key. A
-`provider_keys_required` error is a **user-action stop for that office, never an
+No user needs a Patent-Data Key for a search. The index search uses no office
+call. The EPO search uses FlowLeap's House keys inside the daily live data
+budget; an own free EPO key is optional and lifts that limit. A
+`liveUnavailableHint` or a `sharedQuotaHint` is a wait: do not send the search
+again before its `retryAfterSeconds`. A `provider_keys_required` error still
+comes from an older server: it is a **user-action stop for that office, never an
 exhausted route**: do not fall back to web-scraped patent data, deliver whatever
 the live office (US via `flowleap uspto search`) returns in full, name the gap as
 a missing-key gap, and ask for the free key at the end of the turn. A zero-result
 search is not a gate — reformulate and persist as normal. See `flowleap-keys`.
 
-## Search Patents
+## Discovery first: the publication index
+
+```bash
+flowleap --json patent search --provider index --query '"solid state" battery -sulfide' --cpc H01M --applicant toyota --kind B --sort date
+flowleap --json patent search --provider index --query 'lidar point cloud segmentation' --office EP,US --to 2018-02-28
+flowleap --json patent search --provider index --query '*' --cpc H01M10/0525 --count-only
+```
+
+Start a search here. The publication index is FlowLeap's hosted edition of
+every publication of every office: number, dates, kind, English title and
+abstract (CN through its English machine-translated abstract), CPC and IPC,
+applicants, inventors and simple family. It runs the `search_patents` tool with
+`provider: index`. It uses no office quota, no Patent-Data Key and no live data
+budget.
+
+| Flag | Description |
+|------|-------------|
+| `--query`, `-q` | Plain words: `"quoted phrase"`, `OR`, `-exclusion`. No CQL and no field codes. `*` with `--cpc`, `--applicant` or `--inventor` searches by filters only |
+| `--cpc` | CPC subclass (`H01M`), main group (`H01M10`) or full symbol (`H01M10/0525`); comma-separated for a list. A partial subgroup (`H01M10/05`) matches only that exact symbol: use the main group |
+| `--applicant` / `--inventor` | Words of the name, any case; all words must be in the name |
+| `--office` | Publication office (country code), comma-separated: `EP,US,CN` |
+| `--kind` | Kind-code prefix, comma-separated: `B` grants, `A` applications, or an exact kind such as `A1` |
+| `--from` / `--to` | Publication date, inclusive, `YYYY-MM-DD`. For prior art, set `--to` to the day before the priority date |
+| `--sort` | `relevance` (default) or `date` (newest first) |
+| `--limit` / `--offset` | Page size (1-100, default 10) and rows to skip |
+| `--count-only` | Print the total only |
+
+The answer has `docs` (the item shape of the EPO search, plus `inventors`,
+`cpc`, `familyId`, `kind`, `applicationNumber`, `filingDate`, `priorityDate`),
+`total` (`totalIsLowerBound: true` when the count stopped at its cap),
+`source: "publication_index"`, `asOf` and `attribution`. Table and human output
+print the rows, then `Total:`, `As of:` and the `Source:` credit line.
+
+Rules:
+
+1. **Read `asOf`.** It is the edition date. A publication newer than `asOf` is
+   not in the index. Add an EPO search for those:
+   `flowleap --json patent search --query '<CQL> and pd>=<asOf as YYYYMMDD>'`.
+2. **Give the credit.** When you show index results, give `attribution.text`
+   (CC BY 4.0).
+3. **The index does not give legal status, claims or citations.** Read a
+   candidate with `flowleap ops …` or `flowleap summary`.
+4. A document with `abstractUnavailable: "no_english_abstract"` has no English
+   abstract in the index: read it with `flowleap ops abstract`.
+5. The count probe and the discriminating-term rule below apply to the EPO CQL
+   search. In the index, use `--count-only` and the filters to control the size
+   of a result.
+6. **A server without the index.** The CLI prints "The publication index is not
+   enabled on this server" (in `--json`, an `indexUnavailableHint`). Use the EPO
+   search below for the full search, and tell the user.
+7. `--provider index` flags and `--countries` do not mix: `--countries` is for
+   the EPO search, `--office` is for the index.
+
+## Search Patents (EPO OPS, CQL)
 
 ```bash
 flowleap patent search --query <query> [flags]
