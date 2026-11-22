@@ -90,7 +90,10 @@ fn notice(latest: &str, current: &str) -> Option<String> {
 }
 
 /// Spawn the update check, or None when gated off. The handle resolves to
-/// the stderr notice to print after the command finishes, if any.
+/// the "a newer flowleap is available" line, if any. It does NOT hold the
+/// stale-skills line: the task starts before the command, and a command can
+/// change the recorded skill installs (`flowleap skills update`). The caller
+/// adds that line after the command, with `closing_notice`.
 pub fn spawn_check(
     http: &reqwest::Client,
     json: bool,
@@ -114,7 +117,7 @@ async fn check(http: reqwest::Client) -> Option<String> {
 
     // Inside the daily window: answer from the cached state, no network.
     if now.saturating_sub(state.last_checked_unix) < CHECK_INTERVAL_SECS {
-        return with_skills_staleness(notice(&state.latest, current), current);
+        return notice(&state.latest, current);
     }
 
     let resp = http
@@ -127,21 +130,32 @@ async fn check(http: reqwest::Client) -> Option<String> {
     state.latest = body.get("version")?.as_str()?.to_string();
     state.last_checked_unix = now;
     save_state(&state);
-    with_skills_staleness(notice(&state.latest, current), current)
+    notice(&state.latest, current)
 }
 
-/// Seam for the skills installer: append its stale-skills line (recorded
-/// install stamp older than the running binary) to the update notice. Kept
-/// as one small hook so concurrent edits to this file merge cleanly.
-fn with_skills_staleness(update_notice: Option<String>, current: &str) -> Option<String> {
-    let stale = crate::commands::skills::stale_skills_notice(current);
-    if update_notice.is_none() && stale.is_none() {
+/// The notice to print after the command: the update line from the spawned
+/// check (None when there is none, or the check did not finish in time), then
+/// the stale-skills line.
+///
+/// CALL THIS AFTER THE COMMAND HAS RUN. The stale-skills line is read from
+/// the config at the time of the call. When it was read in the spawned check
+/// (before the command), `flowleap skills update` refreshed every target and
+/// then printed "N installed skill target(s) were rendered by an older
+/// flowleap", which was no longer true.
+pub fn closing_notice(update_notice: Option<String>) -> Option<String> {
+    let stale = crate::commands::skills::stale_skills_notice(env!("CARGO_PKG_VERSION"));
+    join_notices(update_notice, stale)
+}
+
+/// The update line and the stale-skills line as one notice, one line each.
+fn join_notices(update_notice: Option<String>, stale_skills: Option<String>) -> Option<String> {
+    if update_notice.is_none() && stale_skills.is_none() {
         return None;
     }
     Some(
         update_notice
             .into_iter()
-            .chain(stale)
+            .chain(stale_skills)
             .collect::<Vec<_>>()
             .join("\n"),
     )
@@ -169,6 +183,29 @@ mod tests {
         assert!(notice("0.2.5", "0.2.4").is_some());
         assert!(notice("0.2.4", "0.2.4").is_none());
         assert!(notice("", "0.2.4").is_none());
+    }
+
+    #[test]
+    fn the_update_line_does_not_hold_the_stale_skills_line() {
+        // The spawned check runs before the command. Its result must not say
+        // anything about the skill installs: the command can change them.
+        let text = notice("0.2.5", "0.2.4").unwrap();
+        assert!(!text.contains("skill"), "{text}");
+    }
+
+    #[test]
+    fn closing_notice_joins_the_two_lines() {
+        let update = || Some("flowleap 0.2.5 is available".to_string());
+        let stale = || {
+            Some("2 installed skill target(s) were rendered by an older flowleap. Refresh: flowleap skills update".to_string())
+        };
+        assert_eq!(join_notices(None, None), None);
+        assert_eq!(join_notices(update(), None), update());
+        assert_eq!(join_notices(None, stale()), stale());
+        assert_eq!(
+            join_notices(update(), stale()),
+            Some(format!("{}\n{}", update().unwrap(), stale().unwrap()))
+        );
     }
 
     #[test]

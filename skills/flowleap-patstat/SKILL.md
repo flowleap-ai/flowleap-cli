@@ -18,7 +18,7 @@ key; each one publishes its own gate and rate limit in the registry
 | Command | Tool | Gate |
 |---|---|---|
 | `patstat portfolio <applicant> [--from-year Y] [--to-year Y] [--offices top\|all]` | `patstat_portfolio` | plan |
-| `patstat query "<SQL>" --question "<question>" [--retry-of <code>]` | `patstat_query` | plan, 10/min |
+| `patstat query "<SQL>" --question "<question>" [--retry-of <code>] [--limit <n>] [--offset <n>] [--view page\|full \| --all]` | `patstat_query` | plan, 10/min |
 | `patstat docs` with one of `--section S`, `--workflow W`, `--endpoint E`, `--compact` | `patstat_docs` | sign-in |
 | `patstat graph <verb> …` | `patstat_resolve`, `patstat_cpc`, `patstat_patent`, `patstat_applicant`, `patstat_technology`, `patstat_neighborhood`, `patstat_path`, `patstat_explain` | sign-in; see `flowleap-patstat-graph` |
 
@@ -110,6 +110,7 @@ The procedure is served, and it is the source of truth:
 | Semantic model and interpretation conventions, applied as served | `flowleap patstat docs --section semantic-model --part index`, then `flowleap patstat docs --section semantic-model --view <name>` for each view |
 | One SELECT, with the user's question verbatim | `flowleap patstat query "<SQL>" --question "<question>"` |
 | The one retry | the same command plus `--retry-of <error code>` |
+| The next page of a cut answer | the same command plus `--offset <nextOffset>` |
 
 ```bash
 flowleap patstat docs --section examples
@@ -121,8 +122,27 @@ flowleap patstat query "SELECT office, COUNT(DISTINCT family_id) AS inventions F
 Read the index first, then --view for each view you will query. Read them from
 the served docs each time, never from memory; this skill does not restate them.
 The full model (`--section semantic-model` alone, the YAML at `.yaml` in
-`--json`) is too large for most tool-output limits. A LIMIT is not necessary: past the row cap the
-backend answers an error, never a truncated table.
+`--json`) is too large for most tool-output limits. Past the row cap of the gate the
+backend answers an error, never a part of the result.
+
+**The answer is one page of the rows.** `patstat query` answers at most about
+20 KB of rows, so that an agent can read the answer. The answer says what it
+holds: `rowsTotal` (the rows the statement returned), `rowsReturned`, `offset`,
+`truncated` and, when rows were cut, `nextOffset`, `hint` and a
+`patstat_answer_truncated` entry in `warnings`. Table output shows
+"Rows X–Y of Z" and the command for the next rows.
+
+- `--limit <n>` (1 to 5000): the largest number of rows in the answer. The
+  20 KB stop applies also.
+- `--offset <n>`: the rows to skip. Send `nextOffset` to get the next page.
+- `--view full` or `--all`: every row in one answer. Use it only when you
+  write the answer to a file; `--limit` and `--offset` do not apply.
+
+The statement runs again for each page, and each page is one call of the
+10/min limit. Put `ORDER BY` in the SQL, or the row order can change between
+pages. Prefer a smaller result (fewer columns, an aggregate, a `LIMIT` in the
+SQL) to many pages. Do not report a count from `rowsReturned`: the count of the
+rows is `rowsTotal`.
 
 **You own the retry.** The CLI sends `patstat query` exactly once. It does not
 resend on a 5xx, a timeout or a connection failure, so every typed error reaches
