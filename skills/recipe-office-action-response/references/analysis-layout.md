@@ -66,7 +66,12 @@ Then a short list of the facts that the attorney or the applicant must supply, a
 ## 5. Sources and gaps
 
 - Each tool call and page that the report cites, with what it gave.
-- Family art: the documents and arguments of other family members that you found, or that you did not check.
+- Family art (Step 3b), as a cross-office table with one row for each family member:
+
+  | Member (representative publication) | Office | Status and date | Documents the office cited (category) | Office action text | Dossier link |
+  |---|---|---|---|---|---|
+
+  In "Office action text" write one of: "read: US file wrapper", "read: file from the user (OCR)", "read: file from the user (OCR, machine translation)", or "not read: no file". FlowLeap does not serve the office action text of offices other than the USPTO: a row that is "not read" gives the dossier link, so that the attorney can open the file.
 - Each gap: what was not read (an OA text that no tool serves, a description outside the text coverage, a law page that did not load), what you tried, and what the attorney can supply.
 ```
 

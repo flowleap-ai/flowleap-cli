@@ -184,6 +184,17 @@ FlowLeap, see Conventions — say "designated-state coverage"); "the countries t
 filing is one "EP" entry); reading an empty list as "unknown" — empty means the
 record designates no states, and every non-EP publication designates none.
 
+**Dossier link**:
+A link to the page of a patent office that shows the file of one application
+(office actions, replies), for a human to open in a browser. FlowLeap serves the
+documents of a US file only; for every other office `ops family` / `get_family`
+gives a dossier link (`dossier` on a member, `dossiers` on the answer). The
+agent gives the link to the user and reads the PDF that the user downloads with
+`ocr`. The rules are in the backend (`packages/connectors/src/dossier-links.ts`).
+_Avoid_: "file history" for what FlowLeap serves outside the US (it serves a
+link, not the documents); fetching a dossier link with a program (the registers
+refuse robots).
+
 **Office coverage** vs **office depth**:
 **Office coverage** is a property of a *tool*: the set of patent offices it
 answers for, and at what depth. `ops claims` / `get_claims` has office coverage
