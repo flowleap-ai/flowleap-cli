@@ -40,7 +40,7 @@ count, then search:
 
 ```bash
 flowleap --json tools run search_patents query='<self-written CQL>' range=1-1 details=false
-flowleap --json patent search --query "<self-written CQL>" --limit 20
+flowleap --json patent search --provider epo --query "<self-written CQL>" --limit 20
 ```
 
 ### Step 4: Synthesize the Gap

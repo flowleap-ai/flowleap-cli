@@ -42,7 +42,7 @@ results (method in `flowleap-patent`; ODP Lucene in `flowleap-uspto`):
 ```bash
 # EPO side: self-written CQL — "drug discovery" discriminates, "machine learning" alone does not
 flowleap --json tools run search_patents query='ta="drug discovery" AND ta="machine learning"' range=1-1 details=false
-flowleap --json patent search --query 'ta="drug discovery" AND ta="machine learning"' --limit 30
+flowleap --json patent search --provider epo --query 'ta="drug discovery" AND ta="machine learning"' --limit 30
 
 # US side: self-written ODP Lucene (title + metadata only)
 flowleap --json uspto search --query 'applicationMetaData.inventionTitle:"drug discovery"' --limit 30

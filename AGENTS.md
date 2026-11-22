@@ -33,7 +33,7 @@ before trusting `skills install` output or regenerating goldens.
 | `src/commands/tools.rs` | Agent-first tool facade: list/describe/run `/v1/tools/*`, plus `call_tool_data` — the shared seam every data command runs on (unwraps the tool envelope to its `data` payload). The exception: the `patstat` commands call `call_tool_envelope` so their typed errors come back unprinted and render their own way; both paths share `unwrap_tool_result` and `retry_policy_for` |
 | `src/commands/mcp.rs` | `flowleap mcp` stdio bridge: `tools/list` mirrors the `/v1/tools` registry verbatim and `tools/call` runs a tool (one compact-JSON text block; for `get_patent_image` with `include_images` each PNG/JPEG page leaves the JSON and arrives as a `Page N of <docId>` text block plus an MCP `image` block, the same shape the hosted MCP server emits — `mcp_content`); it also serves the PATSTAT doctrine read at startup through the `patstat_docs` tool as six resources (`flowleap://patstat/semantic-model`, its index `…/semantic-model/index`, `…/examples`, `…/workflow/{portfolio-analysis,guarded-sql,graph}`) and three prompts (`patstat-<workflow>`, a plain text rendering of the served workflow), plus one resource template, `flowleap://patstat/semantic-model/view/{name}`, read on demand through the same tool and cached per process (an unknown view is -32602 listing the available views). It authors no tool and no doctrine; a document that fails to load is logged to stderr and skipped. `--check` reports tool, resource, template and prompt counts |
 | `src/commands/skills.rs` | Embedded agent-skill installer (`skills/` baked into binary): multi-harness targets (claude/claude-project/codex/cursor/gemini/--dir), version stamps, `skills update` |
-| `src/commands/patent.rs` | `patent search`: the EPO search (caller-written CQL, the default) and the publication-index search (`--provider index`, plain words and filters, backend ADR 0026) |
+| `src/commands/patent.rs` | `patent search`: the publication-index search (the default, also `--provider index`; plain words and filters, backend ADR 0026) and the EPO search (`--provider epo`, caller-written CQL); `route_search` decides between them |
 | `src/commands/examiner_baseline.rs` | `patent examiner-baseline`: the Examiner Baseline (agent-v2 ADR 0010). Calls the backend `examiner_baseline` tool when the registry lists it; otherwise walks the family itself (reads every member publication's `citedReferences` and a US grant's enriched office-action citations). Either way it prints one cited-document × office matrix with gap rows; `--verbose` names the path. No model call; `--json` prints the `Baseline` shape the human table is derived from, and a cell names each category's own claims when the search report pairs them (`categoryClaims`) |
 | `src/commands/uspto.rs` | USPTO ODP search, grants, applications, continuity, file wrapper (transactions/assignments/foreign-priority/adjustment/attorney/documents + OCR document text) |
 | `src/commands/ops.rs` | EPO OPS document reads (biblio, claims, description, family, legal, abstract), EP Register reads and the EP Register search (`register-search`, the one search with a representative index) |
@@ -110,22 +110,42 @@ the CLI works against both states and never assumes one.
   inside the live data budget (300 live calls for each office and 50 drawing
   pages in one UTC day). An own key is optional and lifts the limits for that
   office. Terms: `CONTEXT.md`. Doctrine text: the `flowleap-keys` skill.
-- **`patent search --provider index`** sends `search_patents` with
+- **`patent search` defaults to the publication index.** `route_search`
+  (`src/commands/patent.rs`) decides. An explicit `--provider` is obeyed.
+  Without it: a CQL query (`looks_like_cql`: a relation sign, or a CQL index
+  name, then `all`/`any`/`within`, then a quoted value) or `--countries`
+  selects the EPO search with one stderr note, because CQL sent to the index is
+  read as words and gives a wrong answer silently; a CQL query or `--countries`
+  together with an index filter is refused before any call. On the default
+  path without index filters, a server that refuses the index
+  (`index_not_enabled`) gets the EPO search: `plain_words_to_cql` makes `ta=`
+  CQL from the words and one stderr note names it. With an index filter or an
+  explicit `--provider index` there is no fallback.
+- **`patent search --provider index`** (and the default) sends `search_patents` with
   `provider: "index"`: `--query` (plain words), `--limit`/`--offset` →
   `range: "start-end"`, `--cpc`/`--office`/`--kind` (comma-separated → one
   string or a list, upper case), `--applicant`, `--inventor`, `--from`, `--to`,
-  `--sort relevance|date`. An index-only flag without `--provider index`, and
-  `--countries` with it, are refused before any call. Table and human output
+  `--sort relevance|date`. An index-only flag with `--provider epo`, and
+  `--countries` with `--provider index`, are refused before any call. Table and human output
   print the rows, then `Total:` (`at least` when `totalIsLowerBound`),
   `As of:` and the `Source:` attribution line; `--json` is the tool data
-  verbatim. The default provider stays `epo`.
+  verbatim.
 - **A server without the index** refuses the provider: a validation failure
   (`INVALID_INPUT`, 422 or 400) with an issue whose `path` is `provider` (flag
   off: the base schema has no `index`), or `503
   publication_index_not_configured`. `patent::index_not_enabled` reads those
-  structured fields only. Table and human output print one line on stderr and
+  structured fields only. For an explicit `--provider index` (or a default
+  search with an index filter), table and human output print one line on stderr and
   no envelope; `--json` prints the envelope plus `indexUnavailableHint`
   (`publication_index_not_enabled`). The exit code is the status's.
+- **`doctor` reports the keyless state.** `publicationIndex` is the block of
+  `GET /v1/health` verbatim (null when the server sends none), and `keyless` is
+  true when `POST /v1/keys/validate` answers `source: "server"` for an office
+  (false when it names none, null without a reply). An office that the House
+  keys serve is a ✓ line that says a key is not necessary, and has no next
+  step. The key steps stay for `source: "none"` (an older server, keyless
+  access off). `setup` then calls the key steps optional and defaults them to
+  "no".
 - **Dated answers.** `tools::call_tool_data` prints `note:` lines on stderr
   (not in `--json`) when the tool data has `live: false`: the source, `asOf`,
   the `liveUnavailable` reason and wait, the attribution text when present,
@@ -295,8 +315,8 @@ longer calls them.
 
 | Command | Tool |
 |---------|------|
-| `patent search`, `ops search` | `search_patents` (`provider: epo_ops`) |
-| `patent search --provider index` | `search_patents` (`provider: index`, the publication index; see "Keyless access") |
+| `patent search --provider epo`, `ops search` | `search_patents` (`provider: epo_ops`) |
+| `patent search` (the default, also `--provider index`) | `search_patents` (`provider: index`, the publication index; see "Keyless access") |
 | `uspto search` | `search_patents` (`provider: uspto`) |
 | `ops biblio` / `abstract` / `claims` / `description` / `legal` | `get_bibliography` / `get_abstract` / `get_claims` / `get_description` / `get_legal_status` (`biblio --designated-states` → `include_designated_states`, `--resolve-npl` → `resolve_npl`; both opt-in, each costs extra reads; `legal --limit`/`--offset` → `limit`/`offset`, one page of 50 events by default, a stderr note when `eventsReturned` < `eventsTotal`, and `--output table` prints the events with `eventDate` and the record `date`) |
 | `ops register-biblio` | `get_register_biblio` (EP Register: representatives of record, opponents) |

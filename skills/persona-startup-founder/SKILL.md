@@ -30,7 +30,7 @@ the ones that discriminate, and probe the count before trusting results
 ```bash
 # EPO side: the thermostat + learning pair is the discrimination — keep both
 flowleap --json tools run search_patents query='ta=thermostat AND ta="reinforcement learning"' range=1-1 details=false
-flowleap --json patent search --query 'ta=thermostat AND ta="reinforcement learning"' --limit 20
+flowleap --json patent search --provider epo --query 'ta=thermostat AND ta="reinforcement learning"' --limit 20
 
 # US side: ODP is title + metadata only — search the device noun in the title
 flowleap --json uspto search --query 'applicationMetaData.inventionTitle:thermostat' --limit 20
@@ -51,8 +51,8 @@ Done when every candidate blocker has a legal-status and jurisdiction verdict.
 ### Competitive Landscape
 
 ```bash
-flowleap patent search --query "pa=Nest AND ti=thermostat"
-flowleap patent search --query "pa=Ecobee AND ti=thermostat"
+flowleap patent search --provider epo --query "pa=Nest AND ti=thermostat"
+flowleap patent search --provider epo --query "pa=Ecobee AND ti=thermostat"
 ```
 
 ### Deep Dive on Key Patents

@@ -104,13 +104,16 @@ _Avoid_: "server keys" or "shared keys" in prose; "the House key of the user"
 **Publication index**:
 FlowLeap's hosted edition of every publication of every office: number, dates,
 kind, English title and abstract, CPC and IPC, applicants, inventors, simple
-family. It is the discovery layer (find candidates): `patent search --provider
-index` / `search_patents` `provider: "index"`, plain words and filters, no
+family. It is the discovery layer (find candidates) and the default of `patent
+search` (`--provider index` in full) / `search_patents` `provider: "index"`,
+plain words and filters, no
 Patent-Data Key, no office quota, no live data budget. One quarterly edition
 from Google Patents Public Datasets: every answer gives the edition date
 (`asOf`) and the CC BY attribution, and a publication newer than `asOf` is not
 in it. It also holds the US claims that `get_claims` serves. A server without
-it refuses the provider; the CLI then says so in one line.
+it refuses the provider; the CLI then runs the EPO search for a default search
+without index filters and says so in one stderr note, and refuses an explicit
+`--provider index` in one line.
 _Avoid_: "the index" for PATSTAT (that is the analytics layer); "live" for an
 index answer; "search index" alone.
 

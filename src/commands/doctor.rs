@@ -17,6 +17,17 @@ pub async fn run(ctx: &Context) -> Result<()> {
         .execute_json_envelope(ctx.request(reqwest::Method::GET, "/v1/health", None))
         .await;
 
+    // The publication index block of the readiness reply (backend ADR 0026),
+    // verbatim; null when the server did not send one (an older server, or an
+    // unreachable one).
+    let publication_index = health
+        .as_ref()
+        .ok()
+        .and_then(|value| value.pointer("/body/publicationIndex"))
+        .filter(|block| block.is_object())
+        .cloned()
+        .unwrap_or(Value::Null);
+
     let (reachable, status, api_version, error, error_kind, hint) = match health {
         Ok(value) => {
             let reachable = value.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -77,7 +88,7 @@ pub async fn run(ctx: &Context) -> Result<()> {
         None => json!({
             "source": "local",
             "providers": { "epo": Value::Null, "uspto": Value::Null },
-            "note": "Server key validation was unavailable (unauthenticated, unreachable, or the call failed) — provider verdicts reflect local key presence only. Missing keys may still be covered by a stored key or the server; check with 'flowleap keys test' once authenticated.",
+            "note": "Server key validation was unavailable (unauthenticated, unreachable, or the call failed) — provider verdicts reflect local key presence only. Missing keys may still be covered by a stored key or by FlowLeap's House keys; check with 'flowleap keys test' once authenticated.",
         }),
     };
 
@@ -109,10 +120,12 @@ pub async fn run(ctx: &Context) -> Result<()> {
             "setup": if ctx.credentials.epo_pair().is_some() && ctx.credentials.uspto_key.is_some() {
                 serde_json::Value::Null
             } else {
-                json!("Missing keys may be fine if the server has its own — check with 'flowleap keys test'. Add local keys via 'flowleap setup' (interactive) or 'flowleap keys set <provider>'.")
+                json!("A Patent-Data Key is optional when FlowLeap's House keys serve the office (keyValidation.providers.<office> is \"server\"): your own key only lifts the daily live limit for that office. Check with 'flowleap keys test'. To add a key: 'flowleap setup' (interactive) or 'flowleap keys set <provider>'.")
             },
         },
         "keyValidation": key_validation,
+        "publicationIndex": publication_index,
+        "keyless": keyless(verdicts.as_ref()),
         "backend": {
             "reachable": reachable,
             "healthStatus": status,
@@ -189,6 +202,25 @@ fn render_human(report: &Value) {
     provider_line(report, "epo", "EPO keys", "store-epo-keys");
     provider_line(report, "uspto", "USPTO key", "store-uspto-key");
 
+    // The publication index, when the server said something about it.
+    match report["publicationIndex"]["configured"].as_bool() {
+        Some(true) => match report["publicationIndex"]["edition"].as_str() {
+            Some(edition) => println!(
+                "  {} Publication index: edition {edition} — `flowleap patent search` needs no key",
+                "✓".green()
+            ),
+            None => println!(
+                "  {} Publication index: served — `flowleap patent search` needs no key",
+                "✓".green()
+            ),
+        },
+        Some(false) => println!(
+            "  {} Publication index: not on this server — patent search uses EPO OPS (--provider epo)",
+            "•".yellow()
+        ),
+        None => {}
+    }
+
     // CLI version — an available upgrade is informational (•), never blocking.
     let version = report["cli"]["currentVersion"].as_str().unwrap_or_default();
     match &report["cli"]["updateAvailable"] {
@@ -253,10 +285,10 @@ fn human_command(run: &str) -> String {
 
 /// One provider checklist line, derived from the report alone. Blocking is
 /// "this provider has a pending store step in nextSteps": ✗ when blocking,
-/// ✓ when keys are set locally or stored on FlowLeap (the user's own key,
-/// `keyValidation.providers.<office>: "stored"`), and • when neither — the
-/// only other way to be non-blocking is server coverage (informational, not a
-/// gap to chase).
+/// ✓ when keys are set locally, stored on FlowLeap (the user's own key,
+/// `keyValidation.providers.<office>: "stored"`), or when FlowLeap's House keys
+/// serve the office (`"server"`, keyless access: a key is optional). • only
+/// when the office was never checked, which proves nothing.
 fn provider_line(report: &Value, provider: &str, label: &str, store_step_id: &str) {
     use colored::Colorize;
 
@@ -273,8 +305,12 @@ fn provider_line(report: &Value, provider: &str, label: &str, store_step_id: &st
             "  {} {label}: none locally — stored key on FlowLeap",
             "✓".green()
         ),
+        (false, false) if report["keyValidation"]["providers"][provider] == "server" => println!(
+            "  {} {label}: not necessary — FlowLeap's House keys serve the calls (your own key is optional: it lifts the daily live limit)",
+            "✓".green()
+        ),
         (false, false) => println!(
-            "  {} {label}: none locally — covered by server",
+            "  {} {label}: none locally — the office was not checked",
             "•".yellow()
         ),
         (true, false) if stored => println!(
@@ -361,7 +397,7 @@ fn next_steps(
         steps.push(step(
             "obtain-epo-keys",
             "human",
-            "Sign up for free EPO OPS credentials (browser: 'My apps' → create app)",
+            "This server has no EPO key for you: sign up for free EPO OPS credentials (browser: 'My apps' → create app)",
             None,
             Some(crate::commands::keys::EPO_SIGNUP),
         ));
@@ -385,7 +421,7 @@ fn next_steps(
         steps.push(step(
             "obtain-uspto-key",
             "human",
-            "Sign up for a free USPTO ODP API key (browser)",
+            "This server has no USPTO key for you: sign up for a free USPTO ODP API key (browser)",
             None,
             Some(crate::commands::keys::USPTO_SIGNUP),
         ));
@@ -457,6 +493,18 @@ fn provider_pending(verdicts: Option<&Value>, provider: &str, local_present: boo
             source != "server" && (verdict["valid"] == Value::Bool(false) || source == "none")
         }
         None => !local_present,
+    }
+}
+
+/// Keyless access, as the validate reply shows it: `true` when FlowLeap's
+/// House keys serve at least one office for this user (`source: "server"`),
+/// `false` when the reply names no such office, null without a reply.
+fn keyless(verdicts: Option<&Value>) -> Value {
+    match verdicts {
+        Some(verdicts) => json!(["epo", "uspto"]
+            .iter()
+            .any(|office| verdicts[*office]["source"] == "server")),
+        None => Value::Null,
     }
 }
 

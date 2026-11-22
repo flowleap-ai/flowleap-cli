@@ -39,7 +39,7 @@ patent. Authors come from the X/Y non-patent documents.
 
 ```bash
 flowleap --json tools run search_patents query='in="<SURNAME GIVEN>" AND pd<<critical-date>' range=1-1 details=false
-flowleap --json patent search --query 'in="<SURNAME GIVEN>" AND pd<<critical-date>' --limit 50
+flowleap --json patent search --provider epo --query 'in="<SURNAME GIVEN>" AND pd<<critical-date>' --limit 50
 flowleap --json academic search "<author name> <discriminating term>" --to-year <priority-year> --limit 20
 flowleap --json npl "<author name> <discriminating term>" --to-year <priority-year> --limit 20
 ```
@@ -63,7 +63,7 @@ document.
 
 ```bash
 flowleap --json tools run search_patents query='cpc=<code> AND ta=<discriminating term> AND pd<<critical-date>' range=1-1 details=false
-flowleap --json patent search --query 'cpc=<code> AND (ta=<term> OR ta=<synonym>) AND pd<<critical-date>' --limit 30
+flowleap --json patent search --provider epo --query 'cpc=<code> AND (ta=<term> OR ta=<synonym>) AND pd<<critical-date>' --limit 30
 ```
 
 - A classification code is never discriminating. Every query carries at least
@@ -118,8 +118,8 @@ classification query, do these steps for each code:
    capped at 100: a variant with 101 to 200 hits needs a second page.
 
 ```bash
-flowleap patent search --count-only --countries all -q '<variant>'
-flowleap --json patent search --countries all --limit 100 -q '<variant>'
+flowleap patent search --provider epo --count-only --countries all -q '<variant>'
+flowleap --json patent search --provider epo --countries all --limit 100 -q '<variant>'
 ```
 
 Example (US6778074B1, critical date 2002-03-18), counts probed live on

@@ -15,7 +15,7 @@ first.
 
 | Layer | Question | Command | Key and quota |
 |---|---|---|---|
-| Discovery | Find candidates: "which patents are about X" | `flowleap patent search --provider index` (the **publication index**) | No key, no office quota, no daily budget |
+| Discovery | Find candidates: "which patents are about X" | `flowleap patent search` (the **publication index**, the default search) | No key, no office quota, no daily budget |
 | Analytics | Count and rank: "how many", "who leads", "trend since" | `flowleap patstat …` | No key |
 | Live documents | This document now: text, claims, legal status, register, file wrapper | `flowleap ops …`, `flowleap uspto …`, the EPO and USPTO searches | The **House keys**, inside the **live data budget**; or the user's own key |
 
@@ -32,11 +32,14 @@ first.
   no publication index. The key rules of `flowleap-shared` apply there.
 
 A server can be older than this rule, or can have keyless access off. Then
-`--provider index` is refused (the CLI prints "The publication index is not
-enabled on this server"), and a License user without a key gets the key gate
+the index search is refused: a `patent search` without `--provider` and without
+an index filter runs on EPO OPS and prints one note on stderr, and an explicit
+`--provider index` prints "The publication index is not enabled on this
+server". A License user without a key gets the key gate
 `provider_keys_required`. Both are served answers that you read, not states
 that you guess. The fallback for each is in this skill: use the EPO search, and
-apply "The key-gate fallback" below.
+apply "The key-gate fallback" below. `flowleap --json doctor` shows the state of
+the server: `publicationIndex` (`configured`, `edition`) and `keyless`.
 
 ## Discovery first
 
@@ -44,20 +47,20 @@ Start a search in the publication index. Then add a live search for what the
 index cannot hold.
 
 1. Search the index with plain words and filters (see `flowleap-patent`):
-   `flowleap --json patent search --provider index --query '"solid state" battery' --cpc H01M`.
+   `flowleap --json patent search --query '"solid state" battery' --cpc H01M`.
 2. Read `asOf` in the answer. It is the edition date. A publication newer than
    `asOf` is not in the index.
 3. Add an EPO search for the publications after `asOf`:
-   `flowleap --json patent search --query 'ti="solid state battery" and pd>=<asOf as YYYYMMDD>'`.
+   `flowleap --json patent search --provider epo --query 'ti="solid state battery" and pd>=<asOf as YYYYMMDD>'`.
 4. Read each candidate that matters with the live document commands.
 5. When you show index results, give the credit in `attribution.text` (the data
    is CC BY 4.0).
 
 The index holds the number, dates, kind, English title and abstract, CPC and
 IPC, applicants, inventors and simple family of each publication. It does not
-hold claims, legal status or citations. If the server refuses
-`--provider index`, do the same search with the EPO search only, and tell the
-user that the index is not available on this server.
+hold claims, legal status or citations. If the server has no index, do the same
+search with the EPO search only (`--provider epo`, CQL), and tell the user that
+the index is not available on this server.
 
 ## The live data budget
 
@@ -295,7 +298,7 @@ the local setup command instead; the human types the key there.
 substitute.** These need no patent-data key and stay live while an office is
 gated; label each for what it actually is:
 
-- `flowleap patent search --provider index` (when the server has the
+- `flowleap patent search` with plain words (when the server has the
   publication index) — one dated edition of titles and abstracts. It finds
   candidates; it does not give claims, legal status or the newest publications.
 

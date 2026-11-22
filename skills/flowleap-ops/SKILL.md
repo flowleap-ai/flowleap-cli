@@ -14,8 +14,8 @@ Direct access to the European Patent Office (EPO) Open Patent Services API.
 No user needs a Patent-Data Key. An OPS read uses FlowLeap's House keys inside
 the daily live data budget (300 live EPO calls and 50 drawing pages in one UTC
 day); an own free EPO key is optional and lifts those limits. To find
-candidates, search the publication index first (`flowleap patent search
---provider index`, see `flowleap-patent`); use these commands to read a
+candidates, search the publication index first (`flowleap patent search`, the
+default search, see `flowleap-patent`); use these commands to read a
 document now.
 
 **Read `live` on `ops legal`, `ops biblio`, `ops abstract` and `ops family`.**

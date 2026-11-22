@@ -89,11 +89,12 @@ no `--base-url` needed. Developing the FlowLeap backend itself? Add
     House keys inside a daily live data budget (300 live calls for each office,
     50 drawing pages). The user's own free key for an office is optional and
     lifts the limits for that office. Never ask for a key value in the chat.
-  - **Discovery first.** Start a search with
-    `flowleap patent search --provider index` (the publication index: no key,
-    no office quota). Then add an EPO search for publications newer than the
-    `asOf` date of the answer. If the server refuses `--provider index`, use
-    the EPO search.
+  - **Discovery first.** Start a search with `flowleap patent search` and
+    plain words: the default search is the publication index (no key, no
+    office quota). Add `--provider epo` (CQL) for publications newer than the
+    `asOf` date of the answer, for CQL field precision, and for an exact
+    applicant check. Family, legal status and claims are `flowleap ops …`
+    reads, not a search. If the server has no index, use the EPO search.
   - **A dated answer is not a live answer.** An answer with `live: false` comes
     from FlowLeap's hosted data: tell the user its `source` and `asOf`. A dated
     legal status is never proof that a right is in force.

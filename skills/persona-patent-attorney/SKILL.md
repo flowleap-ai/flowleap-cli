@@ -28,7 +28,7 @@ fields in `flowleap-patent`; ODP Lucene in `flowleap-uspto`):
 ```bash
 # EPO side: self-written CQL — probe the count, then search
 flowleap --json tools run search_patents query='ta="inductive coupling" AND ta="electric vehicle" AND ta=charging' range=1-1 details=false
-flowleap patent search --query 'ta="inductive coupling" AND ta="electric vehicle" AND ta=charging' --limit 20
+flowleap patent search --provider epo --query 'ta="inductive coupling" AND ta="electric vehicle" AND ta=charging' --limit 20
 
 # US side: self-written ODP Lucene (title + metadata only)
 flowleap --json uspto search --query 'applicationMetaData.inventionTitle:"wireless charging" AND applicationMetaData.inventionTitle:vehicle' --limit 20

@@ -1512,7 +1512,7 @@ impl Context {
             if warning.get("code").and_then(Value::as_str) == Some("trial_data_budget_low") {
                 use colored::Colorize;
                 let message = warning.get("message").and_then(Value::as_str).unwrap_or(
-                    "Trial data budget is low — add your own free keys (flowleap setup).",
+                    "Trial data budget is low. It resets at the next UTC day; your own free keys are optional and lift it (flowleap setup).",
                 );
                 eprintln!("{} {}", "⚠".yellow().bold(), message);
             }
