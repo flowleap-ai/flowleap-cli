@@ -385,7 +385,19 @@ fn literature_commands_map_onto_their_search_tools() {
 #[test]
 fn patstat_commands_map_onto_the_patstat_tools() {
     let sql = "SELECT office, COUNT(*) AS n FROM flowleap.applications GROUP BY office";
-    let cases: [(&[&str], &str, Value); 7] = [
+    let cases: [(&[&str], &str, Value); 9] = [
+        (
+            &[
+                "patstat", "query", sql, "--limit", "50", "--offset", "100", "--view", "page",
+            ],
+            "patstat_query",
+            json!({ "sql": sql, "limit": 50, "offset": 100, "view": "page" }),
+        ),
+        (
+            &["patstat", "query", sql, "--all"],
+            "patstat_query",
+            json!({ "sql": sql, "view": "full" }),
+        ),
         (
             &[
                 "patstat",

@@ -125,6 +125,154 @@ async fn query_human_mode_renders_rows_count_and_edition() {
     assert!(!stdout.contains("\"rows\""), "{stdout}");
 }
 
+/// One page of a larger result, as the backend with the bounded answer sends it.
+fn paged_query_data() -> Value {
+    let hint = "Rows 3 to 4 of 9. The answer stops at the `limit` of the call. For the next rows, send the same call with offset=4";
+    json!({
+        "rows": [
+            { "office": "JP", "inventions": 40 },
+            { "office": "CN", "inventions": 30 },
+        ],
+        "rowCount": 9,
+        "rowsTotal": 9,
+        "rowsReturned": 2,
+        "offset": 2,
+        "truncated": true,
+        "nextOffset": 4,
+        "hint": hint,
+        "warnings": [
+            { "code": "patstat_sql_expensive", "message": "The plan cost is in the warn band." },
+            { "code": "patstat_answer_truncated", "message": hint, "details": { "next_offset": 4 } },
+        ],
+        "data_edition": "PATSTAT 2026 Spring",
+        "attribution": ATTRIBUTION,
+    })
+}
+
+#[tokio::test]
+async fn query_sends_the_paging_flags_and_shows_the_rows_range_and_the_next_command() {
+    let server = MockServer::start().await;
+    let sql = "SELECT office FROM flowleap.applications WHERE office <> 'X' ORDER BY office";
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_query"))
+        .and(body_json(json!({
+            "sql": sql,
+            "question": "it's by office",
+            "limit": 2,
+            "offset": 2,
+        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(tool_ok("patstat_query", paged_query_data())),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &[
+            "patstat",
+            "query",
+            sql,
+            "--question",
+            "it's by office",
+            "--limit",
+            "2",
+            "--offset",
+            "2",
+        ],
+    )
+    .await;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(stdout.contains("Rows 3\u{2013}4 of 9"), "{stdout}");
+    // The next command is the same statement with the next offset. A quote in
+    // an argument is escaped for the shell.
+    assert!(
+        stdout.contains(
+            "Next rows: flowleap patstat query 'SELECT office FROM flowleap.applications WHERE office <> '\\''X'\\'' ORDER BY office' --question 'it'\\''s by office' --limit 2 --offset 4"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("put ORDER BY in the SQL"), "{stdout}");
+    // The truncation warning is not printed two times; a different warning stays.
+    assert!(!stdout.contains("patstat_answer_truncated"), "{stdout}");
+    assert!(
+        stdout.contains("Warning (patstat_sql_expensive)"),
+        "{stdout}"
+    );
+}
+
+#[tokio::test]
+async fn query_json_mode_passes_the_paged_answer_through() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_query"))
+        .and(body_json(json!({ "sql": SQL, "view": "full" })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(tool_ok("patstat_query", paged_query_data())),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let output = run_cli(
+        &server.uri(),
+        &[API_KEY_ENV],
+        &["--json", "patstat", "query", SQL, "--all"],
+    )
+    .await;
+
+    assert!(output.status.success());
+    assert_eq!(stdout_json(&output), paged_query_data());
+}
+
+#[tokio::test]
+async fn query_with_every_row_in_the_answer_prints_the_count_only() {
+    let server = MockServer::start().await;
+    let mut data = query_data();
+    data["rowsTotal"] = json!(2);
+    data["rowsReturned"] = json!(2);
+    data["offset"] = json!(0);
+    data["truncated"] = json!(false);
+    Mock::given(method("POST"))
+        .and(path("/v1/tools/patstat_query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tool_ok("patstat_query", data)))
+        .mount(&server)
+        .await;
+
+    let output = run_cli(&server.uri(), &[API_KEY_ENV], &["patstat", "query", SQL]).await;
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(stdout.contains("Rows: 2"), "{stdout}");
+    assert!(!stdout.contains("Next rows"), "{stdout}");
+}
+
+#[tokio::test]
+async fn query_refuses_all_together_with_a_paging_flag() {
+    let server = MockServer::start().await;
+    for extra in [
+        &["--all", "--limit", "5"][..],
+        &["--all", "--offset", "5"],
+        &["--all", "--view", "page"],
+        &["--limit", "0"],
+        &["--limit", "5001"],
+    ] {
+        let mut args = vec!["patstat", "query", SQL];
+        args.extend_from_slice(extra);
+        let output = run_cli(&server.uri(), &[API_KEY_ENV], &args).await;
+        assert_eq!(output.status.code(), Some(2), "{extra:?}");
+    }
+    assert_eq!(requests_to(&server, "/v1/tools/patstat_query").await, 0);
+}
+
 /// A cold timeout is the agent's signal: it must arrive after exactly one
 /// request, with the backend envelope verbatim and the generic exit code.
 #[tokio::test]

@@ -334,7 +334,7 @@ longer calls them.
 | `compare` / `figures` / `summary` / `timeline` / `convert-number` | `compare_patents` / `get_patent_image` / `get_patent_summary` / `get_prosecution_timeline` / `convert_patent_number` |
 | `patstat portfolio` | `patstat_portfolio` (`--from-year`/`--to-year` → `from_year`/`to_year`; sends `offices: "all"` by default so every office stays in the table, `--offices top` sends the tool default `top`, #107) |
 | `patstat docs` | `patstat_docs` (`--section`/`--workflow`/`--endpoint`; `--part index` or `--view <name>` only with `--section semantic-model`, sent as `part`/`view`; no flag sends `compact: false` for the full docs, `--compact` sends `compact: true`). `flowleap mcp` loads its six doctrine resources and its view template through this tool too (free at sign-in, backend ADR 0021) |
-| `patstat query` | `patstat_query` (`--retry-of` → `retry_of`) — **never resent by the client**, see below |
+| `patstat query` | `patstat_query` (`--retry-of` → `retry_of`; `--limit` → `limit`, `--offset` → `offset`, `--view page\|full` → `view`, `--all` = `view: "full"`, each sent only when given; table output prints "Rows X–Y of Z" and the next command from `rowsTotal`/`rowsReturned`/`offset`/`nextOffset`, and "Rows: N" from `rowCount` for a backend without the bounded answer) — **never resent by the client**, see below |
 | `patstat graph resolve` | `patstat_resolve` (`<query>` → `q`) |
 | `patstat graph cpc` | `patstat_cpc` (`<query>` → `q`) |
 | `patstat graph patent` | `patstat_patent` (`<publication>` → `number`) |

@@ -30,6 +30,44 @@ pub struct PatstatArgs {
     command: PatstatCommand,
 }
 
+/// How much of a guarded-SQL result `patstat_query` answers.
+#[derive(Clone, Copy, ValueEnum)]
+enum QueryView {
+    /// One page of the rows, about 20 KB (the tool default)
+    Page,
+    /// Every row in one answer
+    Full,
+}
+
+impl QueryView {
+    fn as_str(self) -> &'static str {
+        match self {
+            QueryView::Page => "page",
+            QueryView::Full => "full",
+        }
+    }
+}
+
+/// The paging flags of `patstat query`, as parsed.
+#[derive(Clone, Copy, Default)]
+struct QueryPaging {
+    limit: Option<u32>,
+    offset: Option<u32>,
+    view: Option<QueryView>,
+    all: bool,
+}
+
+impl QueryPaging {
+    /// The `view` input to send: `--all` is `--view full`.
+    fn view(self) -> Option<QueryView> {
+        if self.all {
+            Some(QueryView::Full)
+        } else {
+            self.view
+        }
+    }
+}
+
 /// How much of the year-by-office matrix `patstat_portfolio` returns.
 #[derive(Clone, Copy, ValueEnum)]
 enum Offices {
@@ -77,7 +115,8 @@ enum PatstatCommand {
     /// single-SELECT parse check, flowleap-only allowlist, EXPLAIN cost
     /// ceiling, 5000-row/5MB hard caps, 20s timeout. A typed patstat_sql_*
     /// error message carries the exact fix instruction — fix the SQL once,
-    /// re-run with --retry-of, then stop.
+    /// re-run with --retry-of, then stop. The answer is one page of the rows
+    /// (about 20 KB): --offset gives the next page, --all gives every row.
     Query {
         /// One SQL SELECT; every table schema-qualified as flowleap.<view>
         sql: String,
@@ -90,6 +129,25 @@ enum PatstatCommand {
         /// On a retry only: marker tying this attempt to the error it fixes
         #[arg(long)]
         retry_of: Option<String>,
+
+        /// The largest number of rows in the answer (1 to 5000). The answer
+        /// also stops at about 20 KB
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=5000), conflicts_with = "all")]
+        limit: Option<u32>,
+
+        /// The number of rows to skip. The statement runs again for each
+        /// page: put ORDER BY in the SQL to keep the row order
+        #[arg(long, conflicts_with = "all")]
+        offset: Option<u32>,
+
+        /// `page` (the default) answers one page of the rows; `full` answers
+        /// every row and ignores --limit and --offset
+        #[arg(long, value_enum, conflicts_with = "all")]
+        view: Option<QueryView>,
+
+        /// Every row in one answer. The same as --view full
+        #[arg(long)]
+        all: bool,
     },
 
     /// PATSTAT analytics docs and served sections. --section semantic-model
@@ -156,7 +214,19 @@ pub async fn run(ctx: &Context, args: PatstatArgs) -> Result<()> {
             sql,
             question,
             retry_of,
-        } => query(ctx, &sql, question, retry_of).await,
+            limit,
+            offset,
+            view,
+            all,
+        } => {
+            let paging = QueryPaging {
+                limit,
+                offset,
+                view,
+                all,
+            };
+            query(ctx, &sql, question, retry_of, paging).await
+        }
         PatstatCommand::Docs {
             section,
             part,
@@ -184,13 +254,25 @@ async fn query(
     sql: &str,
     question: Option<String>,
     retry_of: Option<String>,
+    paging: QueryPaging,
 ) -> Result<()> {
     let mut input = json!({ "sql": sql });
-    if let Some(question) = question {
+    if let Some(question) = &question {
         input["question"] = json!(question);
     }
     if let Some(retry_of) = retry_of {
         input["retry_of"] = json!(retry_of);
+    }
+    // The paging inputs go out only when the caller gave them: a backend
+    // older than the bounded answer ignores keys it does not know.
+    if let Some(limit) = paging.limit {
+        input["limit"] = json!(limit);
+    }
+    if let Some(offset) = paging.offset {
+        input["offset"] = json!(offset);
+    }
+    if let Some(view) = paging.view() {
+        input["view"] = json!(view.as_str());
     }
 
     // `patstat_query` is sent exactly once — the tool seam switches the
@@ -207,8 +289,74 @@ async fn query(
         return Ok(());
     }
 
-    print_query_result(&data);
+    print_query_result(&data, sql, question.as_deref(), paging.limit);
     Ok(())
+}
+
+/// One argument of a command line the user can paste into a POSIX shell.
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// The command that gets the rows after this page: the same statement with
+/// the next offset, and the caller's `--limit` and `--question` again.
+fn next_page_command(
+    sql: &str,
+    question: Option<&str>,
+    limit: Option<u32>,
+    next_offset: u64,
+) -> String {
+    let mut command = format!("flowleap patstat query {}", shell_quote(sql));
+    if let Some(question) = question {
+        command.push_str(&format!(" --question {}", shell_quote(question)));
+    }
+    if let Some(limit) = limit {
+        command.push_str(&format!(" --limit {limit}"));
+    }
+    command.push_str(&format!(" --offset {next_offset}"));
+    command
+}
+
+/// The row-count footer of the table. A backend with the bounded answer
+/// sends `rowsTotal`, `rowsReturned` and `offset`: "Rows X-Y of Z", and for a
+/// cut answer the next command. An older backend sends `rowCount` only.
+fn query_rows_footer(
+    result: &Value,
+    sql: &str,
+    question: Option<&str>,
+    limit: Option<u32>,
+) -> Vec<String> {
+    let number = |key: &str| result.get(key).and_then(Value::as_u64);
+    let (Some(total), Some(returned)) = (number("rowsTotal"), number("rowsReturned")) else {
+        return number("rowCount")
+            .map(|row_count| vec![format!("Rows: {row_count}")])
+            .unwrap_or_default();
+    };
+    let offset = number("offset").unwrap_or(0);
+    let mut lines = Vec::new();
+    if returned == 0 {
+        lines.push(format!("Rows: 0 of {total} (offset {offset})"));
+    } else if returned == total {
+        lines.push(format!("Rows: {total}"));
+    } else {
+        lines.push(format!(
+            "Rows {}\u{2013}{} of {total}",
+            offset + 1,
+            offset + returned
+        ));
+    }
+    let truncated = result.get("truncated").and_then(Value::as_bool) == Some(true);
+    if let (true, Some(next_offset)) = (truncated, number("nextOffset")) {
+        lines.push(format!(
+            "Next rows: {}",
+            next_page_command(sql, question, limit, next_offset)
+        ));
+        lines.push(
+            "The statement runs again for each page: put ORDER BY in the SQL to keep the row order. Every row in one answer: add --all."
+                .to_string(),
+        );
+    }
+    lines
 }
 
 /// What one PATSTAT tool call came back with.
@@ -330,14 +478,18 @@ fn render_query_error(ctx: &Context, envelope: &Value) -> anyhow::Error {
 /// first row), then rowCount, warn-band warnings, and the data-edition
 /// provenance line. The interpretation contract rides along: state the
 /// counting unit/year basis chosen, and always name the edition.
-fn print_query_result(result: &Value) {
+fn print_query_result(result: &Value, sql: &str, question: Option<&str>, limit: Option<u32>) {
     let rows = result
         .get("rows")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    let rows_total = result.get("rowsTotal").and_then(Value::as_u64);
 
-    if rows.is_empty() {
+    if rows.is_empty() && rows_total.unwrap_or(0) > 0 {
+        // An offset at or after the last row: the statement has rows, this page has none.
+        println!("No rows at this offset.");
+    } else if rows.is_empty() {
         println!("0 rows — the filters may be too narrow, or the entity/CPC prefix may not match.");
         println!("Probe candidates before assuming absence (see: flowleap patstat docs --workflow guarded-sql).");
     } else {
@@ -349,11 +501,12 @@ fn print_query_result(result: &Value) {
         output::print_table(&rows, &columns);
     }
 
-    if let Some(row_count) = result.get("rowCount").and_then(Value::as_u64) {
-        println!(
-            "
-Rows: {row_count}"
-        );
+    let footer = query_rows_footer(result, sql, question, limit);
+    if !footer.is_empty() {
+        println!();
+        for line in &footer {
+            println!("{line}");
+        }
     }
     if let Some(warnings) = result.get("warnings").and_then(Value::as_array) {
         for warning in warnings {
@@ -361,6 +514,10 @@ Rows: {row_count}"
                 .get("code")
                 .and_then(Value::as_str)
                 .unwrap_or("warning");
+            // The footer above says the same in CLI terms (flags, not tool inputs).
+            if code == "patstat_answer_truncated" {
+                continue;
+            }
             let message = warning.get("message").and_then(Value::as_str).unwrap_or("");
             println!("Warning ({code}): {message}");
         }
