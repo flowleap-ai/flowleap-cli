@@ -411,7 +411,9 @@ impl SkillsManifest {
 /// anything the user has edited:
 ///
 /// - absent on disk → install fresh;
-/// - byte-identical to the bundled copy → leave it (already current);
+/// - the shipped files byte-identical to the bundled copy → leave it (already
+///   current; files another tool added beside them, such as Codex's
+///   `agents/openai.yaml`, are not a local edit and are never removed);
 /// - present and matching the digest we recorded → our own stale copy, refresh;
 /// - anything else → user-edited or foreign, skip (unless `force`).
 ///
@@ -440,7 +442,7 @@ fn copy_skills(
                 outcome.installed.push(name.to_string());
                 dirty = true;
             }
-            Some(on_disk) if on_disk == bundled => {
+            Some(_) if installed_shipped_digest(name, &dest) == bundled => {
                 // Already exactly our current content. Record the digest if an
                 // earlier CLI installed it before manifests existed.
                 if manifest.skills.get(*name) != Some(&bundled) {
@@ -450,7 +452,12 @@ fn copy_skills(
                 outcome.unchanged.push(name.to_string());
             }
             Some(on_disk) => {
-                let is_our_copy = manifest.skills.get(*name) == Some(&on_disk);
+                // Our copy when the recorded digest matches the whole folder
+                // (a release changed the file set) or only the files we
+                // shipped (another tool added a file beside them).
+                let recorded = manifest.skills.get(*name);
+                let is_our_copy = recorded == Some(&on_disk)
+                    || recorded == Some(&installed_shipped_digest(name, &dest));
                 if is_our_copy || force {
                     write_dir(skill_dir, target)?;
                     manifest.skills.insert(name.to_string(), bundled);
@@ -502,6 +509,26 @@ fn installed_skill_digest(skill_dir: &Path) -> Option<String> {
     let mut entries = Vec::new();
     collect_disk(skill_dir, skill_dir, &mut entries).ok()?;
     Some(fnv_digest(entries))
+}
+
+/// Content digest of only the files the bundled skill ships, read from the
+/// installed folder. A file another tool added is ignored; a shipped file that
+/// is missing on disk is left out, so the digest differs from the bundled one.
+fn installed_shipped_digest(name: &str, skill_dir: &Path) -> String {
+    let dir = EMBEDDED_SKILLS
+        .get_dir(name)
+        .expect("digest requested for a bundled skill");
+    let mut shipped = Vec::new();
+    collect_embedded(dir, Path::new(name), &mut shipped);
+    let entries = shipped
+        .into_iter()
+        .filter_map(|(rel, _)| {
+            fs::read(skill_dir.join(&rel))
+                .ok()
+                .map(|bytes| (rel, bytes))
+        })
+        .collect();
+    fnv_digest(entries)
 }
 
 fn collect_disk(base: &Path, dir: &Path, out: &mut Vec<(String, Vec<u8>)>) -> std::io::Result<()> {
@@ -1000,6 +1027,66 @@ mod tests {
         let outcome = copy_skills(&target, &["flowleap"], false, TEST_VERSION).expect("refresh");
         assert_eq!(outcome.updated, vec!["flowleap"]);
         assert_eq!(fs::read_to_string(&skill_md).expect("read"), original);
+    }
+
+    #[test]
+    fn extra_files_from_another_tool_are_not_a_local_edit() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let target = tmp.path().join("skills");
+        copy_skills(&target, &["flowleap"], false, TEST_VERSION).expect("install");
+
+        // Codex writes agents/openai.yaml into a skill folder it shows. That
+        // file is not ours and is not a change to our skill.
+        let extra = target.join("flowleap/agents/openai.yaml");
+        fs::create_dir_all(extra.parent().expect("parent")).expect("mkdir");
+        fs::write(&extra, "interface:\n  display_name: x\n").expect("write extra");
+
+        let outcome = copy_skills(&target, &["flowleap"], false, "9.9.9").expect("reinstall");
+        assert_eq!(outcome.unchanged, vec!["flowleap"]);
+        assert!(outcome.skipped.is_empty());
+        assert!(extra.is_file(), "a foreign file is never removed");
+    }
+
+    #[test]
+    fn our_stale_copy_with_an_extra_file_still_refreshes() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let target = tmp.path().join("skills");
+        copy_skills(&target, &["flowleap"], false, TEST_VERSION).expect("install");
+        let skill_md = target.join("flowleap/SKILL.md");
+        let original = fs::read_to_string(&skill_md).expect("read skill");
+
+        // An older bundled copy that this CLI recorded, plus a foreign file.
+        fs::write(&skill_md, "older bundled content\n").expect("age");
+        let mut manifest = SkillsManifest::load(&target);
+        manifest.skills.insert(
+            "flowleap".to_string(),
+            installed_skill_digest(&target.join("flowleap")).expect("digest"),
+        );
+        manifest.save(&target).expect("save manifest");
+        let extra = target.join("flowleap/agents/openai.yaml");
+        fs::create_dir_all(extra.parent().expect("parent")).expect("mkdir");
+        fs::write(&extra, "x\n").expect("write extra");
+
+        let outcome = copy_skills(&target, &["flowleap"], false, TEST_VERSION).expect("refresh");
+        assert_eq!(outcome.updated, vec!["flowleap"]);
+        assert_eq!(fs::read_to_string(&skill_md).expect("read"), original);
+        assert!(extra.is_file());
+    }
+
+    #[test]
+    fn a_hand_edit_is_still_protected_beside_an_extra_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let target = tmp.path().join("skills");
+        copy_skills(&target, &["flowleap"], false, TEST_VERSION).expect("install");
+        let skill_md = target.join("flowleap/SKILL.md");
+        fs::write(&skill_md, "user edits\n").expect("edit");
+        let extra = target.join("flowleap/agents/openai.yaml");
+        fs::create_dir_all(extra.parent().expect("parent")).expect("mkdir");
+        fs::write(&extra, "x\n").expect("write extra");
+
+        let outcome = copy_skills(&target, &["flowleap"], false, TEST_VERSION).expect("reinstall");
+        assert_eq!(outcome.skipped, vec!["flowleap"]);
+        assert_eq!(fs::read_to_string(&skill_md).expect("read"), "user edits\n");
     }
 
     #[test]
