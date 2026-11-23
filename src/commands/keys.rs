@@ -29,7 +29,7 @@ pub enum Provider {
 
 #[derive(Subcommand)]
 enum KeysCommand {
-    /// Interactive wizard for all provider keys (human-only)
+    /// Interactive wizard for the optional patent-data keys (human-only)
     Setup,
     /// Set keys for one provider (flags for non-interactive use)
     Set {
