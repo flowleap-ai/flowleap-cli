@@ -15,7 +15,7 @@ use serde_json::json;
 // but not "where do I start". The footer names the two commands that get a
 // cold machine working.
 #[command(
-    after_help = "First time? Run `flowleap setup` to sign in and add patent-data keys,
+    after_help = "First time? Run `flowleap setup` to sign in (patent-data keys are optional),
 then `flowleap doctor` to confirm the machine is ready."
 )]
 struct Cli {
@@ -64,9 +64,9 @@ struct Cli {
 enum Commands {
     /// Check CLI config, auth, and backend reachability
     Doctor,
-    /// Interactive onboarding: backend check, auth, provider keys (human-only)
+    /// Interactive onboarding: backend check, auth, optional patent-data keys (human-only)
     Setup,
-    /// Manage patent-provider keys (EPO OPS, USPTO ODP)
+    /// Manage your optional patent-data keys (EPO OPS, USPTO ODP)
     Keys(keys::KeysArgs),
     /// Store initial CLI configuration
     Init {

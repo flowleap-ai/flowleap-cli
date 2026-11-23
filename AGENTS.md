@@ -439,7 +439,7 @@ the *thin* passthrough first and put the workflow in a skill on top of it.
   `user-invocable`) in the same sitting. The two ecosystems do not sync;
   see `CONTEXT.md` for the vocabulary.
 - **Never route around a missing tool.** A skill must not instruct agents to
-  call provider APIs (EPO/USPTO) directly with the user's BYOK keys — that
+  call provider APIs (EPO/USPTO) directly with the user's own Patent-Data Keys — that
   forfeits caching, key handling, rate-limit protection, and uniform error
   envelopes. Missing data is the signal to add the thin tool, not to
   hand-roll HTTP in a skill.

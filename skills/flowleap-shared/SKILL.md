@@ -215,7 +215,7 @@ keyless access off, or an office for which FlowLeap has no House key.
 | 6 | Rate limited (HTTP 429) — back off per `rateLimitHint.retryAfterSeconds`. Also a License holder's spent live data budget (`live_data_budget_exhausted`): wait per `liveUnavailableHint.retryAfterSeconds` |
 | 7 | Network failure reaching the backend |
 | 8 | Endpoint gone (HTTP 410 `endpoint_gone`) — this build calls a retired endpoint |
-| 9 | Patent-data keys required/rejected, or the trial data budget exhausted — see `providerKeysHint`; a human must add keys, never retry |
+| 9 | Patent-data keys required/rejected (an older server, a server with keyless access off, or a rejected key), or the trial data budget exhausted — see `providerKeysHint`; do not retry. A human adds or replaces a key; the budget variant also lifts at its `resetsAt`, and an own key is optional there |
 
 **Exit 9 is the key gate, and only the key gate.** It is the code behind
 `provider_keys_required` / `provider_keys_invalid` /
